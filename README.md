@@ -6,7 +6,7 @@ An MCP (Model Context Protocol) tool for [Cursor IDE](https://cursor.com) that l
 
 ## Why?
 
-Cursor charges per request. Without this tool, each round of feedback requires a new request. With Interactive Feedback MCP, the AI presents its work summary, waits for your input, and continues — all within one request.
+Cursor bills by request (limited monthly). Without this tool, each round of feedback costs a new request. With Interactive Feedback MCP, the AI pauses and waits for your input via a popup window, then continues — all within one request. This works because tool calls within a request are free.
 
 ## Features
 
@@ -21,10 +21,11 @@ Cursor charges per request. Without this tool, each round of feedback requires a
 
 ### 1. Download
 
-Download the latest release from [Releases](https://github.com/junanchn/interactive-feedback-mcp/releases). You'll get two files:
+Download the latest release from [Releases](https://github.com/junanchn/interactive-feedback-mcp/releases). You'll get three files:
 
 - `feedback-server.exe` — the MCP server
 - `feedback-gui.exe` — the GUI window
+- `feedback.exe` — command-line version (optional)
 
 Place them in the same folder (e.g. `C:\interactive-feedback-mcp\`).
 
@@ -70,6 +71,10 @@ Start a chat. After the AI responds, a feedback window pops up with the AI's wor
 - Type feedback and submit (<kbd>Ctrl+Enter</kbd> or button) → AI continues in the same request
 - Close the window or submit empty → AI ends the request
 
+## CLI Usage
+
+`feedback.exe` can be used instead of the MCP server to launch the GUI directly from a command line: `feedback.exe "summary" [timeout_seconds]`. Feedback is printed to stdout.
+
 ## How It Works
 
 1. AI calls `interactive_feedback` with a work summary.
@@ -79,16 +84,14 @@ Start a chat. After the AI responds, a feedback window pops up with the AI's wor
    - **User submits** — GUI writes feedback to a temp file and exits. The server reads it and returns the feedback to the AI. Non-empty feedback resets the auto-reply loop index.
    - **Auto-reply timeout** — the auto-reply text is returned to the AI. The GUI window is handled as described in [Window Behavior](#window-behavior).
    - **Request cancelled by Cursor** — no result is returned. The window title changes to `[Cancelled]`.
-5. The server's main loop uses `WaitForMultipleObjects` to watch stdin data, GUI process exit, and auto-reply timeout simultaneously, so it can respond to Cursor messages at any time while waiting for feedback.
+5. The server's main loop uses `WaitForMultipleObjects` to watch stdin data, config file changes, GUI process exit, and auto-reply timeout simultaneously, so it can respond to Cursor messages at any time while waiting for feedback.
 
 ## Window Behavior
 
-When a window becomes obsolete (superseded by a new tool call, replaced by auto-reply, or request cancelled):
+When a window becomes obsolete (replaced by auto-reply, or request cancelled):
 
 - **Input box is empty** → window closes automatically.
-- **Input box has content** → window stays open with title `[Superseded]` or `[Cancelled]`, so your text is not lost. Submitting from such a window has no effect — the server is no longer listening for it.
-
-When the AI makes a new tool call while an old window is still open, the server notifies the old window (close or mark superseded), then launches a new one.
+- **Input box has content** → window stays open with title `[Timed Out]` or `[Cancelled]`, so your text is not lost. Submitting from such a window has no effect — the server is no longer listening for it.
 
 ## Auto-Reply
 
@@ -96,7 +99,7 @@ When you step away, auto-reply rules let the AI session continue without manual 
 
 ### Setup
 
-Place config files in the same folder as `feedback-server.exe`. Format: `timeout_seconds|reply_text` per line. `#` for comments. Files are reloaded from disk on each tool call, so you can edit them anytime with a text editor.
+Place config files in the same folder as `feedback-server.exe`. Format: `timeout_seconds|reply_text` per line. `#` for comments. The server monitors the folder for file changes and reloads rules automatically, so you can edit them anytime with a text editor.
 
 ### `auto_reply_oneshot.txt`
 
@@ -127,7 +130,7 @@ Cursor  ←— stdio JSON-RPC —→  feedback-server.exe  ←— args / temp fi
                                                     ←— Win32 messages ——→
 ```
 
-Two processes: the MCP server communicates with Cursor via stdin/stdout using JSON-RPC 2.0 (one JSON per line). The GUI is a separate Win32 process — this separation is necessary because Cursor occupies the server's stdin/stdout. Communication between them: command-line arguments (at launch), Windows messages (at runtime, for supersede/cancel notifications), and a temp file (for returning feedback).
+Two processes: the MCP server communicates with Cursor via stdin/stdout using JSON-RPC 2.0 (one JSON per line). The GUI is a separate Win32 process — this separation is necessary because Cursor occupies the server's stdin/stdout. Communication between them: command-line arguments (at launch), Windows messages (at runtime, for timeout/cancel notifications), and a temp file (for returning feedback).
 
 ## Build from Source
 
@@ -136,8 +139,6 @@ C++17, CMake 3.10+. Only dependency is nlohmann/json (bundled as `json.hpp`).
 ```bash
 mkdir build && cd build && cmake .. && cmake --build .
 ```
-
-Output: `build/bin/feedback-server.exe` and `build/bin/feedback-gui.exe`.
 
 ## License
 

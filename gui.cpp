@@ -1,16 +1,7 @@
 // GUI 窗口进程 - 显示摘要、收集用户反馈
 #include <windows.h>
 #include <shellapi.h>
-
-#include <string>
-#include <fstream>
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
-// 与 server.cpp 保持一致的自定义消息
-static const UINT WM_FEEDBACK_SUPERSEDED = WM_USER + 100;
-static const UINT WM_FEEDBACK_CANCELLED  = WM_USER + 101;
+#include "common.h"
 
 // ============================================================
 // 全局状态
@@ -27,6 +18,7 @@ struct GuiState {
     HWND  hwnd_edit          = nullptr;
     HWND  hwnd_submit        = nullptr;
     HFONT font               = nullptr;
+    bool  expired            = false;
 };
 
 static GuiState g;
@@ -35,17 +27,6 @@ static WNDPROC g_orig_edit_proc = nullptr;
 // ============================================================
 // 工具函数
 // ============================================================
-
-static std::string wide_to_utf8(const std::wstring& ws)
-{
-    if (ws.empty()) return {};
-    int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(),
-                                  nullptr, 0, nullptr, nullptr);
-    std::string s(len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(),
-                        s.data(), len, nullptr, nullptr);
-    return s;
-}
 
 static int scale(int value)
 {
@@ -65,29 +46,25 @@ static void insert_file_paths(HDROP hdrop, HWND target)
         UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
         std::wstring path(len, L'\0');
         DragQueryFileW(hdrop, i, &path[0], len + 1);
-        if (i > 0) SendMessageW(target, EM_REPLACESEL, TRUE, (LPARAM)L"\r\n");
+        if (i > 0)
+            SendMessageW(target, EM_REPLACESEL, TRUE, (LPARAM)L"\r\n");
         SendMessageW(target, EM_REPLACESEL, TRUE, (LPARAM)path.c_str());
     }
 }
 
-// ============================================================
-// 提交与退出
-// ============================================================
-
-static void write_and_close(const std::wstring& text)
-{
-    std::string utf8 = wide_to_utf8(text);
-    std::ofstream out(g.result_file, std::ios::binary | std::ios::trunc);
-    if (out) out.write(utf8.c_str(), (std::streamsize)utf8.size());
-    DestroyWindow(g.hwnd_main);
-}
-
-static void submit()
+static void submit_and_close()
 {
     int len = GetWindowTextLengthW(g.hwnd_edit);
     std::wstring text(len, L'\0');
-    if (len > 0) GetWindowTextW(g.hwnd_edit, &text[0], len + 1);
-    write_and_close(text);
+    if (len > 0)
+        GetWindowTextW(g.hwnd_edit, &text[0], len + 1);
+
+    std::string utf8 = wide_to_utf8(text);
+    std::ofstream out(g.result_file, std::ios::binary | std::ios::trunc);
+    if (out)
+        out.write(utf8.c_str(), (std::streamsize)utf8.size());
+
+    DestroyWindow(g.hwnd_main);
 }
 
 // ============================================================
@@ -135,14 +112,16 @@ static void layout(int client_w, int client_h)
 static LRESULT CALLBACK edit_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_KEYDOWN && wp == VK_RETURN &&
-        (GetKeyState(VK_CONTROL) & 0x8000)) {
-        submit();
+        (GetKeyState(VK_CONTROL) & 0x8000) && !g.expired) {
+        submit_and_close();
         return 0;
     }
     if (msg == WM_PASTE && IsClipboardFormatAvailable(CF_HDROP)) {
-        if (!OpenClipboard(hwnd)) return 0;
+        if (!OpenClipboard(hwnd))
+            return 0;
         HDROP hDrop = (HDROP)GetClipboardData(CF_HDROP);
-        if (hDrop) insert_file_paths(hDrop, hwnd);
+        if (hDrop)
+            insert_file_paths(hDrop, hwnd);
         CloseClipboard();
         return 0;
     }
@@ -207,7 +186,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_COMMAND:
         if (HIWORD(wp) == BN_CLICKED && (HWND)lp == g.hwnd_submit)
-            submit();
+            submit_and_close();
         return 0;
 
     case WM_CTLCOLORSTATIC: {
@@ -224,23 +203,27 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
 
-    case WM_FEEDBACK_SUPERSEDED:
-        if (GetWindowTextLengthW(g.hwnd_edit) == 0)
-            write_and_close(L"");
-        else
-            SetWindowTextW(hwnd, L"Interactive Feedback MCP [Superseded]");
-        return 0;
-
     case WM_FEEDBACK_CANCELLED:
-        SetWindowTextW(hwnd, L"Interactive Feedback MCP [Cancelled]");
+    case WM_FEEDBACK_TIMEOUT:
+        if (GetWindowTextLengthW(g.hwnd_edit) == 0) {
+            DestroyWindow(hwnd);
+        } else {
+            g.expired = true;
+            if (msg == WM_FEEDBACK_CANCELLED)
+                SetWindowTextW(hwnd, L"Interactive Feedback MCP [Cancelled]");
+            else
+                SetWindowTextW(hwnd, L"Interactive Feedback MCP [Timed Out]");
+            SetWindowTextW(g.hwnd_submit, L"Close");
+        }
         return 0;
 
     case WM_CLOSE:
-        write_and_close(L"");
+        DestroyWindow(hwnd);
         return 0;
 
     case WM_DESTROY:
-        if (g.font) DeleteObject(g.font);
+        if (g.font)
+            DeleteObject(g.font);
         PostQuitMessage(0);
         return 0;
     }
@@ -256,7 +239,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow)
 {
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    if (!argv || argc < 3) return 1;
+    if (!argv || argc < 3)
+        return 1;
     g.summary     = argv[1];
     g.result_file = argv[2];
     LocalFree(argv);
@@ -268,7 +252,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow)
     wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszClassName = L"FeedbackGuiClass";
-    if (!RegisterClassExW(&wc)) return 1;
+    if (!RegisterClassExW(&wc))
+        return 1;
 
     int win_w = scale(580);
     int win_h = scale(380);
@@ -282,7 +267,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow)
         (screen_w - win_w) / 2, (screen_h - win_h) / 2, win_w, win_h,
         nullptr, nullptr, hInst, nullptr
     );
-    if (!g.hwnd_main) return 1;
+    if (!g.hwnd_main)
+        return 1;
 
     ShowWindow(g.hwnd_main, nShow);
 
