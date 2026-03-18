@@ -13,12 +13,14 @@
     "windows": [
       {
         "label": "main",
-        "title": "Relay MCP",
-        "width": 580,
-        "height": 380,
+        "title": "Chat",
+        "width": 640,
+        "height": 820,
+        "minWidth": 480,
+        "minHeight": 420,
         "resizable": true,
-        "center": true,
-        "alwaysOnTop": true,
+        "center": false,
+        "alwaysOnTop": false,
         "dragDropEnabled": true
       }
     ]
@@ -26,6 +28,8 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "andeya",
+    "copyright": "Copyright © andeya. andeyalee@outlook.com",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

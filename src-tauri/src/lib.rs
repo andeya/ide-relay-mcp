@@ -1,4 +1,6 @@
-use anyhow::{anyhow, Context, Result};
+//! MCP server (`relay mcp`), GUI (`relay` / `relay gui`). Vocabulary: `docs/TERMINOLOGY.md`.
+
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::Local;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -6,26 +8,29 @@ use serde_json::{json, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
+use tauri::Manager;
+use tauri::{PhysicalPosition, WebviewWindow};
+
+pub mod gui_http;
+pub mod mcp_http;
+pub mod mcp_setup;
 
 pub const APP_NAME: &str = "Relay MCP";
 pub const APP_QUALIFIER: &str = "com";
 pub const APP_ORGANIZATION: &str = "relay";
 pub const APP_DATA_DIR: &str = "relay-mcp";
-pub const TOOL_NAME: &str = "interactive_feedback";
+pub const TOOL_NAME: &str = "relay_interactive_feedback";
 pub const CONFIG_ONESHOT: &str = "auto_reply_oneshot.txt";
 pub const CONFIG_LOOP: &str = "auto_reply_loop.txt";
 pub const LOG_FILE: &str = "feedback_log.txt";
-const DEFAULT_ONESHOT_TEMPLATE: &str =
-    "# Relay MCP one-shot auto-reply rules\n# Format: timeout_seconds|reply_text\n";
-const DEFAULT_LOOP_TEMPLATE: &str =
-    "# Relay MCP loop auto-reply rules\n# Format: timeout_seconds|reply_text\n";
-
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+pub const GUI_ALIVE_MARKER: &str = "relay_gui_alive.marker";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoReplyRule {
@@ -37,6 +42,8 @@ pub struct AutoReplyRule {
 #[serde(rename_all = "snake_case")]
 pub enum ControlStatus {
     Active,
+    /// Submitted Answer; waiting for next MCP `retell` on this tab.
+    Idle,
     TimedOut,
     Cancelled,
 }
@@ -45,58 +52,160 @@ impl ControlStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             ControlStatus::Active => "active",
+            ControlStatus::Idle => "idle",
             ControlStatus::TimedOut => "timed_out",
             ControlStatus::Cancelled => "cancelled",
         }
     }
+}
 
-    pub fn from_str(value: &str) -> Option<Self> {
-        match value.trim() {
-            "active" => Some(ControlStatus::Active),
-            "timed_out" => Some(ControlStatus::TimedOut),
-            "cancelled" => Some(ControlStatus::Cancelled),
-            _ => None,
+impl FromStr for ControlStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim() {
+            "active" => Ok(ControlStatus::Active),
+            "idle" => Ok(ControlStatus::Idle),
+            "timed_out" => Ok(ControlStatus::TimedOut),
+            "cancelled" => Ok(ControlStatus::Cancelled),
+            _ => Err(()),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaunchState {
-    pub summary: String,
-    pub result_file: String,
-    pub control_file: String,
+    /// MCP `retell`: this turn's user-visible assistant reply (verbatim).
+    pub retell: String,
+    /// Correlates with HTTP wait channel; empty for hub preview.
+    pub request_id: String,
+    /// OS window title (`session_title`, or **Chat N** for unnamed tabs).
     pub title: String,
+    /// Raw session/chat title from the tool call; empty if omitted.
+    pub session_title: String,
+    pub tab_id: String,
+    pub client_tab_id: String,
+    pub is_preview: bool,
 }
 
-#[derive(Debug)]
-pub struct PendingRequest {
-    pub id: Value,
-    pub summary: String,
-    pub result_file: PathBuf,
-    pub control_file: PathBuf,
-    pub created_at: Instant,
-    pub child: Option<Child>,
-    pub detached: bool,
+pub const QA_ROUNDS_CAP: usize = 250;
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct QaRound {
+    pub retell: String,
+    pub reply: String,
+    #[serde(default)]
+    pub skipped: bool,
+    #[serde(default)]
+    pub submitted: bool,
+    pub tab_id: String,
+    /// Same IDE chat tab as `LaunchState.client_tab_id` (merge key).
+    #[serde(default)]
+    pub client_tab_id: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct FeedbackTabsState {
+    pub tabs: Vec<LaunchState>,
+    pub active_tab_id: String,
+    pub qa_rounds: Vec<QaRound>,
+    #[serde(skip_serializing)]
+    pub persist_hub: bool,
+}
+
+pub fn trim_qa_rounds(g: &mut FeedbackTabsState) {
+    while g.qa_rounds.len() > QA_ROUNDS_CAP {
+        g.qa_rounds.remove(0);
+    }
+}
+
+pub fn push_qa_round(g: &mut FeedbackTabsState, retell: &str, tab_id: &str, client_tab_id: &str) {
+    let s = retell.trim();
+    if s.is_empty() {
+        return;
+    }
+    g.qa_rounds.push(QaRound {
+        retell: s.to_string(),
+        reply: String::new(),
+        skipped: false,
+        submitted: false,
+        tab_id: tab_id.to_string(),
+        client_tab_id: client_tab_id.to_string(),
+    });
+    trim_qa_rounds(g);
+}
+
+pub fn skip_open_round_for_tab(g: &mut FeedbackTabsState, tab_id: &str) {
+    for r in g.qa_rounds.iter_mut().rev() {
+        if r.tab_id == tab_id && !r.submitted {
+            r.skipped = true;
+            r.submitted = true;
+            return;
+        }
+    }
+}
+
+pub fn apply_reply_for_tab(g: &mut FeedbackTabsState, tab_id: &str, reply: &str, skipped: bool) {
+    for r in g.qa_rounds.iter_mut().rev() {
+        if r.tab_id == tab_id && !r.submitted {
+            r.submitted = true;
+            if skipped {
+                r.skipped = true;
+            } else {
+                r.reply = reply.to_string();
+            }
+            return;
+        }
+    }
+}
+
+pub fn finish_tab_remove_empty_close(
+    g: &mut FeedbackTabsState,
+    tab_id: &str,
+    app: &tauri::AppHandle,
+) {
+    let was_preview = g
+        .tabs
+        .iter()
+        .find(|t| t.tab_id == tab_id)
+        .map(|t| t.is_preview)
+        .unwrap_or(false);
+    g.tabs.retain(|t| t.tab_id != tab_id);
+    if g.tabs.is_empty() {
+        if g.persist_hub && !was_preview {
+            if let Ok(preview) = dev_preview_launch_state() {
+                let tid = preview.tab_id.clone();
+                push_qa_round(g, preview.retell.trim(), &tid, "");
+                g.tabs.push(preview);
+                g.active_tab_id = tid;
+                trim_qa_rounds(g);
+                let _ = refresh_gui_presence_marker();
+                return;
+            }
+        }
+        remove_gui_presence_marker();
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.close();
+        }
+        return;
+    }
+    if g.active_tab_id == tab_id {
+        g.active_tab_id = g.tabs[0].tab_id.clone();
+    }
 }
 
 #[derive(Debug)]
 struct ServerState {
-    binary_dir: PathBuf,
     config_dir: PathBuf,
     stdout: io::Stdout,
-    active: Vec<PendingRequest>,
-    detached: Vec<PendingRequest>,
     loop_index: usize,
 }
 
 impl ServerState {
-    fn new(binary_dir: PathBuf, config_dir: PathBuf) -> Self {
+    fn new(config_dir: PathBuf) -> Self {
         Self {
-            binary_dir,
             config_dir,
             stdout: io::stdout(),
-            active: Vec::new(),
-            detached: Vec::new(),
             loop_index: 0,
         }
     }
@@ -140,27 +249,161 @@ pub fn user_data_dir() -> Result<PathBuf> {
     Ok(project_dirs()?.config_dir().to_path_buf())
 }
 
-pub fn legacy_config_path(binary_dir: &Path, file_name: &str) -> PathBuf {
-    binary_dir.join(file_name)
+pub const UI_LOCALE_FILE: &str = "ui_locale.json";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UiLocaleConfig {
+    pub lang: String,
 }
 
+/// UI language persisted next to auto-reply config. Default `en`.
+pub fn read_ui_locale() -> String {
+    let path = match user_data_dir() {
+        Ok(dir) => dir.join(UI_LOCALE_FILE),
+        Err(_) => return "en".to_string(),
+    };
+    let text = match fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return "en".to_string(),
+    };
+    let cfg: UiLocaleConfig = match serde_json::from_str(&text) {
+        Ok(c) => c,
+        Err(_) => return "en".to_string(),
+    };
+    match cfg.lang.as_str() {
+        "zh" => "zh".to_string(),
+        _ => "en".to_string(),
+    }
+}
+
+pub fn write_ui_locale(lang: &str) -> Result<()> {
+    if lang != "en" && lang != "zh" {
+        return Err(anyhow!("locale must be en or zh"));
+    }
+    let dir = user_data_dir()?;
+    fs::create_dir_all(&dir)?;
+    let path = dir.join(UI_LOCALE_FILE);
+    let cfg = UiLocaleConfig {
+        lang: lang.to_string(),
+    };
+    fs::write(path, serde_json::to_string_pretty(&cfg)?)?;
+    Ok(())
+}
+
+pub const WINDOW_DOCK_FILE: &str = "window_dock.json";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WindowDockConfig {
+    /// `left` | `center` | `right` — horizontal placement on the current monitor.
+    #[serde(default = "default_window_dock")]
+    pub dock: String,
+}
+
+fn default_window_dock() -> String {
+    "left".to_string()
+}
+
+/// Persisted horizontal dock; default **left**.
+pub fn read_window_dock() -> String {
+    let Ok(dir) = user_data_dir() else {
+        return "left".to_string();
+    };
+    let path = dir.join(WINDOW_DOCK_FILE);
+    let text = match fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return "left".to_string(),
+    };
+    let cfg: WindowDockConfig = match serde_json::from_str(&text) {
+        Ok(c) => c,
+        Err(_) => return "left".to_string(),
+    };
+    match cfg.dock.as_str() {
+        "center" => "center".to_string(),
+        "right" => "right".to_string(),
+        _ => "left".to_string(),
+    }
+}
+
+pub fn write_window_dock(dock: &str) -> Result<()> {
+    let d = dock.trim();
+    if d != "left" && d != "center" && d != "right" {
+        bail!("dock must be left, center, or right");
+    }
+    let dir = user_data_dir()?;
+    fs::create_dir_all(&dir)?;
+    let path = dir.join(WINDOW_DOCK_FILE);
+    let cfg = WindowDockConfig {
+        dock: d.to_string(),
+    };
+    fs::write(path, serde_json::to_string_pretty(&cfg)?)?;
+    Ok(())
+}
+
+/// Vertically centered on work area; horizontal by `dock`.
+pub fn position_main_window_for_dock(
+    win: &WebviewWindow,
+    dock: &str,
+) -> std::result::Result<(), String> {
+    let outer = win.outer_size().map_err(|e| e.to_string())?;
+    let w_win = outer.width as i32;
+    let h_win = outer.height as i32;
+    let mon = win
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no monitor".to_string())?;
+    let p = mon.position();
+    let sz = mon.size();
+    let mw = sz.width as i32;
+    let mh = sz.height as i32;
+    let y = p.y + (mh.saturating_sub(h_win)) / 2;
+    let margin = 12i32;
+    let x = match dock {
+        "center" => p.x + (mw.saturating_sub(w_win)) / 2,
+        "right" => p.x + mw.saturating_sub(w_win).saturating_sub(margin),
+        _ => p.x + margin,
+    };
+    win.set_position(PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub const MCP_PAUSE_FILE: &str = "mcp_pause.json";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct McpPauseConfig {
+    #[serde(default)]
+    pub paused: bool,
+}
+
+/// When true, `relay mcp` skips GUI/auto-reply and returns a sentinel tool result immediately.
+pub fn read_mcp_paused() -> bool {
+    let Ok(dir) = user_data_dir() else {
+        return false;
+    };
+    let path = dir.join(MCP_PAUSE_FILE);
+    let text = match fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    serde_json::from_str::<McpPauseConfig>(&text)
+        .map(|c| c.paused)
+        .unwrap_or(false)
+}
+
+pub fn write_mcp_paused(paused: bool) -> Result<()> {
+    let dir = user_data_dir()?;
+    fs::create_dir_all(&dir)?;
+    let path = dir.join(MCP_PAUSE_FILE);
+    let cfg = McpPauseConfig { paused };
+    fs::write(path, serde_json::to_string_pretty(&cfg)?)?;
+    Ok(())
+}
+
+/// Returned to the IDE when MCP is user-paused (Settings).
+pub const MCP_PAUSED_TOOL_REPLY: &str = "<<<RELAY_MCP_PAUSED>>>\nRelay MCP is paused in the Relay app (Settings). Do not call relay_interactive_feedback again unless the user has resumed. Tell the user to open Relay → Settings and turn off “Pause MCP”.\n（用户在 Relay 设置中已暂停 MCP；请勿再次调用本工具，请用户先在设置中恢复。）";
+
+/// Single `relay` binary: `relay mcp`, `relay feedback` (terminal), `relay` / `relay gui` (hub + HTTP IPC).
 pub fn gui_binary_name() -> &'static str {
-    if cfg!(windows) {
-        "relay-gui.exe"
-    } else {
-        "relay-gui"
-    }
-}
-
-pub fn server_binary_name() -> &'static str {
-    if cfg!(windows) {
-        "relay-server.exe"
-    } else {
-        "relay-server"
-    }
-}
-
-pub fn cli_binary_name() -> &'static str {
     if cfg!(windows) {
         "relay.exe"
     } else {
@@ -168,6 +411,381 @@ pub fn cli_binary_name() -> &'static str {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Permanent PATH for `relay` (user-level, cross-platform)
+// ---------------------------------------------------------------------------
+
+const RELAY_PATH_MARKER: &str = "# Relay MCP PATH (managed by Relay app)";
+
+/// Directory containing the `relay` executable.
+pub fn relay_cli_directory() -> Result<PathBuf> {
+    current_exe_dir()
+}
+
+fn user_home_dir() -> Option<PathBuf> {
+    if cfg!(windows) {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    } else {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+}
+
+#[cfg(windows)]
+fn paths_same_bin_dir(a: &Path, b: &Path) -> bool {
+    let ca = fs::canonicalize(a);
+    let cb = fs::canonicalize(b);
+    match (ca, cb) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
+}
+
+#[cfg(windows)]
+fn windows_user_path_has_dir(target: &Path) -> bool {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let Ok(env) = hkcu.open_subkey("Environment") else {
+        return false;
+    };
+    let Ok(path_val) = env.get_value::<String, _>("Path") else {
+        return false;
+    };
+    for part in path_val.split(';') {
+        let p = part.trim();
+        if p.is_empty() {
+            continue;
+        }
+        if paths_same_bin_dir(Path::new(p), target) {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(windows)]
+fn windows_append_user_path(target: &Path) -> Result<()> {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+    if windows_user_path_has_dir(target) {
+        return Ok(());
+    }
+    let dir_s = target.to_string_lossy().to_string();
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (env, _) = hkcu
+        .create_subkey("Environment")
+        .context("open HKCU\\Environment")?;
+    let path_val: String = env.get_value("Path").unwrap_or_default();
+    let new_val = if path_val.trim().is_empty() {
+        dir_s
+    } else {
+        format!("{};{}", path_val.trim_end_matches(';'), dir_s)
+    };
+    env.set_value("Path", &new_val)
+        .context("set user Path in registry")?;
+    notify_windows_environment_path_changed();
+    Ok(())
+}
+
+/// Tell running apps to reload user environment (PATH in registry).
+#[cfg(windows)]
+fn notify_windows_environment_path_changed() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    const WM_SETTINGCHANGE: u32 = 0x001A;
+    const HWND_BROADCAST: isize = 0xffff;
+    const SMTO_ABORTIFHUNG: u32 = 0x0002;
+    #[link(name = "user32", kind = "system")]
+    extern "system" {
+        fn SendMessageTimeoutW(
+            hwnd: isize,
+            msg: u32,
+            wparam: usize,
+            lparam: *const u16,
+            flags: u32,
+            timeout: u32,
+            result: *mut usize,
+        ) -> isize;
+    }
+    let wide: Vec<u16> = OsStr::new("Environment")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut out = 0usize;
+    unsafe {
+        let _ = SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            wide.as_ptr(),
+            SMTO_ABORTIFHUNG,
+            5000,
+            &mut out,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn fish_config_path(home: &Path) -> PathBuf {
+    home.join(".config").join("fish").join("config.fish")
+}
+
+#[cfg(not(windows))]
+fn unix_rc_files_contain_marker(home: &Path) -> bool {
+    let fish = fish_config_path(home);
+    if let Ok(s) = fs::read_to_string(&fish) {
+        if s.contains(RELAY_PATH_MARKER) {
+            return true;
+        }
+    }
+    for name in [".zshrc", ".bash_profile", ".bashrc", ".profile"] {
+        let f = home.join(name);
+        if let Ok(s) = fs::read_to_string(&f) {
+            if s.contains(RELAY_PATH_MARKER) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Argument for `fish_add_path` (quote if path has spaces or specials).
+#[cfg(not(windows))]
+fn fish_add_path_token(dir: &Path) -> String {
+    let s = dir.to_string_lossy();
+    let safe = s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/._-+:@".contains(c));
+    if safe {
+        s.into_owned()
+    } else {
+        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    }
+}
+
+#[cfg(not(windows))]
+fn unix_append_fish_path_block(home: &Path, dir: &Path) -> Result<()> {
+    let fish_path = fish_config_path(home);
+    let use_fish = fish_path.exists()
+        || std::env::var("SHELL")
+            .map(|sh| sh.to_lowercase().contains("fish"))
+            .unwrap_or(false);
+    if !use_fish {
+        return Ok(());
+    }
+    let token = fish_add_path_token(dir);
+    let block = format!("\n{}\nfish_add_path {}\n", RELAY_PATH_MARKER, token);
+    let existing = if fish_path.exists() {
+        fs::read_to_string(&fish_path)?
+    } else {
+        String::new()
+    };
+    if existing.contains(RELAY_PATH_MARKER) {
+        return Ok(());
+    }
+    let mut out = existing;
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&block);
+    if let Some(parent) = fish_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&fish_path, out).with_context(|| format!("write {}", fish_path.display()))?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn unix_append_path_block(home: &Path, dir: &Path) -> Result<()> {
+    let block = format!(
+        "\n{}\nexport PATH=\"{}:$PATH\"\n",
+        RELAY_PATH_MARKER,
+        dir.display()
+    );
+
+    fn append_rc(path: &Path, block: &str) -> Result<()> {
+        let existing = if path.exists() {
+            fs::read_to_string(path)?
+        } else {
+            String::new()
+        };
+        if existing.contains(RELAY_PATH_MARKER) {
+            return Ok(());
+        }
+        let mut out = existing;
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(block);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, out).with_context(|| format!("write {}", path.display()))?;
+        Ok(())
+    }
+
+    if cfg!(target_os = "macos") {
+        append_rc(&home.join(".zshrc"), &block)?;
+        let bash_profile = home.join(".bash_profile");
+        if bash_profile.exists() {
+            append_rc(&bash_profile, &block)?;
+        }
+    } else {
+        let bashrc = home.join(".bashrc");
+        let profile = home.join(".profile");
+        if bashrc.exists() {
+            append_rc(&bashrc, &block)?;
+        } else if profile.exists() {
+            append_rc(&profile, &block)?;
+        } else {
+            let content = block.trim_start();
+            fs::write(&profile, content).context("write ~/.profile")?;
+        }
+    }
+    unix_append_fish_path_block(home, dir)?;
+    Ok(())
+}
+
+/// True if permanent user config already includes this app’s bin directory.
+pub fn relay_path_persistently_configured() -> bool {
+    #[cfg(windows)]
+    {
+        let Ok(dir) = relay_cli_directory() else {
+            return false;
+        };
+        windows_user_path_has_dir(&dir)
+    }
+    #[cfg(not(windows))]
+    {
+        relay_cli_directory().is_ok()
+            && user_home_dir()
+                .map(|h| unix_rc_files_contain_marker(&h))
+                .unwrap_or(false)
+    }
+}
+
+/// Add relay bin dir to user PATH permanently (registry on Windows, shell rc on Unix).
+/// Returns `"already"` if nothing to do, `"windows"` / `"unix"` after a successful write.
+pub fn persist_relay_cli_path() -> Result<&'static str> {
+    let dir = relay_cli_directory()?;
+    let relay_bin = dir.join(gui_binary_name());
+    if !relay_bin.exists() {
+        return Err(anyhow!(
+            "relay binary not found beside this app ({})",
+            relay_bin.display()
+        ));
+    }
+    if relay_path_persistently_configured() {
+        return Ok("already");
+    }
+    #[cfg(windows)]
+    {
+        windows_append_user_path(&dir)?;
+        return Ok("windows");
+    }
+    #[cfg(not(windows))]
+    {
+        let s = dir.to_string_lossy();
+        if s.chars()
+            .any(|c| matches!(c, '$' | '`' | '"' | '\n' | '\r'))
+        {
+            return Err(anyhow!(
+                "Cannot add relay to PATH: install path contains shell-special characters ($, \", `, or newlines). Use a simpler install path."
+            ));
+        }
+        let home = user_home_dir().ok_or_else(|| anyhow!("HOME / USERPROFILE not set"))?;
+        unix_append_path_block(&home, &dir)?;
+        Ok("unix")
+    }
+}
+
+#[cfg(not(windows))]
+fn unix_strip_relay_path_block(content: &str) -> String {
+    if !content.contains(RELAY_PATH_MARKER) {
+        return content.to_string();
+    }
+    let lines: Vec<&str> = content.lines().collect();
+    let mut out: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i].trim_end_matches('\r');
+        if line == RELAY_PATH_MARKER {
+            i += 1;
+            if i < lines.len() {
+                let next = lines[i].trim_start();
+                if next.starts_with("export PATH=") || next.starts_with("fish_add_path") {
+                    i += 1;
+                }
+            }
+            continue;
+        }
+        out.push(lines[i]);
+        i += 1;
+    }
+    let trail = content.ends_with('\n');
+    let mut s = out.join("\n");
+    if trail && !s.is_empty() && !s.ends_with('\n') {
+        s.push('\n');
+    }
+    s
+}
+
+/// Remove Relay-added PATH from shell rc files (Unix) or user Path (Windows).
+pub fn remove_relay_cli_path_persistent() -> Result<()> {
+    #[cfg(windows)]
+    {
+        let dir = relay_cli_directory()?;
+        windows_remove_user_path_entry(&dir)
+    }
+    #[cfg(not(windows))]
+    {
+        let home = user_home_dir().ok_or_else(|| anyhow!("HOME not set"))?;
+        let mut paths: Vec<PathBuf> = vec![fish_config_path(&home)];
+        for name in [".zshrc", ".bash_profile", ".bashrc", ".profile"] {
+            paths.push(home.join(name));
+        }
+        for p in paths {
+            if !p.exists() {
+                continue;
+            }
+            let s = fs::read_to_string(&p)?;
+            if !s.contains(RELAY_PATH_MARKER) {
+                continue;
+            }
+            let new_s = unix_strip_relay_path_block(&s);
+            fs::write(&p, new_s).with_context(|| format!("write {}", p.display()))?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn windows_remove_user_path_entry(target: &Path) -> Result<()> {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let Ok(env) = hkcu.open_subkey("Environment") else {
+        return Ok(());
+    };
+    let Ok(path_val): Result<String, _> = env.get_value("Path") else {
+        return Ok(());
+    };
+    let parts: Vec<String> = path_val
+        .split(';')
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .filter(|p| !paths_same_bin_dir(Path::new(p), target))
+        .map(|s| s.to_string())
+        .collect();
+    let new_val = parts.join(";");
+    let (envw, _) = hkcu
+        .create_subkey("Environment")
+        .context("open Environment for write")?;
+    envw.set_value("Path", &new_val)
+        .context("write user Path")?;
+    notify_windows_environment_path_changed();
+    Ok(())
+}
 pub fn gui_binary_path(exe_dir: &Path) -> PathBuf {
     exe_dir.join(gui_binary_name())
 }
@@ -176,9 +794,10 @@ pub fn timestamp_string() -> String {
     Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-pub fn log_write(exe_dir: &Path, source: &str, content: &str) -> Result<()> {
+/// Append one line to `feedback_log.txt` under the user config directory (`config_dir`).
+pub fn log_write(config_dir: &Path, source: &str, content: &str) -> Result<()> {
     let line = format!("[{}] [{}] {}\n", timestamp_string(), source, content);
-    let path = exe_dir.join(LOG_FILE);
+    let path = config_dir.join(LOG_FILE);
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
@@ -209,6 +828,85 @@ pub fn make_temp_path(prefix: &str, ext: &str) -> PathBuf {
     };
     path.push(file_name);
     path
+}
+
+/// Save feedback image under user data (`feedback_attachments/`) so history thumbnails keep working after OS temp cleanup.
+pub fn save_feedback_attachment(name: &str, bytes_b64: &str) -> Result<PathBuf> {
+    use base64::Engine;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(bytes_b64.trim())
+        .map_err(|e| anyhow!("base64: {}", e))?;
+    let ext = Path::new(name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .filter(|e| e.len() <= 8 && e.chars().all(|c| c.is_alphanumeric()))
+        .unwrap_or("png");
+    let dir = prepare_user_data_dir()?.join("feedback_attachments");
+    fs::create_dir_all(&dir).with_context(|| format!("mkdir {}", dir.display()))?;
+    let file_name = format!("relay_attach_{}.{}", next_temp_suffix(), ext);
+    let path = dir.join(&file_name);
+    fs::write(&path, &raw).with_context(|| format!("write {}", path.display()))?;
+    Ok(path)
+}
+
+const FEEDBACK_ATTACH_MAX_BYTES: u64 = 20 * 1024 * 1024;
+
+fn is_safe_relay_attachment_filename(name: &str) -> bool {
+    if !name.starts_with("relay_attach_") || name.len() > 256 {
+        return false;
+    }
+    if name.contains("..") {
+        return false;
+    }
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
+}
+
+/// Read a saved feedback image as data URL (only files under user `feedback_attachments/`).
+pub fn read_feedback_attachment_data_url(path: &str) -> Result<String> {
+    let raw = path
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'' || c == '\u{feff}');
+    let raw = raw.strip_prefix("file://").unwrap_or(raw);
+    #[cfg(windows)]
+    let raw = raw.trim_start_matches('/');
+    let p = PathBuf::from(raw);
+    let name = p
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow!("invalid path"))?;
+    if !is_safe_relay_attachment_filename(name) {
+        bail!("not a relay attachment");
+    }
+    let base = prepare_user_data_dir()?.join("feedback_attachments");
+    fs::create_dir_all(&base).with_context(|| format!("mkdir {}", base.display()))?;
+    let base_canon =
+        fs::canonicalize(&base).with_context(|| format!("canonicalize {}", base.display()))?;
+    let candidate = base.join(name);
+    let canon = fs::canonicalize(&candidate).context("attachment not found")?;
+    if !canon.starts_with(&base_canon) {
+        bail!("path outside feedback_attachments");
+    }
+    let len = fs::metadata(&canon)?.len();
+    if len > FEEDBACK_ATTACH_MAX_BYTES {
+        bail!("attachment too large");
+    }
+    let bytes = fs::read(&canon)?;
+    let ext = canon
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("png")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        _ => "image/png",
+    };
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{mime};base64,{b64}"))
 }
 
 pub fn write_text_file(path: &Path, text: &str) -> Result<()> {
@@ -245,7 +943,7 @@ pub fn read_control_status(path: &Path) -> Option<ControlStatus> {
     let text = read_text_file(path).ok()?;
     for line in text.lines() {
         if let Some(value) = line.strip_prefix("status=") {
-            return ControlStatus::from_str(value);
+            return value.parse().ok();
         }
     }
     None
@@ -255,39 +953,34 @@ pub fn write_control_status(path: &Path, status: ControlStatus) -> Result<()> {
     write_text_file(path, &format!("status={}\n", status.as_str()))
 }
 
-pub fn launch_gui(
-    exe_dir: &Path,
-    summary: &str,
-    result_file: &Path,
-    control_file: &Path,
-) -> Result<Child> {
-    let gui_path = gui_binary_path(exe_dir);
-    if !gui_path.exists() {
-        return Err(anyhow!(
-            "missing required GUI binary: {}",
-            gui_path.display()
-        ));
-    }
-    let child = Command::new(&gui_path)
-        .arg(summary)
-        .arg(result_file)
-        .arg(control_file)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("failed to launch {}", gui_path.display()))?;
-    Ok(child)
+fn gui_alive_marker_path(config_dir: &Path) -> PathBuf {
+    config_dir.join(GUI_ALIVE_MARKER)
 }
 
-fn json_id_key(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Number(number) => number.to_string(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Null => "null".to_string(),
-        other => other.to_string(),
+/// GUI calls this every ~3s so the MCP server can route extra tabs via inbox instead of spawning.
+pub fn refresh_gui_presence_marker() -> Result<()> {
+    let dir = user_data_dir()?;
+    fs::create_dir_all(&dir)?;
+    let path = gui_alive_marker_path(&dir);
+    let mut f = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .context("gui presence marker")?;
+    f.write_all(b"1")?;
+    f.flush()?;
+    Ok(())
+}
+
+pub fn remove_gui_presence_marker() {
+    if let Ok(dir) = user_data_dir() {
+        let _ = fs::remove_file(gui_alive_marker_path(&dir));
     }
+}
+
+pub(crate) fn new_tab_id() -> String {
+    format!("t_{}", next_temp_suffix())
 }
 
 pub fn load_auto_reply_rules(path: &Path) -> Vec<AutoReplyRule> {
@@ -316,52 +1009,26 @@ pub fn load_auto_reply_rules(path: &Path) -> Vec<AutoReplyRule> {
     rules
 }
 
-fn ensure_text_file(path: &Path, default_content: &str, legacy_path: &Path) -> Result<()> {
-    if path.exists() {
-        return Ok(());
-    }
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    if legacy_path.exists() {
-        fs::copy(legacy_path, path).with_context(|| {
-            format!(
-                "failed to migrate legacy config {} -> {}",
-                legacy_path.display(),
-                path.display()
-            )
-        })?;
-        return Ok(());
-    }
-
-    fs::write(path, default_content)?;
-    Ok(())
-}
-
-pub fn prepare_user_data_dir(binary_dir: &Path) -> Result<PathBuf> {
+pub fn prepare_user_data_dir() -> Result<PathBuf> {
     let config_dir = user_data_dir()?;
     fs::create_dir_all(&config_dir)?;
-
-    let oneshot = config_dir.join(CONFIG_ONESHOT);
-    let loop_rules = config_dir.join(CONFIG_LOOP);
-    let legacy_oneshot = legacy_config_path(binary_dir, CONFIG_ONESHOT);
-    let legacy_loop = legacy_config_path(binary_dir, CONFIG_LOOP);
-
-    ensure_text_file(&oneshot, DEFAULT_ONESHOT_TEMPLATE, &legacy_oneshot)?;
-    ensure_text_file(&loop_rules, DEFAULT_LOOP_TEMPLATE, &legacy_loop)?;
-
     Ok(config_dir)
 }
 
-pub fn auto_reply_peek(exe_dir: &Path, loop_index: usize) -> Option<(AutoReplyRule, bool)> {
-    let oneshot = load_auto_reply_rules(&exe_dir.join(CONFIG_ONESHOT));
+/// Instant auto-reply only: rules must use `0|reply`. Lines with non-zero timeout are ignored.
+pub fn auto_reply_peek(config_dir: &Path, loop_index: usize) -> Option<(AutoReplyRule, bool)> {
+    let oneshot: Vec<AutoReplyRule> = load_auto_reply_rules(&config_dir.join(CONFIG_ONESHOT))
+        .into_iter()
+        .filter(|r| r.timeout_seconds == 0)
+        .collect();
     if let Some(rule) = oneshot.first().cloned() {
         return Some((rule, true));
     }
 
-    let loop_rules = load_auto_reply_rules(&exe_dir.join(CONFIG_LOOP));
+    let loop_rules: Vec<AutoReplyRule> = load_auto_reply_rules(&config_dir.join(CONFIG_LOOP))
+        .into_iter()
+        .filter(|r| r.timeout_seconds == 0)
+        .collect();
     if loop_rules.is_empty() {
         return None;
     }
@@ -398,8 +1065,8 @@ fn acquire_lock(path: &Path, timeout: Duration) -> Option<LockFile> {
     None
 }
 
-pub fn consume_oneshot(exe_dir: &Path) -> Result<()> {
-    let path = exe_dir.join(CONFIG_ONESHOT);
+pub fn consume_oneshot(config_dir: &Path) -> Result<()> {
+    let path = config_dir.join(CONFIG_ONESHOT);
     let lock_path = path.with_extension("lock");
     let Some(_lock) = acquire_lock(&lock_path, Duration::from_secs(2)) else {
         return Ok(());
@@ -455,160 +1122,21 @@ fn handle_json_line(state: &mut ServerState, line: &str) -> Result<()> {
 }
 
 fn respond_tool_result(state: &mut ServerState, id: Value, feedback: String) -> Result<()> {
+    let mut inner = serde_json::Map::new();
+    inner.insert(TOOL_NAME.to_string(), json!(feedback));
     let payload = json!({
         "content": [
             {
                 "type": "text",
-                "text": json!({ "interactive_feedback": feedback }).to_string()
+                "text": serde_json::Value::Object(inner).to_string()
             }
         ]
     });
     state.send_result(id, payload)
 }
 
-fn handle_gui_exit(state: &mut ServerState, idx: usize) -> Result<()> {
-    let mut request = state.active.remove(idx);
-    let feedback = match read_trimmed_text(&request.result_file) {
-        Ok(text) => text,
-        Err(_) => String::new(),
-    };
-    if !feedback.is_empty() {
-        state.loop_index = 0;
-    }
-    let _ = log_write(&state.config_dir, "USER_REPLY", &feedback);
-    respond_tool_result(state, request.id.clone(), feedback)?;
-    if let Some(mut child) = request.child.take() {
-        let _ = child.wait();
-    }
-    let _ = fs::remove_file(&request.result_file);
-    let _ = fs::remove_file(&request.control_file);
+fn handle_cancel_notification(_state: &mut ServerState, _msg: &Value) -> Result<()> {
     Ok(())
-}
-
-fn process_active_children(state: &mut ServerState) -> Result<()> {
-    let mut idx = 0;
-    while idx < state.active.len() {
-        let child_exited = if let Some(child) = state.active[idx].child.as_mut() {
-            child.try_wait()?.is_some()
-        } else {
-            true
-        };
-
-        if child_exited {
-            handle_gui_exit(state, idx)?;
-        } else {
-            idx += 1;
-        }
-    }
-
-    let mut detached_idx = 0;
-    while detached_idx < state.detached.len() {
-        let child_exited = if let Some(child) = state.detached[detached_idx].child.as_mut() {
-            child.try_wait()?.is_some()
-        } else {
-            true
-        };
-
-        if child_exited {
-            let mut request = state.detached.remove(detached_idx);
-            if let Some(mut child) = request.child.take() {
-                let _ = child.wait();
-            }
-            let _ = fs::remove_file(&request.result_file);
-            let _ = fs::remove_file(&request.control_file);
-        } else {
-            detached_idx += 1;
-        }
-    }
-    Ok(())
-}
-
-fn create_request_paths() -> (PathBuf, PathBuf) {
-    let result_file = make_temp_path("feedback_result", "txt");
-    let control_file = make_temp_path("feedback_control", "txt");
-    (result_file, control_file)
-}
-
-fn launch_pending_request(state: &mut ServerState, id: Value, summary: String) -> Result<()> {
-    let (result_file, control_file) = create_request_paths();
-    let child = launch_gui(&state.binary_dir, &summary, &result_file, &control_file)?;
-    write_control_status(&control_file, ControlStatus::Active)?;
-
-    state.active.push(PendingRequest {
-        id,
-        summary,
-        result_file,
-        control_file,
-        created_at: Instant::now(),
-        child: Some(child),
-        detached: false,
-    });
-    Ok(())
-}
-
-fn timeout_front_request(state: &mut ServerState) -> Result<()> {
-    let Some(front) = state.active.first() else {
-        return Ok(());
-    };
-
-    let Some((rule, is_oneshot)) = auto_reply_peek(&state.config_dir, state.loop_index) else {
-        return Ok(());
-    };
-
-    if front.created_at.elapsed() < Duration::from_secs(rule.timeout_seconds) {
-        return Ok(());
-    }
-
-    let mut request = state.active.remove(0);
-    write_control_status(&request.control_file, ControlStatus::TimedOut)?;
-    if is_oneshot {
-        consume_oneshot(&state.config_dir)?;
-    }
-    let _ = log_write(&state.config_dir, "AUTO_REPLY", &rule.text);
-    respond_tool_result(state, request.id.clone(), rule.text.clone())?;
-    if !rule.text.is_empty() {
-        state.loop_index = state.loop_index.saturating_add(1);
-    }
-
-    request.detached = true;
-    state.detached.push(request);
-
-    Ok(())
-}
-
-fn cancel_request(state: &mut ServerState, request_id: &Value) -> Result<()> {
-    let Some(idx) = state
-        .active
-        .iter()
-        .position(|request| json_id_key(&request.id) == json_id_key(request_id))
-    else {
-        return Ok(());
-    };
-
-    let mut request = state.active.remove(idx);
-    write_control_status(&request.control_file, ControlStatus::Cancelled)?;
-    if let Some(child) = request.child.take() {
-        state.detached.push(PendingRequest {
-            id: request.id,
-            summary: request.summary,
-            result_file: request.result_file,
-            control_file: request.control_file,
-            created_at: request.created_at,
-            child: Some(child),
-            detached: true,
-        });
-    }
-    Ok(())
-}
-
-fn handle_cancel_notification(state: &mut ServerState, msg: &Value) -> Result<()> {
-    let Some(params) = msg.get("params") else {
-        return Ok(());
-    };
-    let Some(request_id) = params.get("requestId") else {
-        return Ok(());
-    };
-    cancel_request(state, request_id)
 }
 
 fn handle_tool_call(state: &mut ServerState, msg: &Value) -> Result<()> {
@@ -627,33 +1155,79 @@ fn handle_tool_call(state: &mut ServerState, msg: &Value) -> Result<()> {
         return Ok(());
     }
 
-    let summary = msg
+    let arguments = msg
         .get("params")
         .and_then(|params| params.get("arguments"))
-        .and_then(|arguments| arguments.get("summary"))
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+
+    let retell = arguments
+        .get("retell")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if retell.trim().is_empty() {
+        state.send_error(
+            msg["id"].clone(),
+            -32602,
+            "retell is required (non-empty): this turn's assistant reply to the user",
+        )?;
+        return Ok(());
+    }
+
+    let rpc_id = msg["id"].clone();
+    if read_mcp_paused() {
+        let _ = log_write(
+            &state.config_dir,
+            "MCP_PAUSED_BLOCK",
+            &retell.chars().take(200).collect::<String>(),
+        );
+        respond_tool_result(state, rpc_id, MCP_PAUSED_TOOL_REPLY.to_string())?;
+        return Ok(());
+    }
+
+    let session_title = arguments
+        .get("session_title")
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
 
-    let _ = log_write(&state.config_dir, "AI_REQUEST", &summary);
+    let client_tab_id = arguments
+        .get("client_tab_id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
 
-    let request_id = msg["id"].clone();
+    let log_line = match (session_title.is_empty(), client_tab_id.is_empty()) {
+        (true, true) => retell.clone(),
+        (false, true) => format!("[{}] {}", session_title, retell),
+        (true, false) => format!("[tab:{}] {}", client_tab_id, retell),
+        (false, false) => format!("[{}][tab:{}] {}", session_title, client_tab_id, retell),
+    };
+    let _ = log_write(&state.config_dir, "AI_REQUEST", &log_line);
+
     let Some((rule, is_oneshot)) = auto_reply_peek(&state.config_dir, state.loop_index) else {
-        launch_pending_request(state, request_id, summary)?;
+        match mcp_http::feedback_round(&retell, &session_title, &client_tab_id) {
+            Ok(answer) => {
+                if !answer.is_empty() {
+                    state.loop_index = 0;
+                }
+                let _ = log_write(&state.config_dir, "USER_REPLY", &answer);
+                respond_tool_result(state, rpc_id, answer)?;
+            }
+            Err(e) => {
+                state.send_error(rpc_id, -32603, format!("Relay GUI: {}", e))?;
+            }
+        }
         return Ok(());
     };
 
-    if rule.timeout_seconds == 0 {
-        if is_oneshot {
-            consume_oneshot(&state.config_dir)?;
-        }
-        let _ = log_write(&state.config_dir, "AUTO_REPLY", &rule.text);
-        respond_tool_result(state, request_id, rule.text)?;
-        state.loop_index = state.loop_index.saturating_add(1);
-        return Ok(());
+    if is_oneshot {
+        consume_oneshot(&state.config_dir)?;
     }
-
-    launch_pending_request(state, request_id, summary)?;
+    let _ = log_write(&state.config_dir, "AUTO_REPLY", &rule.text);
+    respond_tool_result(state, rpc_id, rule.text)?;
+    state.loop_index = state.loop_index.saturating_add(1);
     Ok(())
 }
 
@@ -662,7 +1236,7 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
         return Ok(());
     };
 
-    if !msg.get("id").is_some() {
+    if msg.get("id").is_none() {
         if method == "notifications/cancelled" {
             handle_cancel_notification(state, msg)?;
         }
@@ -690,16 +1264,25 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                     "tools": [
                         {
                             "name": TOOL_NAME,
-                            "description": "Pause execution and request human feedback before proceeding.",
+                            "description": "Human-in-the-loop: opens Relay for your Answer. Strongly pass session_title and client_tab_id.",
                             "inputSchema": {
                                 "type": "object",
+                                "description": "retell is required. session_title and client_tab_id strongly recommended.",
                                 "properties": {
-                                    "summary": {
+                                    "retell": {
                                         "type": "string",
-                                        "description": "Concise summary of the work completed so far."
+                                        "description": "Required. This turn's full assistant reply to the user (verbatim)."
+                                    },
+                                    "session_title": {
+                                        "type": "string",
+                                        "description": "Optional fixed label. If omitted, new tab title is Chat N (global incrementing N from 1 per process). Same client_tab_id merge keeps title when still omitted."
+                                    },
+                                    "client_tab_id": {
+                                        "type": "string",
+                                        "description": "STRONGLY RECOMMENDED (optional): stable id per IDE chat tab; reuse on every call in the same tab."
                                     }
                                 },
-                                "required": ["summary"]
+                                "required": ["retell"]
                             }
                         }
                     ]
@@ -721,25 +1304,9 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
     Ok(())
 }
 
-fn cleanup_pending_requests(state: &mut ServerState) {
-    for request in state.active.iter_mut().chain(state.detached.iter_mut()) {
-        if let Some(mut child) = request.child.take() {
-            if let Ok(None) = child.try_wait() {
-                let _ = child.kill();
-            }
-            let _ = child.wait();
-        }
-        let _ = fs::remove_file(&request.result_file);
-        let _ = fs::remove_file(&request.control_file);
-    }
-    state.active.clear();
-    state.detached.clear();
-}
-
 pub fn run_feedback_server() -> Result<()> {
-    let binary_dir = current_exe_dir()?;
-    let config_dir = prepare_user_data_dir(&binary_dir)?;
-    let mut state = ServerState::new(binary_dir, config_dir);
+    let config_dir = prepare_user_data_dir()?;
+    let mut state = ServerState::new(config_dir);
     let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
 
     thread::spawn(move || {
@@ -766,9 +1333,6 @@ pub fn run_feedback_server() -> Result<()> {
             handle_json_line(&mut state, &line)?;
         }
 
-        process_active_children(&mut state)?;
-        timeout_front_request(&mut state)?;
-
         if disconnected {
             break;
         }
@@ -787,76 +1351,79 @@ pub fn run_feedback_server() -> Result<()> {
         }
     }
 
-    cleanup_pending_requests(&mut state);
     Ok(())
 }
 
-pub fn run_feedback_cli(summary: String, timeout_seconds: u64) -> Result<()> {
-    let binary_dir = current_exe_dir()?;
-    let config_dir = prepare_user_data_dir(&binary_dir)?;
-    let result_file = make_temp_path("feedback_direct_result", "txt");
-    let control_file = make_temp_path("feedback_direct_control", "txt");
-
-    let mut child = launch_gui(&binary_dir, &summary, &result_file, &control_file)?;
-    write_control_status(&control_file, ControlStatus::Active)?;
-    let _ = log_write(&config_dir, "CLI_REQUEST", &summary);
-
-    let wait_for = Duration::from_secs(timeout_seconds.max(1));
-    let started = Instant::now();
-
-    loop {
-        if let Some(status) = child.try_wait()? {
-            let _ = status;
-            let feedback = read_trimmed_text(&result_file).unwrap_or_default();
-            let _ = log_write(&config_dir, "CLI_REPLY", &feedback);
-            println!("{}", feedback);
-            let _ = fs::remove_file(&result_file);
-            let _ = fs::remove_file(&control_file);
-            return Ok(());
+pub fn run_feedback_cli(
+    retell: String,
+    timeout_seconds: u64,
+    session_title: &str,
+    client_tab_id: &str,
+) -> Result<()> {
+    let config_dir = prepare_user_data_dir()?;
+    let _ = log_write(&config_dir, "CLI_REQUEST", &retell);
+    let st = session_title.to_string();
+    let ctid = client_tab_id.to_string();
+    let retell_for_thread = retell.clone();
+    let (tx, rx) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let r = mcp_http::feedback_round(&retell_for_thread, &st, &ctid);
+        let _ = tx.send(r);
+    });
+    let wait = Duration::from_secs(timeout_seconds.max(1));
+    match rx.recv_timeout(wait) {
+        Ok(Ok(answer)) => {
+            let _ = log_write(&config_dir, "CLI_REPLY", &answer);
+            println!("{}", answer);
         }
-
-        if started.elapsed() >= wait_for {
-            let _ = write_control_status(&control_file, ControlStatus::TimedOut);
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = fs::remove_file(&result_file);
-            let _ = fs::remove_file(&control_file);
-            let _ = log_write(&config_dir, "CLI_TIMEOUT", &summary);
-            println!();
-            return Ok(());
+        Ok(Err(e)) => eprintln!("relay feedback: {}", e),
+        Err(_) => {
+            let _ = log_write(&config_dir, "CLI_TIMEOUT", &retell);
+            eprintln!(
+                "relay feedback: timed out after {}s",
+                timeout_seconds.max(1)
+            );
         }
-
-        thread::sleep(Duration::from_millis(100));
     }
+    Ok(())
 }
 
-pub fn launch_state_from_args(
-    summary: String,
-    result_file: PathBuf,
-    control_file: PathBuf,
-) -> LaunchState {
+/// `session_title` non-empty → window label; empty tab titles use [`next_unnamed_chat_title`].
+pub fn window_title_for_session(session_title: &str) -> String {
+    let t = session_title.trim();
+    if t.is_empty() {
+        return "Chat".to_string();
+    }
+    let n = t.chars().count();
+    let s: String = t.chars().take(72).collect();
+    let suffix = if n > 72 { "…" } else { "" };
+    format!("{s}{suffix}")
+}
+
+static UNNAMED_CHAT_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Next title for a new unnamed tab: **Chat 1**, **Chat 2**, … (global counter, never reused after close).
+pub fn next_unnamed_chat_title() -> String {
+    let n = UNNAMED_CHAT_SEQ.fetch_add(1, Ordering::Relaxed) + 1;
+    format!("Chat {n}")
+}
+
+pub fn launch_state_preview() -> LaunchState {
+    let session_title = String::new();
+    let title = "Chat".to_string();
     LaunchState {
-        summary,
-        result_file: result_file.to_string_lossy().to_string(),
-        control_file: control_file.to_string_lossy().to_string(),
-        title: APP_NAME.to_string(),
+        retell: "No MCP request yet.\n\n• retell = this turn's assistant reply.\n• IDE: relay + [\"mcp\"]. Terminal: relay feedback --retell. See docs/TERMINOLOGY.md."
+            .to_string(),
+        request_id: String::new(),
+        title,
+        session_title,
+        tab_id: new_tab_id(),
+        client_tab_id: String::new(),
+        is_preview: true,
     }
 }
 
-pub fn read_launch_args() -> Result<(String, PathBuf, PathBuf)> {
-    let mut args = std::env::args().skip(1);
-    let summary = args
-        .next()
-        .ok_or_else(|| anyhow!("missing summary argument"))?;
-    let result_file = args
-        .next()
-        .ok_or_else(|| anyhow!("missing result file argument"))?;
-    let control_file = args
-        .next()
-        .ok_or_else(|| anyhow!("missing control file argument"))?;
-    Ok((
-        summary,
-        PathBuf::from(result_file),
-        PathBuf::from(control_file),
-    ))
+/// Hub / `tauri dev` — placeholder tab until MCP delivers real requests.
+pub fn dev_preview_launch_state() -> Result<LaunchState> {
+    Ok(launch_state_preview())
 }

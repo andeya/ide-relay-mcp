@@ -1,129 +1,233 @@
+<div align="center">
+
+<br/>
+
+<img src="src-tauri/icons/source/relay-icon.svg" alt="Relay" width="132" height="132"/>
+
 # Relay
 
-> Human feedback layer for AI IDEs
+### Human feedback layer for AI IDEs
 
-**[中文版](README_zh.md)**
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6366f1?style=flat-square" alt="License"/></a>
+  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Tauri-2-24adc8?style=flat-square&logo=tauri&logoColor=white" alt="Tauri"/></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-backend-000000?style=flat-square&logo=rust&logoColor=white" alt="Rust"/></a>
+  <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3-42b883?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue"/></a>
+</p>
 
-Relay MCP is an open-source MCP tool for AI IDEs such as [Cursor IDE](https://cursor.com). It pauses an agent request, shows a native desktop feedback window, and returns the human response inside the same interaction.
+**[简体中文](README_zh.md)** · **[Terminology](docs/TERMINOLOGY.md)** · **[HTTP IPC (architecture)](docs/HTTP_IPC.md)**
 
-Relay was inspired by [interactive-feedback-mcp](https://github.com/junanchn/interactive-feedback-mcp).
+**Author:** andeya · [andeyalee@outlook.com](mailto:andeyalee@outlook.com)
+
+<br/>
+
+</div>
+
+---
+
+Relay MCP is an open-source MCP tool for AI IDEs such as [Cursor](https://cursor.com). It **pauses** an agent request, opens a **native desktop** UI for your **Answer**, and returns it in the **same** tool turn. Terminology: **[docs/TERMINOLOGY.md](docs/TERMINOLOGY.md)**.
+
+Inspired by [interactive-feedback-mcp](https://github.com/junanchn/interactive-feedback-mcp).
+
+|          |                                                                                              |
+| :------- | :------------------------------------------------------------------------------------------- |
+| **Logo** | Human → **pause gate** (feedback) → AI — cyan/violet flow, amber bars for “waiting for you”. |
+
+---
+
+## Value & how it works
+
+**What Relay is for**
+
+- The agent calls **`relay_interactive_feedback`**. **`retell`** = **this turn’s user-visible assistant reply** (verbatim), sent **in full** over **127.0.0.1 HTTP**. Optional **`session_title`**, **`client_tab_id`**. Your reply is the **Answer**.
+- **`relay mcp`** opens or talks to the Relay UI for your **Answer**, or returns text from **auto-reply rules** (no window).
+- The **Answer** is normal tool output — same chat turn — **human-in-the-loop** without relying on the in-IDE chat box alone.
+
+**How it runs**
+
+1. The IDE runs **`relay mcp`** over **stdio**. The agent issues **`tools/call`** for **`relay_interactive_feedback`**.
+2. The server **checks instant auto-reply rules** (`0|reply`). If one applies, it returns that text immediately (no window).
+3. Otherwise it ensures the **Relay GUI** is running (`relay` / `relay gui`), then **`POST /v1/feedback`** + **`GET .../wait`** on **localhost HTTP** (see **[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**). The GUI shows a **tab** (or merges by **`client_tab_id`**).
+4. Your **Answer** completes the wait and is returned as the **tool result**.
+
+**Tabs:** Keep Relay running when possible. New MCP calls add or refresh tabs; non-active tabs **flash** on new requests. If the GUI is closed, the next call spawns it again.
+
+---
 
 ## Highlights
 
-- Cross-platform desktop UI powered by `Tauri + Rust + Vue`
-- Native feedback window on Windows, macOS, and Linux
-- Two executable entry points that share one core implementation
-- Automatic config bootstrap in the user data directory
-- Drag and drop files into the response box
-- Paste copied file paths directly into the editor
-- Automatic reply rules for unattended runs
-- Timestamped logs written to the same user data directory
+- **Stack** — `Tauri + Rust + Vue`, Windows / macOS / Linux
+- **Flow** — `relay mcp` ↔ localhost HTTP ↔ Relay GUI (tabs); see [HTTP_IPC.md](docs/HTTP_IPC.md)
+- **DX** — **Retell / Answer** thread; **Enter** to send (window stays); **Shift+Enter** newline; **⌘/Ctrl+Enter** send & close current tab; paste or attach images
+- **Ops** — Optional instant auto-reply (config lines like `0|your reply`); `feedback_log.txt`
 
-## Repository Layout
+---
 
-- `src-tauri/` - Rust backend, shared core, MCP server, CLI helper, and Tauri window
-- `src/` - Vue user interface
-- `mcp.json` - MCP client configuration example
+## Repository layout
+
+| Path         | Role                                                           |
+| ------------ | -------------------------------------------------------------- |
+| `src-tauri/` | Rust backend, MCP server, CLI, Tauri window                    |
+| `src/`       | Vue UI (`App.vue` + composables under `src/composables/`)      |
+| `docs/`      | **[TERMINOLOGY.md](docs/TERMINOLOGY.md)** — product vocabulary |
+| `mcp.json`   | MCP client example                                             |
+
+### Development
+
+```bash
+npm install
+npm run lint       # ESLint on `src/**/*.vue`
+npm run typecheck  # `vue-tsc --noEmit`
+npm run tauri dev
+```
+
+### Regenerate icons
+
+Source: [`src-tauri/icons/source/relay-icon.svg`](src-tauri/icons/source/relay-icon.svg) (passed to `tauri icon` as SVG).
+
+```bash
+npm run icons:build
+```
+
+Needs **Node** (`@tauri-apps/cli`). Writes desktop, **iOS**, **Android**, and **Windows Store** assets under `src-tauri/icons/`.
+
+---
 
 ## Build
-
-Install the frontend dependencies and build the web assets:
 
 ```bash
 npm install
 npm run build
 ```
 
-Build the Rust binaries:
+From repo root (no `cd`):
 
 ```bash
-cd src-tauri
-cargo build --bins
+cargo build --manifest-path src-tauri/Cargo.toml --release
 ```
 
-Run the desktop app in development mode:
+**Production app bundle** (installers / `.app` / etc.):
+
+```bash
+npm run tauri build
+```
 
 ```bash
 npm run tauri dev
 ```
 
-## Binaries
+---
 
-The workspace produces two user-facing executables and one desktop app:
+## Privacy & data
 
-- `relay-server` - MCP server that AI IDEs connect to
-- `relay` - command-line helper that launches the same UI
-- `Relay` - the packaged desktop feedback app
+Relay keeps **Answers** and state **on your machine** (logs, locale, `gui_endpoint.json` while the GUI runs). **No** built-in telemetry or cloud upload. Treat `feedback_log.txt` and MCP transcripts as sensitive.
 
-On Windows, the binary names automatically receive the `.exe` suffix.
+---
 
-## MCP Configuration
+## Binary & commands
 
-Point your AI IDE to the built `relay-server` binary. Example:
+One executable **`relay`** (Windows: `relay.exe`). Subcommands via **clap**:
+
+| Invocation                    | Purpose                                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------- |
+| `relay` / `relay gui`         | Open Relay hub window                                                                        |
+| `relay mcp`                   | MCP stdio server for the IDE                                                                 |
+| `relay feedback --retell "…"` | **Terminal only:** **Answer** on stdout (`--timeout`, `--session-title`, `--client-tab-id`). |
+| _(removed)_                   | **`relay window`** — replaced by HTTP IPC; IDE only runs **`relay mcp`**.                    |
+
+Packaged **Relay.app** / installer ships this single binary.
+
+---
+
+## MCP configuration
+
+`command` = path to **`relay`**, **`args`** = **`["mcp"]`**. Examples:
+
+| Environment                              | `command` (example)                            |
+| ---------------------------------------- | ---------------------------------------------- |
+| **macOS** — Relay.app in `/Applications` | `/Applications/Relay.app/Contents/MacOS/relay` |
+| **Windows**                              | `C:\Program Files\Relay\relay.exe`             |
+| **Linux** / **from source**              | `…/target/release/relay`                       |
+
+If the app is elsewhere (e.g. `~/Applications` on macOS), change the path accordingly.
 
 ```json
 {
   "mcpServers": {
     "relay-mcp": {
-      "command": "/absolute/path/to/relay-server",
-      "args": [],
-      "timeout": 6000,
-      "autoApprove": ["interactive_feedback"]
+      "command": "/Applications/Relay.app/Contents/MacOS/relay",
+      "args": ["mcp"],
+      "timeout": 600,
+      "autoApprove": ["relay_interactive_feedback"]
     }
   }
 }
 ```
 
-Use the equivalent Windows path ending in `.exe` on Windows.
+- **`timeout`**: Waiting for your **Answer** can take a while; the example uses `600`. If the tool is cancelled before you submit, raise the tool-call wait limit in the IDE MCP settings.
 
-## Configuration Storage
+See [`mcp.json`](mcp.json) in the repo (replace `command` with your path).
 
-Relay creates and manages its auto-reply files in your user data directory on first launch. You never need to choose or pass a path manually.
+| Argument                          | Required              | Role                                        |
+| --------------------------------- | --------------------- | ------------------------------------------- |
+| `retell`                          | yes (non-empty)       | **This turn’s assistant reply** (verbatim). |
+| `session_title` / `client_tab_id` | no (strongly advised) | Tab label; stable id per conversation tab.  |
 
-Typical locations are:
+### Window behavior
 
-- macOS: `~/Library/Application Support/relay-mcp/`
-- Linux: `~/.config/relay-mcp/`
-- Windows: `%APPDATA%\\relay-mcp\\`
+After **instant auto-reply** or **IDE cancel**: empty draft may close the tab; cancelled/timed-out state is shown if you had text. Submitting an **Answer** returns you to the hub; the app stays open.
 
-The directory contains:
+### Rule prompts (English)
 
-- `auto_reply_oneshot.txt`
-- `auto_reply_loop.txt`
-- `feedback_log.txt`
+Tool: **`relay_interactive_feedback`**. Prompts are **English-only** for stricter model behavior. In the Relay app, **⚙ Settings → Rule prompts**: pick Standard / Strict loop / Tool spec, copy, and follow the per-IDE paste guide on the same screen. Source: [`src/cursorRulesTemplates.ts`](src/cursorRulesTemplates.ts) (English + Chinese mirror).
 
-Existing auto-reply files from the legacy installation directory are migrated automatically when possible.
+---
 
-Each non-comment line uses this format:
+## Configuration storage
+
+Relay bootstraps under your user data directory (no manual path).
+
+| OS      | Path                                       |
+| ------- | ------------------------------------------ |
+| macOS   | `~/Library/Application Support/relay-mcp/` |
+| Linux   | `~/.config/relay-mcp/`                     |
+| Windows | `%APPDATA%\relay-mcp\`                     |
+
+Files may include: `feedback_log.txt`, `ui_locale.json` (`en` / `zh`), `gui_endpoint.json` (while GUI is running), `relay_gui_alive.marker` (heartbeat), auto-reply rule files.
+
+**Optional instant auto-reply** (no window): create **`auto_reply_oneshot.txt`** and/or **`auto_reply_loop.txt`** in that folder (they are **not** created automatically). Only **`0|`** lines apply — immediate reply; any other `N|` is ignored:
 
 ```text
-timeout_seconds|reply_text
+0|reply_text
 ```
 
-`auto_reply_oneshot.txt` consumes the first matching rule and deletes it after use. `auto_reply_loop.txt` cycles through rules in order.
+---
 
-## CLI Usage
+## CLI usage
 
-Launch the desktop UI directly without MCP:
+Put the folder containing **`relay`** on your **PATH**, or use full paths. Run **`relay --help`** for all options.
+
+Open **⚙ Settings**: **EN / 中文** toggles UI language; **Environment & MCP** and **Rule prompts**.
+
+| OS          | Add to PATH (same as before — folder with `relay`)                |
+| ----------- | ----------------------------------------------------------------- |
+| **macOS**   | e.g. `export PATH="/Applications/Relay.app/Contents/MacOS:$PATH"` |
+| **Linux**   | e.g. `export PATH="$HOME/.local/bin:$PATH"` for custom installs   |
+| **Windows** | Add directory containing `relay.exe` to user **Path**             |
+
+Terminal (**Answer** on stdout):
 
 ```bash
-relay "Work summary" 600
+relay feedback --retell "Work recap" --timeout 600
+relay feedback --retell "Work recap" --session-title "Chat title"
+# Same id → same Relay tab as MCP; different ids → multiple tabs in one window
+relay feedback --retell "…" --client-tab-id "my-terminal-session"
 ```
 
-The feedback is printed to stdout. If the window times out or closes empty, the command prints an empty line.
+Stdout = **Answer**; empty line on timeout / empty submit. The IDE runs **`relay mcp`** only — subcommands, no positional args.
 
-## How It Works
-
-1. An AI IDE calls `interactive_feedback`.
-2. The Rust server checks auto-reply rules first.
-3. Otherwise it launches `relay-gui` with the summary and temporary file paths.
-4. The Vue window reads its launch state, watches the control file for timeout or cancellation, and writes feedback to a temp file on submit.
-5. The server waits for the GUI process to exit, reads the result file, and returns the text to the AI IDE.
-
-## Contributing
-
-Contributions, bug reports, and platform-specific feedback are welcome. Please keep changes aligned with the existing MCP contract, the Relay brand, and the cross-platform behavior.
+---
 
 ## License
 
-MIT
+[MIT](LICENSE)

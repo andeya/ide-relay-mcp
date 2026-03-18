@@ -1,8 +1,52 @@
-build/
-dist/
+# --- Dependencies ---
 node_modules/
+
+# --- Frontend build (Vite) ---
+dist/
+.vite/
+
+# --- Rust / Cargo ---
 target/
 src-tauri/target/
-src-tauri/gen/
-*.log
+**/*.rs.bk
+# Uncomment if you use local Cargo config overrides:
+# .cargo/config.toml.local
 
+# --- Tauri ---
+src-tauri/gen/
+
+# --- Misc build / local CMake (if any) ---
+build/
+
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Logs & debug ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- OS ---
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- Editors / IDE ---
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Test & coverage (if added later) ---
+coverage/
+.nyc_output/
+*.lcov
+
+# --- Optional: local MCP overrides (uncomment if you keep secrets in a copy) ---
+# mcp.local.json

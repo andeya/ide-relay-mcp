@@ -1,260 +1,466 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+/**
+ * Relay GUI: Q&A (retell + Answer), composer, settings / MCP install.
+ */
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { locale, t } from "./i18n";
+import { useFeedbackWindow } from "./composables/useFeedbackWindow";
+import { useMcpAndPathSettings } from "./composables/useMcpAndPathSettings";
+import {
+  getRelayRulePrompt,
+  getRelayRulePromptEn,
+  getRelayRulePromptZh,
+  type RulePromptMode,
+} from "./cursorRulesTemplates";
+import type { SettingsSegment } from "./types/relay-app";
+import QaReplyAttachments from "./components/QaReplyAttachments.vue";
+import { parseRelayFeedbackReply } from "./utils/parseRelayFeedbackReply";
+import { safeMarkdownToHtml } from "./utils/safeMarkdown";
 
-type LaunchState = {
-  summary: string;
-  result_file: string;
-  control_file: string;
-  title: string;
-};
+const lightboxSrc = ref<string | null>(null);
+const windowDock = ref<"left" | "center" | "right">("left");
+const mcpPaused = ref(false);
+const qaScrollEndRef = ref<HTMLElement | null>(null);
 
-type ControlStatus = "active" | "timed_out" | "cancelled" | null;
-type DragDropUnlisten = (() => void) | undefined;
+function openLightbox(src: string) {
+  lightboxSrc.value = src;
+}
+function closeLightbox() {
+  lightboxSrc.value = null;
+}
+function parseUserReply(raw: string) {
+  return parseRelayFeedbackReply(raw);
+}
+function qaMd(html: string) {
+  return safeMarkdownToHtml(html);
+}
 
-const launch = ref<LaunchState | null>(null);
-const feedback = ref("");
-const status = ref<ControlStatus>(null);
-const dragActive = ref(false);
-const loading = ref(true);
-const error = ref("");
-let pollTimer: number | undefined;
-let unlistenDragDrop: DragDropUnlisten;
-let closing = false;
+const {
+  launch,
+  tabs,
+  activeTabId,
+  hasRealTabs,
+  tabLabel,
+  selectTab,
+  flashingTabIds,
+  feedback,
+  bindTextareaRef,
+  pendingImages,
+  dragActive,
+  loading,
+  error,
+  expired,
+  composerIdle,
+  status,
+  statusLabel,
+  submit,
+  requestCloseTab,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onComposerPaste,
+  onKeydown,
+  onComposerCompositionStart,
+  onComposerCompositionEnd,
+  initAfterLocale,
+  setWindowTitle,
+  qaRounds,
+  addImageFiles,
+  removePendingImage,
+} = useFeedbackWindow();
 
-const isMac = navigator.platform.toUpperCase().includes("MAC");
-const submitShortcut = computed(() => (isMac ? "Cmd+Enter" : "Ctrl+Enter"));
-const expired = computed(() => status.value === "timed_out" || status.value === "cancelled");
-const statusLabel = computed(() => {
-  if (status.value === "timed_out") {
-    return "Timed out";
+/** Header pill: session label from MCP, or tab title (e.g. Chat N) when session_title is empty. */
+const headerChatPill = computed(() => {
+  void locale.value;
+  const L = launch.value;
+  if (!L || L.is_preview) return null;
+  const st = (L.session_title || "").trim();
+  if (st) {
+    return { badge: t("mainSessionBadge"), text: st };
   }
-  if (status.value === "cancelled") {
-    return "Cancelled";
+  const title = (L.title || "").trim();
+  if (title) {
+    return { badge: t("mainTabBadge"), text: title };
   }
-  return "Awaiting feedback";
+  return null;
 });
-const submitLabel = computed(() => (expired.value ? "Close" : `Submit feedback (${submitShortcut.value})`));
 
-async function setWindowTitle() {
-  const window = getCurrentWindow();
-  if (!launch.value) {
-    await window.setTitle("Relay MCP");
-    return;
+const attachInputRef = ref<HTMLInputElement | null>(null);
+
+function onAttachChange(e: Event) {
+  const t = e.target as HTMLInputElement;
+  if (t.files?.length) {
+    addImageFiles(t.files);
   }
-
-  if (status.value === "timed_out") {
-    await window.setTitle("Relay MCP [Timed out]");
-    return;
-  }
-
-  if (status.value === "cancelled") {
-    await window.setTitle("Relay MCP [Cancelled]");
-    return;
-  }
-
-  await window.setTitle(launch.value.title);
+  t.value = "";
 }
 
-async function loadLaunchState() {
-  const state = await invoke<LaunchState>("get_launch_state");
-  launch.value = state;
-  feedback.value = "";
-  loading.value = false;
-  error.value = "";
-  await setWindowTitle();
+const summaryScrollRef = ref<HTMLElement | null>(null);
+
+function scrollQaToBottom() {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const end = qaScrollEndRef.value;
+      const el = summaryScrollRef.value;
+      if (end) {
+        end.scrollIntoView({ block: "end", behavior: "instant" });
+      } else if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+  });
 }
 
-async function refreshStatus() {
-  if (!launch.value || closing) {
-    return;
-  }
+watch(
+  qaRounds,
+  async () => {
+    await nextTick();
+    scrollQaToBottom();
+  },
+  { deep: true, immediate: true },
+);
 
+const {
+  mcpJson,
+  mcpCursorInstalled,
+  cursorMcpPath,
+  mcpWindsurfInstalled,
+  windsurfMcpPath,
+  mcpWindsurfBusy,
+  hubMsg,
+  hubErr,
+  hubInstallBusy,
+  hubUninstallBusy,
+  mcpCursorBusy,
+  copyToast,
+  pathEnv,
+  pathEnvMsg,
+  pathEnvErr,
+  pathEnvBusy,
+  ideHintsBlock,
+  refreshMcpHub,
+  copyMcpJson,
+  doFullInstall,
+  runFullUninstall,
+  installCursorMcpOnly,
+  uninstallCursorMcpOnly,
+  installWindsurfMcpOnly,
+  uninstallWindsurfMcpOnly,
+  configureRelayPath,
+} = useMcpAndPathSettings();
+
+/** UI copy bundle for the template (reactive to locale). */
+const strings = computed(() => {
+  void locale.value;
+  return {
+    brand: t("brand"),
+    appTitle: t("appTitle"),
+    subtitle: t("subtitle"),
+    hint: t("hint"),
+    mainHintPreview: t("mainHintPreview"),
+    mainSummaryReadonly: t("mainSummaryReadonly"),
+    tabStripAria: t("tabStripAria"),
+    tabCloseAria: t("tabCloseAria"),
+    tabCloseTitle: t("tabCloseTitle"),
+    windowDockAria: t("windowDockAria"),
+    windowDockLeft: t("windowDockLeft"),
+    windowDockCenter: t("windowDockCenter"),
+    windowDockRight: t("windowDockRight"),
+    dockBtnLeft: t("dockBtnLeft"),
+    dockBtnCenter: t("dockBtnCenter"),
+    dockBtnRight: t("dockBtnRight"),
+    qaHistoryTitle: t("qaHistoryTitle"),
+    qaAssistantTurn: t("qaAssistantTurn"),
+    qaUserFeedback: t("qaUserFeedback"),
+    composerMessage: t("composerMessage"),
+    composerHint: t("composerHint"),
+    composerAttach: t("composerAttach"),
+    composerThumbRemove: t("composerThumbRemove"),
+    composerImageZoomTitle: t("composerImageZoomTitle"),
+    imageLightboxClose: t("imageLightboxClose"),
+    composerSubmitIconTitle: t("composerSubmitIconTitle"),
+    composerSubmitIconAria: t("composerSubmitIconAria"),
+    composerSubmitDisabledPreview: t("composerSubmitDisabledPreview"),
+    composerSendShort: t("composerSendShort"),
+    composerSendCloseShort: t("composerSendCloseShort"),
+    composerImageAria: t("composerImageAria"),
+    composerAnswerSub: t("composerAnswerSub"),
+    qaPendingCurrent: t("qaPendingCurrent"),
+    qaPendingOther: t("qaPendingOther"),
+    qaSkipped: t("qaSkipped"),
+    qaEmptySubmit: t("qaEmptySubmit"),
+    feedback: t("feedback"),
+    placeholder: t("placeholder"),
+    composerIdlePlaceholder: t("composerIdlePlaceholder"),
+    ideBlockingHint: t("ideBlockingHint"),
+    noteExpired: t("noteExpired"),
+    close: t("close"),
+    loading: t("loading"),
+    noLaunch: t("noLaunch"),
+    mainSessionBadge: t("mainSessionBadge"),
+    pathEnvFolder: t("pathEnvFolder"),
+    pathEnvBtn: t("pathEnvBtn"),
+    pathEnvBusy: t("pathEnvBusy"),
+    segSetup: t("segSetup"),
+    setupTitle: t("setupTitle"),
+    setupInstallChangesNote: t("setupInstallChangesNote"),
+    mcpPauseTitle: t("mcpPauseTitle"),
+    mcpPauseHint: t("mcpPauseHint"),
+    mcpPauseSwitch: t("mcpPauseSwitch"),
+    mcpPauseSwitchTitle: t("mcpPauseSwitchTitle"),
+    mcpPauseStatusOn: t("mcpPauseStatusOn"),
+    mcpPauseStatusOff: t("mcpPauseStatusOff"),
+    setupLead: t("setupLead"),
+    setupAllReadyLead: t("setupAllReadyLead"),
+    setupStatus: t("setupStatus"),
+    setupChipPath: t("setupChipPath"),
+    setupPathExplain: t("setupPathExplain"),
+    setupChipCursor: t("setupChipCursor"),
+    setupCursorExplain: t("setupCursorExplain"),
+    setupChipWindsurf: t("setupChipWindsurf"),
+    setupWindsurfExplain: t("setupWindsurfExplain"),
+    setupConfigFile: t("setupConfigFile"),
+    setupBinDir: t("setupBinDir"),
+    setupNoInstallNeeded: t("setupNoInstallNeeded"),
+    setupUninstallOnlyHint: t("setupUninstallOnlyHint"),
+    setupOn: t("setupOn"),
+    setupOff: t("setupOff"),
+    setupBtnInstall: t("setupBtnInstall"),
+    setupBtnUninstall: t("setupBtnUninstall"),
+    setupInstallHint: t("setupInstallHint"),
+    setupUninstallHint: t("setupUninstallHint"),
+    setupToolParamsTitle: t("setupToolParamsTitle"),
+    setupToolParamsLead: t("setupToolParamsLead"),
+    setupParamSessionTitle: t("setupParamSessionTitle"),
+    setupParamClientTabId: t("setupParamClientTabId"),
+    setupCopyTitle: t("setupCopyTitle"),
+    setupCopyLead: t("setupCopyLead"),
+    mcpCopy: t("mcpCopy"),
+    setupAdvanced: t("setupAdvanced"),
+    setupAdvPathTitle: t("setupAdvPathTitle"),
+    setupAdvPathLead: t("setupAdvPathLead"),
+    setupAdvSingle: t("setupAdvSingle"),
+    setupJsonPreview: t("setupJsonPreview"),
+    setupIdeGuide: t("setupIdeGuide"),
+    mcpJsonTitle: t("mcpJsonTitle"),
+    mcpCursorFile: t("mcpCursorFile"),
+    mcpInCursor: t("mcpInCursor"),
+    mcpNotInCursor: t("mcpNotInCursor"),
+    mcpInstallCursorOnly: t("mcpInstallCursorOnly"),
+    mcpUninstallCursorOnly: t("mcpUninstallCursorOnly"),
+    mcpWindsurfFile: t("mcpWindsurfFile"),
+    mcpInWindsurf: t("mcpInWindsurf"),
+    mcpNotInWindsurf: t("mcpNotInWindsurf"),
+    mcpInstallWindsurfOnly: t("mcpInstallWindsurfOnly"),
+    mcpUninstallWindsurfOnly: t("mcpUninstallWindsurfOnly"),
+    mcpCursorBusy: t("mcpCursorBusy"),
+    mcpFullBusy: t("mcpFullBusy"),
+    settingsTitle: t("settingsTitle"),
+    appAuthorLine: t("appAuthorLine"),
+    appAuthorEmailAria: t("appAuthorEmailAria"),
+    settingsBack: t("settingsBack"),
+    ariaOpenSettings: t("ariaOpenSettings"),
+    settingsCheckStatus: t("settingsCheckStatus"),
+    settingsLangAria: t("settingsLangAria"),
+    settingsChecking: t("settingsChecking"),
+    mcpFullUninstallConfirm: t("mcpFullUninstallConfirm"),
+    setupUninstallConfirmBtn: t("setupUninstallConfirmBtn"),
+    setupUninstallCancel: t("setupUninstallCancel"),
+    segRulePrompts: t("segRulePrompts"),
+    rulePromptsTitle: t("rulePromptsTitle"),
+    rulePromptsLead: t("rulePromptsLead"),
+    rulePromptsSectionPreview: t("rulePromptsSectionPreview"),
+    rulePromptsSectionIde: t("rulePromptsSectionIde"),
+    rulePromptsModeMild: t("rulePromptsModeMild"),
+    rulePromptsModeMildDesc: t("rulePromptsModeMildDesc"),
+    rulePromptsModeLoop: t("rulePromptsModeLoop"),
+    rulePromptsModeLoopDesc: t("rulePromptsModeLoopDesc"),
+    rulePromptsModeTool: t("rulePromptsModeTool"),
+    rulePromptsModeToolDesc: t("rulePromptsModeToolDesc"),
+    rulePromptsCopy: t("rulePromptsCopy"),
+    rulePromptsLabelEn: t("rulePromptsLabelEn"),
+    rulePromptsLabelZh: t("rulePromptsLabelZh"),
+    rulePromptsLoopRisk: t("rulePromptsLoopRisk"),
+  };
+});
+
+const showUninstallConfirm = ref(false);
+
+function onUninstallClick() {
+  showUninstallConfirm.value = true;
+}
+
+function cancelUninstallConfirm() {
+  showUninstallConfirm.value = false;
+}
+
+async function confirmAndRunUninstall() {
+  showUninstallConfirm.value = false;
+  await runFullUninstall();
+}
+
+/** PATH + Cursor MCP + Windsurf MCP all OK — hide primary install. */
+const setupAllConfigured = computed(
+  () =>
+    Boolean(
+      pathEnv.value?.configured &&
+        mcpCursorInstalled.value &&
+        mcpWindsurfInstalled.value,
+    ),
+);
+
+const setupAnythingInstalled = computed(() =>
+  Boolean(
+    pathEnv.value &&
+      (pathEnv.value.configured ||
+        mcpCursorInstalled.value ||
+        mcpWindsurfInstalled.value),
+  ),
+);
+
+const uiView = ref<"main" | "settings">("main");
+watch(hasRealTabs, (v) => {
+  if (v) uiView.value = "main";
+});
+const settingsSeg = ref<SettingsSegment>("setup");
+const settingsCheckBusy = ref(false);
+const rulePromptMode = ref<RulePromptMode>("mild");
+const rulesCopyToast = ref("");
+const rulePromptEn = computed(() =>
+  getRelayRulePromptEn(rulePromptMode.value, undefined),
+);
+const rulePromptZh = computed(() =>
+  getRelayRulePromptZh(rulePromptMode.value, undefined),
+);
+
+const retellParamHintLine = computed(() =>
+  locale.value === "zh"
+    ? "完整 `retell` 经本机 HTTP 传递，无命令行长度限制。"
+    : "Full `retell` is sent over local HTTP (no shell arg limit).",
+);
+
+const rulePromptsIdeGuide = computed(() => {
+  void locale.value;
+  return t("rulePromptsIdeBody", {
+    cursorPath: cursorMcpPath.value || "~/.cursor/mcp.json",
+    windsurfPath: windsurfMcpPath.value || "~/.codeium/windsurf/mcp_config.json",
+  });
+});
+
+async function copyRulePrompt() {
+  rulesCopyToast.value = "";
   try {
-    const next = await invoke<ControlStatus>("read_feedback_status");
-    if (!next || next === "active" || next === status.value) {
+    await navigator.clipboard.writeText(
+      getRelayRulePrompt(rulePromptMode.value, undefined),
+    );
+    rulesCopyToast.value = t("rulePromptsCopied");
+  } catch {
+    rulesCopyToast.value = t("rulePromptsCopyErr");
+  }
+  setTimeout(() => {
+    rulesCopyToast.value = "";
+  }, 2500);
+}
+
+async function openSettings() {
+  uiView.value = "settings";
+  void refreshMcpPaused();
+  settingsCheckBusy.value = true;
+  try {
+    await refreshMcpHub();
+  } finally {
+    settingsCheckBusy.value = false;
+  }
+}
+
+async function checkInstallStatus() {
+  if (settingsCheckBusy.value) return;
+  settingsCheckBusy.value = true;
+  try {
+    await refreshMcpHub();
+  } finally {
+    settingsCheckBusy.value = false;
+  }
+}
+
+function closeSettings() {
+  uiView.value = "main";
+}
+
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    if (lightboxSrc.value) {
+      closeLightbox();
       return;
     }
-
-    status.value = next;
-    dragActive.value = false;
-    await setWindowTitle();
-
-    if (!feedback.value.trim()) {
-      await closeWindow();
+    if (uiView.value === "settings") {
+      closeSettings();
     }
-  } catch {
-    // Ignore transient status read failures while the request is active.
   }
 }
 
-async function closeWindow() {
-  if (closing) {
-    return;
-  }
-  closing = true;
-  clearInterval(pollTimer);
-  unlistenDragDrop?.();
-  await getCurrentWindow().close();
-}
-
-async function submit() {
-  if (!launch.value || closing) {
-    return;
-  }
-
-  if (expired.value) {
-    await closeWindow();
-    return;
-  }
-
+async function refreshMcpPaused() {
   try {
-    await invoke("submit_feedback", { feedback: feedback.value });
-    await closeWindow();
+    mcpPaused.value = await invoke<boolean>("get_mcp_paused");
+  } catch {
+    /* ignore */
+  }
+}
+
+async function onMcpPausedChange() {
+  const next = mcpPaused.value;
+  try {
+    await invoke("set_mcp_paused", { paused: next });
+  } catch (err) {
+    mcpPaused.value = !next;
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function applyWindowDock(d: "left" | "center" | "right") {
+  try {
+    await invoke("set_window_dock", { dock: d });
+    windowDock.value = d;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
 }
 
-function insertPaths(paths: string[]) {
-  if (!paths.length) {
-    return;
-  }
-
-  const block = paths.join("\n");
-  if (!feedback.value) {
-    feedback.value = block;
-    return;
-  }
-
-  if (!feedback.value.endsWith("\n")) {
-    feedback.value += "\n";
-  }
-  feedback.value += block;
-}
-
-function fileUrlToPath(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
+async function setLang(code: "en" | "zh") {
+  if (locale.value === code) return;
+  locale.value = code;
   try {
-    const url = new URL(trimmed);
-    if (url.protocol !== "file:") {
-      return null;
-    }
-
-    let pathname = decodeURIComponent(url.pathname);
-    if (/^\/[A-Za-z]:/.test(pathname)) {
-      pathname = pathname.slice(1);
-    }
-    return pathname;
+    await invoke("set_ui_locale", { lang: code });
   } catch {
-    return null;
+    /* Keep UI locale if disk write fails. */
   }
-}
-
-function extractClipboardPaths(event: ClipboardEvent): string[] {
-  const data = event.clipboardData;
-  if (!data) {
-    return [];
-  }
-
-  const uriList = data
-    .getData("text/uri-list")
-    .split(/\r?\n/)
-    .map(fileUrlToPath)
-    .filter((value): value is string => Boolean(value));
-  if (uriList.length > 0) {
-    return uriList;
-  }
-
-  const plainText = data.getData("text/plain").trim();
-  if (plainText) {
-    const plainPath = fileUrlToPath(plainText);
-    if (plainPath) {
-      return [plainPath];
-    }
-
-    return plainText
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-  }
-
-  return Array.from(data.files)
-    .map((file) => file.name)
-    .filter(Boolean);
-}
-
-function onDragOver(event: DragEvent) {
-  if (expired.value || closing) {
-    return;
-  }
-  event.preventDefault();
-  dragActive.value = true;
-}
-
-function onDragLeave(event: DragEvent) {
-  if (expired.value || closing) {
-    return;
-  }
-  event.preventDefault();
-  dragActive.value = false;
-}
-
-function onDrop(event: DragEvent) {
-  if (expired.value || closing) {
-    return;
-  }
-  event.preventDefault();
-  dragActive.value = false;
-}
-
-function onPaste(event: ClipboardEvent) {
-  if (expired.value || closing) {
-    return;
-  }
-  const paths = extractClipboardPaths(event);
-  if (paths.length > 0) {
-    event.preventDefault();
-    insertPaths(paths);
-  }
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    void submit();
-  }
+  await setWindowTitle();
 }
 
 onMounted(async () => {
   try {
-    await loadLaunchState();
-    unlistenDragDrop = await getCurrentWebview().onDragDropEvent((event) => {
-      if (expired.value || closing) {
-        return;
-      }
-
-      if (event.payload.type === "over") {
-        dragActive.value = true;
-        return;
-      }
-
-      dragActive.value = false;
-      if (event.payload.type === "drop") {
-        insertPaths(event.payload.paths);
-      }
-    });
-    pollTimer = window.setInterval(() => {
-      void refreshStatus();
-    }, 500);
-    window.addEventListener("paste", onPaste);
-    await refreshStatus();
+    const saved = await invoke<string>("get_ui_locale");
+    if (saved === "zh") {
+      locale.value = "zh";
+    }
+    await initAfterLocale();
+    try {
+      const d = await invoke<string>("get_window_dock");
+      if (d === "center" || d === "right") windowDock.value = d;
+      else windowDock.value = "left";
+    } catch {
+      /* ignore */
+    }
+    await refreshMcpPaused();
+    window.addEventListener("keydown", onGlobalKeydown);
   } catch (err) {
     loading.value = false;
     error.value = err instanceof Error ? err.message : String(err);
@@ -262,64 +468,935 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  clearInterval(pollTimer);
-  unlistenDragDrop?.();
-  window.removeEventListener("paste", onPaste);
+  window.removeEventListener("keydown", onGlobalKeydown);
 });
 </script>
 
 <template>
   <main
     class="shell"
-    :class="{ dragActive }"
+    :class="{
+      dragActive,
+      settingsOpen: uiView === 'settings',
+      shellMainFill: uiView === 'main',
+    }"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"
   >
-    <section class="panel">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Relay</p>
-          <h1>Relay MCP</h1>
-          <p class="subtitle">Human feedback layer for AI IDEs</p>
+    <!-- Main: feedback-first layout -->
+    <section v-show="uiView === 'main'" class="panel panelMain mainWork">
+      <header class="mainTopBar">
+        <div class="mainTopBarLeft">
+          <span class="mainBrand">{{ strings.brand }}</span>
+          <h1 class="mainTitle">{{ strings.appTitle }}</h1>
+          <span
+            v-if="headerChatPill"
+            class="mainSessionPill"
+            :title="headerChatPill.text"
+          >
+            <span class="mainSessionPillPrefix">{{ headerChatPill.badge }}</span>
+            {{ headerChatPill.text }}
+          </span>
+          <span class="statusPill mainStatusPill">{{ statusLabel }}</span>
         </div>
-        <span class="statusPill">{{ statusLabel }}</span>
+        <div class="mainTopBarRight">
+          <div
+            class="dockSeg"
+            role="group"
+            :aria-label="strings.windowDockAria"
+          >
+            <button
+              type="button"
+              class="dockSegBtn"
+              :class="{ active: windowDock === 'left' }"
+              :aria-pressed="windowDock === 'left'"
+              :title="strings.windowDockLeft"
+              @click="applyWindowDock('left')"
+            >
+              {{ strings.dockBtnLeft }}
+            </button>
+            <button
+              type="button"
+              class="dockSegBtn"
+              :class="{ active: windowDock === 'center' }"
+              :aria-pressed="windowDock === 'center'"
+              :title="strings.windowDockCenter"
+              @click="applyWindowDock('center')"
+            >
+              {{ strings.dockBtnCenter }}
+            </button>
+            <button
+              type="button"
+              class="dockSegBtn"
+              :class="{ active: windowDock === 'right' }"
+              :aria-pressed="windowDock === 'right'"
+              :title="strings.windowDockRight"
+              @click="applyWindowDock('right')"
+            >
+              {{ strings.dockBtnRight }}
+            </button>
+          </div>
+          <button
+            type="button"
+            class="iconGear"
+            :aria-label="strings.ariaOpenSettings"
+            title="⚙"
+            @click="openSettings"
+          >
+            ⚙️
+          </button>
+        </div>
       </header>
 
-      <p class="hint">
-        Summaries stay read-only. Feedback supports <kbd>{{ submitShortcut }}</kbd>, file drag, and paste.
-      </p>
+      <div
+        v-if="tabs.length > 0"
+        class="tabStrip"
+        role="tablist"
+        :aria-label="strings.tabStripAria"
+      >
+        <div
+          v-for="tab in tabs"
+          :key="tab.tab_id"
+          class="tabStripCell"
+        >
+          <button
+            type="button"
+            role="tab"
+            class="tabBtn"
+            :class="{
+              active: tab.tab_id === activeTabId,
+              tabBtnFlash: flashingTabIds.has(tab.tab_id),
+            }"
+            :aria-selected="tab.tab_id === activeTabId"
+            @click="selectTab(tab.tab_id)"
+          >
+            {{ tabLabel(tab) }}
+          </button>
+          <button
+            type="button"
+            class="tabCloseBadge"
+            :aria-label="strings.tabCloseAria"
+            :title="strings.tabCloseTitle"
+            @click.stop="requestCloseTab(tab)"
+          >
+            <svg
+              class="tabCloseIcon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
-      <label class="field">
-        <span>Summary</span>
-        <textarea v-if="launch" :value="launch.summary" readonly rows="7" />
-        <textarea v-else readonly rows="7" :value="loading ? 'Loading…' : 'No launch data available.'" />
-        <p v-if="error" class="error">{{ error }}</p>
-      </label>
+      <div class="mainColumn mainColumnAgent">
+        <div class="mainContextZone mainContextZoneScroll">
+          <div class="mainContextHead">
+            <span class="mainContextTitle">{{ strings.qaHistoryTitle }}</span>
+            <span class="mainContextSub">{{ strings.mainSummaryReadonly }}</span>
+          </div>
+          <div
+            v-if="qaRounds.length > 0"
+            ref="summaryScrollRef"
+            class="mainSummaryScroll"
+            tabindex="0"
+            role="region"
+            :aria-label="strings.qaHistoryTitle"
+          >
+            <article
+              v-for="(round, idx) in qaRounds"
+              :key="'q' + idx"
+              class="qaRoundCard"
+            >
+              <div class="qaRoundBlock qaRoundBlock--agent">
+                <div class="qaRoundAiRibbon">
+                  <span class="qaRoundAiRibbonText">{{ strings.qaAssistantTurn }}</span>
+                </div>
+                <div
+                  v-if="round.retell?.trim()"
+                  class="qaRetellPanel"
+                >
+                  <div class="qaRoundAgentScroll">
+                    <div
+                      class="qaRoundMd qaRoundMd--agent"
+                      v-html="qaMd(round.retell)"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div
+                v-if="round.submitted && round.skipped"
+                class="qaRoundBlock qaRoundBlock--skipped"
+              >
+                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
+                <p class="qaRoundMuted">{{ strings.qaSkipped }}</p>
+              </div>
+              <div
+                v-else-if="round.submitted && round.reply?.trim()"
+                class="qaRoundBlock qaRoundBlock--user"
+              >
+                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
+                <div
+                  v-if="parseUserReply(round.reply).text"
+                  class="qaRoundMd qaRoundMd--user"
+                  v-html="qaMd(parseUserReply(round.reply).text)"
+                />
+                <QaReplyAttachments
+                  :paths="parseUserReply(round.reply).imagePaths"
+                  :zoom-title="strings.composerImageZoomTitle"
+                  @preview="openLightbox"
+                />
+              </div>
+              <div
+                v-else-if="round.submitted"
+                class="qaRoundBlock qaRoundBlock--user qaRoundBlock--empty"
+              >
+                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
+                <p class="qaRoundMuted">{{ strings.qaEmptySubmit }}</p>
+              </div>
+              <div
+                v-else-if="round.tab_id === activeTabId"
+                class="qaRoundBlock qaRoundBlock--pending"
+              >
+                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
+                <p class="qaRoundHint">{{ strings.qaPendingCurrent }}</p>
+              </div>
+              <div v-else class="qaRoundBlock qaRoundBlock--pendingMuted">
+                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
+                <p class="qaRoundMuted">{{ strings.qaPendingOther }}</p>
+              </div>
+            </article>
+            <div
+              ref="qaScrollEndRef"
+              class="qaScrollEndAnchor"
+              aria-hidden="true"
+            />
+          </div>
+          <div v-else class="mainSummaryScroll mainSummaryScroll--empty">
+            <p class="mainSummaryPlaceholder">{{ loading ? strings.loading : strings.noLaunch }}</p>
+          </div>
+        </div>
 
-      <label class="field">
-        <span>Feedback</span>
-        <textarea
-          v-model="feedback"
-          rows="8"
-          :readonly="expired"
-          placeholder="Write concise, actionable feedback..."
-          @keydown="onKeydown"
-        />
-        <p v-if="expired" class="note">This request has already timed out or been cancelled. Your text can be reviewed locally, but it can no longer be submitted.</p>
-      </label>
-
-      <div class="footer">
-        <p class="meta">
-          <strong>{{ statusLabel }}</strong>
-          <span v-if="launch"> · {{ launch.result_file }}</span>
-        </p>
-        <div class="actions">
-          <button class="secondary" type="button" @click="closeWindow">Close</button>
-          <button class="primary" type="button" @click="submit">{{ submitLabel }}</button>
+        <div class="mainFooterFixed">
+          <div class="mainFeedbackZone">
+            <div class="mainFieldHeader mainFieldHeader--me">
+              <div class="mainFieldTitleGroup">
+                <span class="mainFieldTitle">{{ strings.composerMessage }}</span>
+                <span class="mainFieldTitleGloss">{{
+                  strings.composerAnswerSub
+                }}</span>
+              </div>
+              <span class="mainFieldSub">{{
+                launch?.is_preview
+                  ? strings.mainHintPreview
+                  : strings.composerHint
+              }}</span>
+            </div>
+            <p
+              v-if="
+                launch &&
+                !launch.is_preview &&
+                status === 'active' &&
+                !expired
+              "
+              class="composerIdeBlockingHint"
+            >
+              {{ strings.ideBlockingHint }}
+            </p>
+            <div
+              class="composerShell"
+              :class="{ composerShellDrag: dragActive }"
+            >
+              <div class="composerCard">
+                <div
+                  v-if="pendingImages.length && !expired && !composerIdle"
+                  class="composerThumbRow"
+                  :aria-label="strings.composerImageAria"
+                >
+                  <div
+                    v-for="img in pendingImages"
+                    :key="img.id"
+                    class="composerThumbWrap"
+                  >
+                    <img
+                      class="composerThumb composerThumb--zoom"
+                      :src="img.previewUrl"
+                      alt=""
+                      :title="strings.composerImageZoomTitle"
+                      @click="openLightbox(img.previewUrl)"
+                    />
+                    <button
+                      type="button"
+                      class="composerThumbRemove"
+                      :aria-label="strings.composerThumbRemove"
+                      @click="removePendingImage(img.id)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  :ref="bindTextareaRef"
+                  v-model="feedback"
+                  class="mainInputComposer composerTextarea"
+                  :class="{
+                    'composerTextarea--thumbs':
+                      pendingImages.length && !expired && !composerIdle,
+                  }"
+                  :readonly="expired || composerIdle"
+                  :placeholder="
+                    composerIdle
+                      ? strings.composerIdlePlaceholder
+                      : strings.placeholder
+                  "
+                  @paste="onComposerPaste"
+                  @keydown="onKeydown"
+                  @compositionstart="onComposerCompositionStart"
+                  @compositionend="onComposerCompositionEnd"
+                />
+                <div
+                  v-if="!expired && !composerIdle"
+                  class="composerFooterBar composerFooterBar--icons"
+                >
+                  <input
+                    ref="attachInputRef"
+                    type="file"
+                    class="srOnly"
+                    accept="image/*"
+                    multiple
+                    @change="onAttachChange"
+                  />
+                  <button
+                    type="button"
+                    class="composerIconBtn composerIconBtnAttach"
+                    :title="strings.composerAttach"
+                    :aria-label="strings.composerAttach"
+                    @click="attachInputRef?.click()"
+                  >
+                    <svg
+                      class="composerIconSvg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <path d="M21 15l-5-5L5 21" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="composerIconBtn composerIconBtnSend"
+                    :title="
+                      launch?.is_preview
+                        ? strings.composerSubmitDisabledPreview
+                        : strings.composerSubmitIconTitle
+                    "
+                    :aria-label="
+                      launch?.is_preview
+                        ? strings.composerSubmitDisabledPreview
+                        : strings.composerSubmitIconAria
+                    "
+                    :disabled="Boolean(launch?.is_preview)"
+                    @click="submit(false)"
+                  >
+                    <svg
+                      class="composerIconSvg composerIconSvg--send"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.25"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 5v14M5 12l7-7 7 7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p v-if="expired" class="note mainNote">{{ strings.noteExpired }}</p>
+            <p v-if="error" class="error mainError">{{ error }}</p>
+          </div>
         </div>
       </div>
     </section>
+
+    <!-- Settings: segmented -->
+    <section v-show="uiView === 'settings'" class="panel panelSettings">
+      <header class="settingsTop">
+        <button type="button" class="settingsBackBtn" @click="closeSettings">
+          ← {{ strings.settingsBack }}
+        </button>
+        <h2 class="settingsPageTitle">{{ strings.settingsTitle }}</h2>
+        <div class="settingsTopActions">
+          <div
+            class="langToggle langToggleHeader"
+            role="group"
+            :aria-label="strings.settingsLangAria"
+          >
+            <button
+              type="button"
+              class="langBtn"
+              :class="{ active: locale === 'en' }"
+              @click="setLang('en')"
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              class="langBtn"
+              :class="{ active: locale === 'zh' }"
+              @click="setLang('zh')"
+            >
+              中文
+            </button>
+          </div>
+          <button
+            type="button"
+            class="secondary settingsCheckBtn settingsCheckBtn--icon"
+            :disabled="settingsCheckBusy"
+            :title="strings.settingsCheckStatus"
+            :aria-label="strings.settingsCheckStatus"
+            @click="checkInstallStatus"
+          >
+            <span class="settingsCheckIcon" aria-hidden="true">↻</span>
+            <span class="srOnly">{{
+              settingsCheckBusy ? strings.settingsChecking : strings.settingsCheckStatus
+            }}</span>
+          </button>
+        </div>
+      </header>
+
+      <nav class="segBar" role="tablist" :aria-label="strings.settingsTitle">
+        <button
+          type="button"
+          role="tab"
+          class="segTab"
+          :class="{ active: settingsSeg === 'setup' }"
+          :aria-selected="settingsSeg === 'setup'"
+          @click="settingsSeg = 'setup'"
+        >
+          {{ strings.segSetup }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="segTab"
+          :class="{ active: settingsSeg === 'rulePrompts' }"
+          :aria-selected="settingsSeg === 'rulePrompts'"
+          @click="
+            settingsSeg = 'rulePrompts';
+            refreshMcpHub();
+          "
+        >
+          {{ strings.segRulePrompts }}
+        </button>
+      </nav>
+
+      <div class="settingsPane">
+        <div v-show="settingsSeg === 'setup'" class="segPanel">
+          <div class="setupPage">
+            <header class="setupHero">
+              <h3 class="setupHeroTitle">{{ strings.setupTitle }}</h3>
+              <p
+                class="setupHeroLead"
+                :class="{ 'setupHeroLead--ok': setupAllConfigured }"
+              >
+                {{
+                  setupAllConfigured
+                    ? strings.setupAllReadyLead
+                    : strings.setupLead
+                }}
+              </p>
+            </header>
+
+            <section
+              class="setupMcpPauseCard"
+              :aria-label="strings.mcpPauseTitle"
+            >
+              <div class="setupMcpPauseHead">
+                <h3 class="setupMcpPauseTitle">{{ strings.mcpPauseTitle }}</h3>
+                <span
+                  class="setupMcpPauseBadge"
+                  :class="{ 'setupMcpPauseBadge--on': mcpPaused }"
+                  >{{
+                    mcpPaused
+                      ? strings.mcpPauseStatusOn
+                      : strings.mcpPauseStatusOff
+                  }}</span
+                >
+              </div>
+              <p class="setupMcpPauseHint">{{ strings.mcpPauseHint }}</p>
+              <label
+                class="setupMcpPauseSwitch"
+                :title="strings.mcpPauseSwitchTitle"
+              >
+                <input
+                  v-model="mcpPaused"
+                  type="checkbox"
+                  class="setupMcpPauseInput"
+                  :aria-label="strings.mcpPauseSwitchTitle"
+                  @change="onMcpPausedChange"
+                />
+                <span>{{ strings.mcpPauseSwitch }}</span>
+              </label>
+            </section>
+
+            <p class="setupInstallChangesNote note">{{ strings.setupInstallChangesNote }}</p>
+
+            <section class="setupStatus" :aria-label="strings.setupStatus">
+              <span class="setupStatusLabel">{{ strings.setupStatus }}</span>
+              <ul v-if="pathEnv" class="setupStatusList">
+                <li class="setupStatusItem">
+                  <div class="setupStatusItemTop">
+                    <span class="setupStatusItemTitle">{{
+                      strings.setupChipPath
+                    }}</span>
+                    <span
+                      class="setupStatusBadge"
+                      :class="{
+                        'setupStatusBadge--ok': pathEnv.configured,
+                      }"
+                      >{{
+                        pathEnv.configured ? strings.setupOn : strings.setupOff
+                      }}</span>
+                  </div>
+                  <p class="setupStatusExplain">{{ strings.setupPathExplain }}</p>
+                  <p class="setupStatusMeta">
+                    <span class="setupStatusMetaKey">{{
+                      strings.setupBinDir
+                    }}</span>
+                    <code class="setupStatusCode">{{ pathEnv.bin_dir }}</code>
+                  </p>
+                </li>
+                <li class="setupStatusItem">
+                  <div class="setupStatusItemTop">
+                    <span class="setupStatusItemTitle">{{
+                      strings.setupChipCursor
+                    }}</span>
+                    <span
+                      class="setupStatusBadge"
+                      :class="{
+                        'setupStatusBadge--ok': mcpCursorInstalled,
+                      }"
+                      >{{
+                        mcpCursorInstalled ? strings.setupOn : strings.setupOff
+                      }}</span>
+                  </div>
+                  <p class="setupStatusExplain">
+                    {{ strings.setupCursorExplain }}
+                  </p>
+                  <p class="setupStatusMeta">
+                    <span class="setupStatusMetaKey">{{
+                      strings.setupConfigFile
+                    }}</span>
+                    <code class="setupStatusCode">{{ cursorMcpPath }}</code>
+                  </p>
+                </li>
+                <li class="setupStatusItem">
+                  <div class="setupStatusItemTop">
+                    <span class="setupStatusItemTitle">{{
+                      strings.setupChipWindsurf
+                    }}</span>
+                    <span
+                      class="setupStatusBadge"
+                      :class="{
+                        'setupStatusBadge--ok': mcpWindsurfInstalled,
+                      }"
+                      >{{
+                        mcpWindsurfInstalled ? strings.setupOn : strings.setupOff
+                      }}</span>
+                  </div>
+                  <p class="setupStatusExplain">
+                    {{ strings.setupWindsurfExplain }}
+                  </p>
+                  <p class="setupStatusMeta">
+                    <span class="setupStatusMetaKey">{{
+                      strings.setupConfigFile
+                    }}</span>
+                    <code class="setupStatusCode">{{ windsurfMcpPath }}</code>
+                  </p>
+                </li>
+              </ul>
+              <p v-else class="note">{{ strings.loading }}</p>
+            </section>
+
+            <section class="setupPrimaryCard">
+              <p
+                v-if="pathEnv && setupAllConfigured"
+                class="setupNoInstallNote"
+              >
+                {{ strings.setupNoInstallNeeded }}
+              </p>
+              <div
+                class="setupPrimaryBtns"
+                :class="{
+                  'setupPrimaryBtns--installHidden': setupAllConfigured,
+                }"
+              >
+                <button
+                  v-if="pathEnv && !setupAllConfigured"
+                  type="button"
+                  class="primary setupInstallBtn"
+                  :disabled="hubInstallBusy || hubUninstallBusy"
+                  @click="doFullInstall"
+                >
+                  {{
+                    hubInstallBusy ? strings.mcpFullBusy : strings.setupBtnInstall
+                  }}
+                </button>
+                <button
+                  v-if="pathEnv && setupAnythingInstalled"
+                  type="button"
+                  class="secondary btnDanger setupUninstallBtn"
+                  :class="{ 'setupUninstallBtn--full': setupAllConfigured }"
+                  :disabled="
+                    hubInstallBusy ||
+                    hubUninstallBusy ||
+                    showUninstallConfirm
+                  "
+                  @click="onUninstallClick"
+                >
+                  {{
+                    hubUninstallBusy
+                      ? strings.mcpFullBusy
+                      : strings.setupBtnUninstall
+                  }}
+                </button>
+              </div>
+              <p
+                v-if="pathEnv && !setupAnythingInstalled"
+                class="setupUninstallHintOnly note"
+              >
+                {{ strings.setupUninstallOnlyHint }}
+              </p>
+              <div
+                v-if="showUninstallConfirm"
+                class="uninstallConfirmBar"
+                role="dialog"
+                aria-modal="true"
+                :aria-label="strings.setupBtnUninstall"
+              >
+                <p class="uninstallConfirmText">
+                  {{ strings.mcpFullUninstallConfirm }}
+                </p>
+                <div class="uninstallConfirmBtns">
+                  <button
+                    type="button"
+                    class="secondary"
+                    @click="cancelUninstallConfirm"
+                  >
+                    {{ strings.setupUninstallCancel }}
+                  </button>
+                  <button
+                    type="button"
+                    class="primary btnDanger"
+                    @click="confirmAndRunUninstall"
+                  >
+                    {{ strings.setupUninstallConfirmBtn }}
+                  </button>
+                </div>
+              </div>
+              <p
+                v-if="pathEnv && !setupAllConfigured"
+                class="setupPrimaryHint"
+              >
+                {{ strings.setupInstallHint }}
+              </p>
+              <p
+                v-if="pathEnv && setupAnythingInstalled"
+                class="setupPrimaryHint setupPrimaryHint--muted"
+              >
+                {{ strings.setupUninstallHint }}
+              </p>
+              <p v-if="hubMsg" class="note setupHubMsg">{{ hubMsg }}</p>
+              <p v-if="hubErr" class="error setupHubErr">{{ hubErr }}</p>
+            </section>
+
+            <section
+              class="setupToolParamsCard"
+              :aria-label="strings.setupToolParamsTitle"
+            >
+              <h4 class="setupSectionTitle">{{ strings.setupToolParamsTitle }}</h4>
+              <p class="setupSectionLead">{{ strings.setupToolParamsLead }}</p>
+              <ul class="setupToolParamsList">
+                <li>
+                  <code class="setupToolParamsCode">retell</code>
+                  <span class="setupToolParamsHint">{{ retellParamHintLine }}</span>
+                </li>
+                <li>{{ strings.setupParamSessionTitle }}</li>
+                <li>{{ strings.setupParamClientTabId }}</li>
+              </ul>
+            </section>
+
+            <section class="setupCopyCard">
+              <h4 class="setupSectionTitle">{{ strings.setupCopyTitle }}</h4>
+              <p class="setupSectionLead">{{ strings.setupCopyLead }}</p>
+              <div class="setupCopyRow">
+                <button type="button" class="secondary" @click="copyMcpJson">
+                  {{ strings.mcpCopy }}
+                </button>
+                <span v-if="copyToast" class="copyToast">{{ copyToast }}</span>
+              </div>
+            </section>
+
+            <details class="setupAdvanced">
+              <summary class="setupAdvancedSummary">{{ strings.setupAdvanced }}</summary>
+              <div class="setupAdvancedInner">
+                <div v-if="pathEnv" class="advBlock">
+                  <h5 class="advBlockTitle">{{ strings.setupAdvPathTitle }}</h5>
+                  <p class="advBlockLead">{{ strings.setupAdvPathLead }}</p>
+                  <code class="advPathCode">{{ pathEnv.bin_dir }}</code>
+                  <button
+                    v-if="!pathEnv.configured"
+                    type="button"
+                    class="secondary advPathBtn"
+                    :disabled="pathEnvBusy"
+                    @click="configureRelayPath"
+                  >
+                    {{ pathEnvBusy ? strings.pathEnvBusy : strings.pathEnvBtn }}
+                  </button>
+                  <p v-if="pathEnvMsg" class="note advNote">{{ pathEnvMsg }}</p>
+                  <p v-if="pathEnvErr" class="error advNote">{{ pathEnvErr }}</p>
+                </div>
+
+                <h5 class="advBlockTitle advBlockTitle--spaced">
+                  {{ strings.setupAdvSingle }}
+                </h5>
+                <div class="advIdeGrid">
+                  <div class="advIdeCol">
+                    <p class="advIdeHead">
+                      <strong>{{ strings.mcpCursorFile }}</strong>
+                      <span
+                        class="advIdeState"
+                        :class="{ ok: mcpCursorInstalled }"
+                      >
+                        {{
+                          mcpCursorInstalled
+                            ? strings.mcpInCursor
+                            : strings.mcpNotInCursor
+                        }}
+                      </span>
+                    </p>
+                    <div class="advIdeBtns">
+                      <button
+                        v-if="!mcpCursorInstalled"
+                        type="button"
+                        class="secondary"
+                        :disabled="mcpCursorBusy || mcpWindsurfBusy"
+                        @click="installCursorMcpOnly"
+                      >
+                        {{
+                          mcpCursorBusy
+                            ? strings.mcpCursorBusy
+                            : strings.mcpInstallCursorOnly
+                        }}
+                      </button>
+                      <button
+                        v-if="mcpCursorInstalled"
+                        type="button"
+                        class="secondary"
+                        :disabled="mcpCursorBusy || mcpWindsurfBusy"
+                        @click="uninstallCursorMcpOnly"
+                      >
+                        {{
+                          mcpCursorBusy
+                            ? strings.mcpCursorBusy
+                            : strings.mcpUninstallCursorOnly
+                        }}
+                      </button>
+                    </div>
+                    <code class="advIdePath">{{ cursorMcpPath }}</code>
+                  </div>
+                  <div class="advIdeCol">
+                    <p class="advIdeHead">
+                      <strong>{{ strings.mcpWindsurfFile }}</strong>
+                      <span
+                        class="advIdeState"
+                        :class="{ ok: mcpWindsurfInstalled }"
+                      >
+                        {{
+                          mcpWindsurfInstalled
+                            ? strings.mcpInWindsurf
+                            : strings.mcpNotInWindsurf
+                        }}
+                      </span>
+                    </p>
+                    <div class="advIdeBtns">
+                      <button
+                        v-if="!mcpWindsurfInstalled"
+                        type="button"
+                        class="secondary"
+                        :disabled="mcpWindsurfBusy || mcpCursorBusy"
+                        @click="installWindsurfMcpOnly"
+                      >
+                        {{
+                          mcpWindsurfBusy
+                            ? strings.mcpCursorBusy
+                            : strings.mcpInstallWindsurfOnly
+                        }}
+                      </button>
+                      <button
+                        v-if="mcpWindsurfInstalled"
+                        type="button"
+                        class="secondary"
+                        :disabled="mcpWindsurfBusy || mcpCursorBusy"
+                        @click="uninstallWindsurfMcpOnly"
+                      >
+                        {{
+                          mcpWindsurfBusy
+                            ? strings.mcpCursorBusy
+                            : strings.mcpUninstallWindsurfOnly
+                        }}
+                      </button>
+                    </div>
+                    <code class="advIdePath">{{ windsurfMcpPath }}</code>
+                  </div>
+                </div>
+
+                <details class="setupNested">
+                  <summary>{{ strings.setupJsonPreview }}</summary>
+                  <p class="advJsonCaption">{{ strings.mcpJsonTitle }}</p>
+                  <pre class="mcpPreview mcpPreviewAdv" tabindex="0">{{
+                    mcpJson
+                  }}</pre>
+                </details>
+                <details class="setupNested">
+                  <summary>{{ strings.setupIdeGuide }}</summary>
+                  <pre class="ideHintsPre ideHintsAdv">{{ ideHintsBlock }}</pre>
+                </details>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div v-show="settingsSeg === 'rulePrompts'" class="segPanel">
+          <div class="installHubCard settingsCard rulePromptsCard">
+            <h3 class="installHubTitle">{{ strings.rulePromptsTitle }}</h3>
+            <p class="installHubDesc">{{ strings.rulePromptsLead }}</p>
+
+            <h4 class="rulePromptsSubhead">{{ strings.rulePromptsSectionPreview }}</h4>
+
+            <div
+              class="cursorRulesModeGrid"
+              role="radiogroup"
+              :aria-label="strings.rulePromptsSectionPreview"
+            >
+              <button
+                type="button"
+                class="cursorRulesModeBtn"
+                :class="{ active: rulePromptMode === 'mild' }"
+                role="radio"
+                :aria-checked="rulePromptMode === 'mild'"
+                @click="rulePromptMode = 'mild'"
+              >
+                <span class="cursorRulesModeTitle">{{ strings.rulePromptsModeMild }}</span>
+                <span class="cursorRulesModeDesc">{{ strings.rulePromptsModeMildDesc }}</span>
+              </button>
+              <button
+                type="button"
+                class="cursorRulesModeBtn"
+                :class="{ active: rulePromptMode === 'loop' }"
+                role="radio"
+                :aria-checked="rulePromptMode === 'loop'"
+                @click="rulePromptMode = 'loop'"
+              >
+                <span class="cursorRulesModeTitle">{{ strings.rulePromptsModeLoop }}</span>
+                <span class="cursorRulesModeDesc">{{ strings.rulePromptsModeLoopDesc }}</span>
+              </button>
+              <button
+                type="button"
+                class="cursorRulesModeBtn"
+                :class="{ active: rulePromptMode === 'toolOnly' }"
+                role="radio"
+                :aria-checked="rulePromptMode === 'toolOnly'"
+                @click="rulePromptMode = 'toolOnly'"
+              >
+                <span class="cursorRulesModeTitle">{{ strings.rulePromptsModeTool }}</span>
+                <span class="cursorRulesModeDesc">{{ strings.rulePromptsModeToolDesc }}</span>
+              </button>
+            </div>
+
+            <p v-if="rulePromptMode === 'loop'" class="note cursorRulesRisk">
+              {{ strings.rulePromptsLoopRisk }}
+            </p>
+
+            <div class="cursorRulesPreviewHead">
+              <div class="cursorRulesCopyRow">
+                <button type="button" class="secondary" @click="copyRulePrompt">
+                  {{ strings.rulePromptsCopy }}
+                </button>
+                <span v-if="rulesCopyToast" class="copyToast">{{ rulesCopyToast }}</span>
+              </div>
+            </div>
+            <div class="rulePromptBilingual">
+              <p class="rulePromptLangLabel">{{ strings.rulePromptsLabelEn }}</p>
+              <pre class="cursorRulesPre cursorRulesPre--prompt" tabindex="0">{{
+                rulePromptEn
+              }}</pre>
+              <p class="rulePromptLangLabel rulePromptLangLabel--zh">
+                {{ strings.rulePromptsLabelZh }}
+              </p>
+              <pre class="cursorRulesPre cursorRulesPre--zh" tabindex="0">{{
+                rulePromptZh
+              }}</pre>
+            </div>
+
+            <h4 class="rulePromptsSubhead rulePromptsSubhead--spaced">
+              {{ strings.rulePromptsSectionIde }}
+            </h4>
+            <pre class="rulePromptsIdePre" tabindex="0">{{ rulePromptsIdeGuide }}</pre>
+          </div>
+        </div>
+
+        <footer class="settingsAppFooter">
+          <p class="settingsAppMeta">
+            {{ strings.appAuthorLine }}
+            ·
+            <a
+              class="settingsAppMail"
+              href="mailto:andeyalee@outlook.com"
+              :aria-label="strings.appAuthorEmailAria"
+              >andeyalee@outlook.com</a>
+          </p>
+        </footer>
+      </div>
+    </section>
+
+    <div
+      v-if="lightboxSrc"
+      class="imageLightbox"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="strings.imageLightboxClose"
+      @click.self="closeLightbox"
+    >
+      <button
+        type="button"
+        class="imageLightboxClose"
+        :aria-label="strings.imageLightboxClose"
+        @click="closeLightbox"
+      >
+        ×
+      </button>
+      <img
+        class="imageLightboxImg"
+        :src="lightboxSrc"
+        alt=""
+        @click.stop
+      />
+    </div>
   </main>
 </template>
-
