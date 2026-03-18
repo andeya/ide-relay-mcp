@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "relay-mcp": {
+      "command": "/absolute/path/to/relay-server",
+      "args": [],
+      "timeout": 6000,
+      "autoApprove": [
+        "interactive_feedback"
+      ]
+    }
+  }
+}

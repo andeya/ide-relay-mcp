@@ -1,0 +1,8 @@
+build/
+dist/
+node_modules/
+target/
+src-tauri/target/
+src-tauri/gen/
+*.log
+

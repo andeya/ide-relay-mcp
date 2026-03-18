@@ -1,0 +1,33 @@
+{
+  "name": "relay-mcp",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Human feedback layer for AI IDEs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andeya/ide-relay-mcp.git"
+  },
+  "homepage": "https://github.com/andeya/ide-relay-mcp",
+  "bugs": {
+    "url": "https://github.com/andeya/ide-relay-mcp/issues"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vue-tsc": "^2.1.0"
+  }
+}
