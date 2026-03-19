@@ -98,7 +98,7 @@ kbd {
   overflow: hidden;
 }
 
-/* Top bar: brand | status (center) | window dock + settings — balanced rhythm, one height. */
+/* Top bar: brand | status (center) | window dock + settings. */
 .mainTopBar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -741,6 +741,114 @@ kbd {
   border-top-right-radius: 0;
 }
 
+.composerTextareaWrap {
+  position: relative;
+}
+
+/* Slash dropdown — Cursor-style: list + footer hint */
+.slashDropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 2px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(30, 41, 59, 0.98);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  z-index: 10;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.slashDropdownList {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.slashDropdownItem {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+}
+
+.slashDropdownItem:last-child {
+  border-bottom: none;
+}
+
+.slashDropdownItem:hover,
+.slashDropdownItemActive {
+  background: rgba(99, 102, 241, 0.18);
+}
+
+.slashDropdownItemHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.slashDropdownItemCategory {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.slashDropdownItemName {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #e2e8f0;
+}
+
+.slashDropdownItemDesc {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slashDropdownItem--empty {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Cursor-style empty state: centered, muted */
+.slashDropdownEmptyState {
+  justify-content: center;
+  align-items: center;
+  padding: 14px 12px;
+  min-height: 52px;
+}
+
+.slashDropdownEmptyText {
+  font-size: 0.8rem;
+  color: #64748b;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.slashDropdownFooter {
+  flex-shrink: 0;
+  padding: 6px 12px 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.slashDropdownHint {
+  font-size: 0.7rem;
+  color: #64748b;
+  letter-spacing: 0.02em;
+}
+
 .composerFooterBar {
   flex-shrink: 0;
   border-top: 1px solid rgba(148, 163, 184, 0.12);
@@ -1087,6 +1195,11 @@ kbd {
   box-shadow:
     0 2px 16px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(165, 180, 252, 0.06);
+}
+
+/* Preview / waiting state: dashed border = placeholder, not real reply */
+.qaChatBubble--aiPlaceholder {
+  border-style: dashed;
 }
 
 /* 我 / ME: teal–emerald “outgoing” lane — distinct hue from AI */
@@ -3225,6 +3338,14 @@ textarea[readonly] {
   margin: 0 0 8px;
   font-size: var(--set-small);
   line-height: var(--set-lh);
+}
+
+.setupStatusReason {
+  margin: 0 0 8px;
+  font-size: var(--set-small);
+  line-height: var(--set-lh);
+  color: var(--muted);
+  font-style: italic;
   color: var(--set-color-muted);
 }
 
