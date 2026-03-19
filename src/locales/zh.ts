@@ -17,36 +17,37 @@ export default {
 
   rulePromptsTitle: "规则提示词",
   rulePromptsLead:
-    "英文为给模型使用的正文（**复制仅英文**）；中文与英文语义一致，仅供对照。**切换界面语言不会改变下方英/中文案。** MCP：relay_interactive_feedback，接入见「环境与 MCP」。",
+    "relay_interactive_feedback 的规则为**中英合本**。复制会粘贴**整段**内容；请将规则**置于顶部**或使用优先加载的规则文件（如 `00-relay-mcp.mdc`）。MCP：relay_interactive_feedback，接入见「环境与 MCP」。",
   rulePromptsSectionPreview: "规则预览",
   rulePromptsSectionIde: "各 IDE 配置方式",
   rulePromptsModeMild: "标准（推荐）",
-  rulePromptsModeMildDesc: "按需再次调用；不强制无限循环。",
+  rulePromptsModeMildDesc:
+    "每回合结束时调用一次；收到 human 后按需再次调用。不强制无限循环，适合多数场景。",
   rulePromptsModeLoop: "严格循环",
-  rulePromptsModeLoopDesc: "每轮结束必调；失败退避重试；慎用。",
+  rulePromptsModeLoopDesc:
+    "每轮结束必调一次；传输失败时退避后重试。确保每轮都不遗漏调用。",
   rulePromptsModeTool: "仅工具说明",
-  rulePromptsModeToolDesc: "可并入现有规则的一段定义。",
+  rulePromptsModeToolDesc:
+    "仅工具约定，不含调用策略；可并入已有规则作为纯工具说明使用。",
   rulePromptsCopy: "粘贴到IDE",
   rulePromptsViewMd: "Markdown 预览",
   rulePromptsViewSource: "原文",
-  rulePromptsToggleEnAria: "英文提示词显示方式",
-  rulePromptsToggleZhAria: "中文对照显示方式",
-  rulePromptsLabelEn: "English",
-  rulePromptsLabelZh: "中文对照",
+  rulePromptsToggleEnAria: "规则显示方式（Markdown 或原文）",
+  rulePromptsLabelBilingual: "规则（中文 + English）",
   rulePromptsCopied: "已复制。",
   rulePromptsCopyErr: "复制失败。",
   rulePromptsLoopRisk:
     "「严格循环」可能使对话持续到你手动停止；子 Agent（如 Task 委派）请按提示词内说明由父 Agent 负责调用。",
 
-  rulePromptsIdeMd: `**怎么用** 上方 **粘贴到IDE** 复制的是**英文提示词**；再按下表把各编辑器的 **规则区** 与 **MCP** 配齐（两件事都要做）。
+  rulePromptsIdeMd: `**怎么用** 上方 **粘贴到IDE** 复制的是**中英合本规则**；再按下表把各编辑器的 **规则区** 与 **MCP** 配齐（两件事都要做）。
 
 ### Cursor
-- **规则**：Settings → **Rules** → User rules 或 Project rules → 粘贴英文全文  
+- **规则**：Settings → **Rules** → User rules 或 Project rules → 将规则全文**粘贴到规则顶部**（或使用 \`.cursor/rules/00-relay-mcp.mdc\` 以优先加载）。该规则声明 relay_interactive_feedback 最高优先级。  
 - **MCP 文件** \`{cursorPath}\`  
 - \`command\` = 本机 \`relay\`，\`args\` = \`["mcp"]\`；建议 \`autoApprove\`：\`relay_interactive_feedback\`
 
 ### Windsurf
-- **说明区**：Agent / MCP 相关自定义说明里粘贴**同一套**英文（界面随版本可能不同）  
+- **说明区**：Agent / MCP 相关自定义说明里粘贴**同一套**规则（界面随版本可能不同）  
 - **MCP 文件** \`{windsurfPath}\`
 
 ### VS Code
@@ -57,7 +58,7 @@ export default {
 - **自定义指令** 贴英文；MCP 的 \`command\` 须为 relay **绝对路径**，\`args\`：\`["mcp"]\`
 
 ### 其他 IDE
-支持 MCP + 系统/项目级规则即可：贴英文全文，并注册工具 \`relay_interactive_feedback\`。`,
+支持 MCP + 系统/项目级规则即可：贴规则全文，并注册工具 \`relay_interactive_feedback\`。`,
 
   setupTitle: "本机环境",
   setupLead:
@@ -147,13 +148,14 @@ export default {
   dockBtnCenter: "●",
   dockBtnRight: "▶",
 
-  mainSessionBadge: "会话",
+  mainSessionBadge: "Chat",
   appTitle: "Relay MCP",
   brand: "Relay",
   subtitle: "面向 AI IDE 的人工反馈层",
-  statusAwaiting: "等待你的回复",
+  statusAwaiting: "轮到你回复",
+  statusHubWaiting: "待IDE连接",
   ideBlockingHint:
-    "IDE 正在等待你提交 Answer（最长约 10 分钟）；提交后智能体会在同一轮继续。",
+    "IDE 正在等待你提交 Answer；提交后智能体会在同一轮继续。",
   mcpPauseTitle: "暂停 Relay MCP",
   mcpPauseHint:
     "开启后：IDE 调用本 MCP 时**不会打开 Relay 窗口**，并立刻返回固定提示；请在 Cursor 规则中约定：收到 <<<RELAY_MCP_PAUSED>>> 后**停止再次调用** relay_interactive_feedback，直到你在此关闭暂停。",
@@ -213,6 +215,9 @@ export default {
   qaEmptySubmit: "已提交（无文字）",
   feedback: "Answer",
   placeholder: "写下你的回复…",
+  slashNoMatch: "无匹配的命令或技能",
+  slashNoCommandsForSession: "本会话暂无命令或技能（IDE 未传入）",
+  slashDropdownHint: "↑↓ 选择 · Enter 或 Tab 插入",
   noteExpired: "该请求已超时或已被取消。内容仅可本地查看，无法再提交。",
   close: "关闭",
   submit: "提交（Enter）",
