@@ -91,7 +91,6 @@ const {
   filteredCommands,
   hasSlashList,
   insertSlashCommand,
-  closeSlash: _closeSlash,
   initAfterLocale,
   setWindowTitle,
   qaRounds,
