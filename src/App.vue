@@ -12,6 +12,7 @@ import {
 } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { locale, t } from "./i18n";
+import { useAppStrings } from "./composables/useAppStrings";
 import { useFeedbackWindow } from "./composables/useFeedbackWindow";
 import { useMcpAndPathSettings } from "./composables/useMcpAndPathSettings";
 import type { SettingsSegment } from "./types/relay-app";
@@ -44,7 +45,7 @@ function qaMd(html: string) {
 }
 
 const {
-  launch,
+  isHubPage,
   tabs,
   activeTabId,
   hasRealTabs,
@@ -73,6 +74,14 @@ const {
   onKeydown,
   onComposerCompositionStart,
   onComposerCompositionEnd,
+  onComposerInput,
+  slashOpen,
+  slashDropdownRef,
+  slashSelectedIndex,
+  filteredCommands,
+  hasSlashList,
+  insertSlashCommand,
+  closeSlash: _closeSlash,
   initAfterLocale,
   setWindowTitle,
   qaRounds,
@@ -91,18 +100,6 @@ function pendingFileChipTitle(
 ): string {
   return "file" in fd ? fd.file.name || "" : fd.path;
 }
-
-/** Header pill: only when session_title is set (hide default «Tab Chat N»). */
-const headerChatPill = computed(() => {
-  void locale.value;
-  const L = launch.value;
-  if (!L || L.is_preview) return null;
-  const st = (L.session_title || "").trim();
-  if (st) {
-    return { badge: t("mainSessionBadge"), text: st };
-  }
-  return null;
-});
 
 const attachInputRef = ref<HTMLInputElement | null>(null);
 
@@ -142,8 +139,10 @@ watch(
 const {
   mcpJson,
   mcpCursorInstalled,
+  mcpCursorReason,
   cursorMcpPath,
   mcpWindsurfInstalled,
+  mcpWindsurfReason,
   windsurfMcpPath,
   mcpWindsurfBusy,
   hubMsg,
@@ -168,181 +167,7 @@ const {
   configureRelayPath,
 } = useMcpAndPathSettings();
 
-/** UI copy bundle for the template (reactive to locale). */
-const strings = computed(() => {
-  void locale.value;
-  return {
-    appTitle: t("appTitle"),
-    subtitle: t("subtitle"),
-    hint: t("hint"),
-    mainHintPreview: t("mainHintPreview"),
-    tabStripAria: t("tabStripAria"),
-    tabCloseAria: t("tabCloseAria"),
-    tabCloseTitle: t("tabCloseTitle"),
-    windowDockAria: t("windowDockAria"),
-    windowDockLeft: t("windowDockLeft"),
-    windowDockCenter: t("windowDockCenter"),
-    windowDockRight: t("windowDockRight"),
-    dockBtnLeft: t("dockBtnLeft"),
-    dockBtnCenter: t("dockBtnCenter"),
-    dockBtnRight: t("dockBtnRight"),
-    qaHistoryTitle: t("qaHistoryTitle"),
-    qaAssistantTurn: t("qaAssistantTurn"),
-    qaUserTurnMe: t("qaUserTurnMe"),
-    qaNoRetellYet: t("qaNoRetellYet"),
-    qaUserFeedback: t("qaUserFeedback"),
-    composerMessage: t("composerMessage"),
-    composerAriaRegion: t("composerAriaRegion"),
-    composerHint: t("composerHint"),
-    composerAttach: t("composerAttach"),
-    composerThumbRemove: t("composerThumbRemove"),
-    composerFileDropAria: t("composerFileDropAria"),
-    composerFileDropRemove: t("composerFileDropRemove"),
-    composerImageZoomTitle: t("composerImageZoomTitle"),
-    imageLightboxClose: t("imageLightboxClose"),
-    composerSubmitIconTitle: t("composerSubmitIconTitle"),
-    composerSubmitIconAria: t("composerSubmitIconAria"),
-    composerSubmitDisabledPreview: t("composerSubmitDisabledPreview"),
-    composerSendShort: t("composerSendShort"),
-    composerSendCloseShort: t("composerSendCloseShort"),
-    composerImageAria: t("composerImageAria"),
-    composerAnswerSub: t("composerAnswerSub"),
-    qaPendingCurrent: t("qaPendingCurrent"),
-    qaPendingOther: t("qaPendingOther"),
-    qaSkipped: t("qaSkipped"),
-    qaEmptySubmit: t("qaEmptySubmit"),
-    feedback: t("feedback"),
-    placeholder: t("placeholder"),
-    composerHintDraft: t("composerHintDraft"),
-    composerSubmitDisabledIdle: t("composerSubmitDisabledIdle"),
-    composerSubmitBlockedFileError: t("composerSubmitBlockedFileError"),
-    ideBlockingHint: t("ideBlockingHint"),
-    noteExpired: t("noteExpired"),
-    close: t("close"),
-    loading: t("loading"),
-    noLaunch: t("noLaunch"),
-    mainSessionBadge: t("mainSessionBadge"),
-    pathEnvFolder: t("pathEnvFolder"),
-    pathEnvBtn: t("pathEnvBtn"),
-    pathEnvBusy: t("pathEnvBusy"),
-    segSetup: t("segSetup"),
-    segCache: t("segCache"),
-    setupTitle: t("setupTitle"),
-    setupInstallChangesNote: t("setupInstallChangesNote"),
-    mcpPauseTitle: t("mcpPauseTitle"),
-    mcpPauseHint: t("mcpPauseHint"),
-    mcpPauseSwitch: t("mcpPauseSwitch"),
-    mcpPauseSwitchTitle: t("mcpPauseSwitchTitle"),
-    mcpPauseStatusOn: t("mcpPauseStatusOn"),
-    mcpPauseStatusOff: t("mcpPauseStatusOff"),
-    setupLead: t("setupLead"),
-    setupAllReadyLead: t("setupAllReadyLead"),
-    setupStatus: t("setupStatus"),
-    setupChipPath: t("setupChipPath"),
-    setupPathExplain: t("setupPathExplain"),
-    setupChipCursor: t("setupChipCursor"),
-    setupCursorExplain: t("setupCursorExplain"),
-    setupChipWindsurf: t("setupChipWindsurf"),
-    setupWindsurfExplain: t("setupWindsurfExplain"),
-    setupConfigFile: t("setupConfigFile"),
-    setupBinDir: t("setupBinDir"),
-    setupNoInstallNeeded: t("setupNoInstallNeeded"),
-    setupActionsStripNeedInstall: t("setupActionsStripNeedInstall"),
-    setupActionsAria: t("setupActionsAria"),
-    setupUninstallOnlyHint: t("setupUninstallOnlyHint"),
-    setupOn: t("setupOn"),
-    setupOff: t("setupOff"),
-    setupBtnInstall: t("setupBtnInstall"),
-    setupBtnUninstall: t("setupBtnUninstall"),
-    setupInstallHint: t("setupInstallHint"),
-    setupUninstallHint: t("setupUninstallHint"),
-    setupToolParamsTitle: t("setupToolParamsTitle"),
-    setupToolParamsLead: t("setupToolParamsLead"),
-    mcpCopy: t("mcpCopy"),
-    setupAdvanced: t("setupAdvanced"),
-    setupAdvPathTitle: t("setupAdvPathTitle"),
-    setupAdvPathLead: t("setupAdvPathLead"),
-    setupAdvSingle: t("setupAdvSingle"),
-    setupJsonPreview: t("setupJsonPreview"),
-    setupIdeGuide: t("setupIdeGuide"),
-    mcpJsonTitle: t("mcpJsonTitle"),
-    mcpCursorFile: t("mcpCursorFile"),
-    mcpInCursor: t("mcpInCursor"),
-    mcpNotInCursor: t("mcpNotInCursor"),
-    mcpInstallCursorOnly: t("mcpInstallCursorOnly"),
-    mcpUninstallCursorOnly: t("mcpUninstallCursorOnly"),
-    mcpWindsurfFile: t("mcpWindsurfFile"),
-    mcpInWindsurf: t("mcpInWindsurf"),
-    mcpNotInWindsurf: t("mcpNotInWindsurf"),
-    mcpInstallWindsurfOnly: t("mcpInstallWindsurfOnly"),
-    mcpUninstallWindsurfOnly: t("mcpUninstallWindsurfOnly"),
-    mcpCursorBusy: t("mcpCursorBusy"),
-    mcpFullBusy: t("mcpFullBusy"),
-    settingsTitle: t("settingsTitle"),
-    appAuthorLine: t("appAuthorLine"),
-    appAuthorEmailAria: t("appAuthorEmailAria"),
-    settingsBack: t("settingsBack"),
-    ariaOpenSettings: t("ariaOpenSettings"),
-    settingsCheckStatus: t("settingsCheckStatus"),
-    settingsLangAria: t("settingsLangAria"),
-    settingsChecking: t("settingsChecking"),
-    mcpFullUninstallConfirm: t("mcpFullUninstallConfirm"),
-    setupUninstallConfirmBtn: t("setupUninstallConfirmBtn"),
-    setupUninstallCancel: t("setupUninstallCancel"),
-    segRulePrompts: t("segRulePrompts"),
-    rulePromptsTitle: t("rulePromptsTitle"),
-    rulePromptsLead: t("rulePromptsLead"),
-    rulePromptsSectionPreview: t("rulePromptsSectionPreview"),
-    rulePromptsSectionIde: t("rulePromptsSectionIde"),
-    rulePromptsModeMild: t("rulePromptsModeMild"),
-    rulePromptsModeMildDesc: t("rulePromptsModeMildDesc"),
-    rulePromptsModeLoop: t("rulePromptsModeLoop"),
-    rulePromptsModeLoopDesc: t("rulePromptsModeLoopDesc"),
-    rulePromptsModeTool: t("rulePromptsModeTool"),
-    rulePromptsModeToolDesc: t("rulePromptsModeToolDesc"),
-    rulePromptsCopy: t("rulePromptsCopy"),
-    rulePromptsViewMd: t("rulePromptsViewMd"),
-    rulePromptsViewSource: t("rulePromptsViewSource"),
-    rulePromptsToggleEnAria: t("rulePromptsToggleEnAria"),
-    rulePromptsToggleZhAria: t("rulePromptsToggleZhAria"),
-    rulePromptsLabelEn: t("rulePromptsLabelEn"),
-    rulePromptsLabelZh: t("rulePromptsLabelZh"),
-    rulePromptsLoopRisk: t("rulePromptsLoopRisk"),
-    cacheTitle: t("cacheTitle"),
-    cacheSubtitle: t("cacheSubtitle"),
-    cacheLead: t("cacheLead"),
-    cacheSectionStorage: t("cacheSectionStorage"),
-    cacheAutoTitle: t("cacheAutoTitle"),
-    cacheAutoLead: t("cacheAutoLead"),
-    cacheAutoSelectLabel: t("cacheAutoSelectLabel"),
-    cacheRetentionOff: t("cacheRetentionOff"),
-    cacheDays: t("cacheDays"),
-    cacheMonths3: t("cacheMonths3"),
-    cacheMonths6: t("cacheMonths6"),
-    cacheYear1: t("cacheYear1"),
-    cacheManualTitle: t("cacheManualTitle"),
-    cacheRetentionTriggerAria: t("cacheRetentionTriggerAria"),
-    cacheDataDir: t("cacheDataDir"),
-    cacheOpenFolder: t("cacheOpenFolder"),
-    cacheOpenFolderErr: t("cacheOpenFolderErr"),
-    cacheLoading: t("cacheLoading"),
-    cacheLoadErr: t("cacheLoadErr"),
-    cacheTotal: t("cacheTotal"),
-    cacheAttachments: t("cacheAttachments"),
-    cacheLogs: t("cacheLogs"),
-    cacheRefresh: t("cacheRefresh"),
-    cacheClearAll: t("cacheClearAll"),
-    cacheClearAttach: t("cacheClearAttach"),
-    cacheClearLogs: t("cacheClearLogs"),
-    cacheBusy: t("cacheBusy"),
-    cacheClearedOk: t("cacheClearedOk"),
-    cacheClearErr: t("cacheClearErr"),
-    cacheConfirmModalTitle: t("cacheConfirmModalTitle"),
-    cacheConfirmBtn: t("cacheConfirmBtn"),
-    cacheCancelBtn: t("cacheCancelBtn"),
-    cacheClearing: t("cacheClearing"),
-  };
-});
+const { strings } = useAppStrings();
 
 const showUninstallConfirm = ref(false);
 
@@ -573,14 +398,6 @@ onBeforeUnmount(() => {
               />
             </span>
             <h1 class="mainTitle">{{ strings.appTitle }}</h1>
-            <span
-              v-if="headerChatPill"
-              class="mainSessionPill"
-              :title="headerChatPill.text"
-            >
-              <span class="mainSessionPillPrefix">{{ headerChatPill.badge }}</span>
-              {{ headerChatPill.text }}
-            </span>
           </div>
         </div>
         <div class="mainTopBarMid">
@@ -720,7 +537,13 @@ onBeforeUnmount(() => {
                   <span class="qaChatRole qaChatRole--ai">{{
                     strings.qaAssistantTurn
                   }}</span>
-                  <div class="qaChatBubble qaChatBubble--ai">
+                  <div
+                    class="qaChatBubble qaChatBubble--ai"
+                    :class="{
+                      'qaChatBubble--aiPlaceholder':
+                        isHubPage && idx === 0 && qaRounds.length === 1,
+                    }"
+                  >
                     <div
                       v-if="round.retell?.trim()"
                       class="qaRoundAgentScroll qaRoundAgentScroll--bubble"
@@ -783,31 +606,6 @@ onBeforeUnmount(() => {
                   }}</span>
                   <div class="qaChatBubble qaChatBubble--me qaChatBubble--meMuted">
                     <p class="qaRoundMuted">{{ strings.qaEmptySubmit }}</p>
-                  </div>
-                </div>
-              </div>
-              <div
-                v-else-if="round.tab_id === activeTabId"
-                class="qaChatRow qaChatRow--me"
-              >
-                <div class="qaChatStack qaChatStack--me">
-                  <span class="qaChatRole qaChatRole--me">{{
-                    strings.qaUserTurnMe
-                  }}</span>
-                  <div class="qaChatBubble qaChatBubble--me qaChatBubble--mePending">
-                    <p class="qaRoundHint">{{ strings.qaPendingCurrent }}</p>
-                  </div>
-                </div>
-              </div>
-              <div v-else class="qaChatRow qaChatRow--me">
-                <div class="qaChatStack qaChatStack--me">
-                  <span class="qaChatRole qaChatRole--me">{{
-                    strings.qaUserTurnMe
-                  }}</span>
-                  <div
-                    class="qaChatBubble qaChatBubble--me qaChatBubble--meMuted"
-                  >
-                    <p class="qaRoundMuted">{{ strings.qaPendingOther }}</p>
                   </div>
                 </div>
               </div>
@@ -927,22 +725,71 @@ onBeforeUnmount(() => {
                     </button>
                   </div>
                 </div>
-                <textarea
-                  :ref="bindTextareaRef"
-                  v-model="feedback"
-                  class="mainInputComposer composerTextarea"
-                  :class="{
-                    'composerTextarea--thumbs':
-                      (pendingImages.length || pendingFileDrops.length) &&
-                      !expired,
-                  }"
-                  :readonly="expired"
-                  :placeholder="strings.placeholder"
-                  @paste="onComposerPaste"
-                  @keydown="onKeydown"
-                  @compositionstart="onComposerCompositionStart"
-                  @compositionend="onComposerCompositionEnd"
-                />
+                <div class="composerTextareaWrap">
+                  <textarea
+                    :ref="bindTextareaRef"
+                    v-model="feedback"
+                    class="mainInputComposer composerTextarea"
+                    :class="{
+                      'composerTextarea--thumbs':
+                        (pendingImages.length || pendingFileDrops.length) &&
+                        !expired,
+                    }"
+                    :readonly="expired || isHubPage"
+                    :placeholder="strings.placeholder"
+                    @paste="onComposerPaste"
+                    @input="onComposerInput"
+                    @keydown="onKeydown"
+                    @compositionstart="onComposerCompositionStart"
+                    @compositionend="onComposerCompositionEnd"
+                  />
+                  <div
+                    v-if="slashOpen && !expired && !isHubPage"
+                    class="slashDropdown"
+                    role="listbox"
+                    aria-label="Commands"
+                  >
+                    <div ref="slashDropdownRef" class="slashDropdownList">
+                      <div
+                        v-for="(cmd, i) in filteredCommands"
+                        :key="cmd.id"
+                        role="option"
+                        :aria-selected="i === slashSelectedIndex"
+                        class="slashDropdownItem"
+                        :class="{ slashDropdownItemActive: i === slashSelectedIndex }"
+                        @mousedown.prevent
+                        @click="insertSlashCommand(cmd)"
+                      >
+                        <div class="slashDropdownItemHead">
+                          <span
+                            v-if="cmd.category"
+                            class="slashDropdownItemCategory"
+                          >{{ cmd.category }}</span>
+                          <span class="slashDropdownItemName">{{ cmd.name }}</span>
+                        </div>
+                        <span
+                          v-if="cmd.description"
+                          class="slashDropdownItemDesc"
+                        >
+                          {{ cmd.description }}
+                        </span>
+                      </div>
+                      <div
+                        v-if="filteredCommands.length === 0"
+                        class="slashDropdownItem slashDropdownItem--empty slashDropdownEmptyState"
+                        role="option"
+                        aria-disabled="true"
+                      >
+                        <span class="slashDropdownEmptyText">{{
+                          hasSlashList ? strings.slashNoMatch : strings.slashNoCommandsForSession
+                        }}</span>
+                      </div>
+                    </div>
+                    <div class="slashDropdownFooter">
+                      <span class="slashDropdownHint">{{ strings.slashDropdownHint }}</span>
+                    </div>
+                  </div>
+                </div>
                 <div
                   v-if="!expired"
                   class="composerFooterBar composerFooterBar--chat"
@@ -950,7 +797,7 @@ onBeforeUnmount(() => {
                   <div class="composerFooterHintCol">
                     <p class="composerFooterHintMain">
                       {{
-                        launch?.is_preview
+                        isHubPage
                           ? strings.mainHintPreview
                           : composerIdle
                             ? strings.composerHintDraft
@@ -959,8 +806,7 @@ onBeforeUnmount(() => {
                     </p>
                     <p
                       v-if="
-                        launch &&
-                        !launch.is_preview &&
+                        !isHubPage &&
                         status === 'active' &&
                         !composerIdle
                       "
@@ -982,6 +828,7 @@ onBeforeUnmount(() => {
                       class="composerIconBtn composerIconBtnAttach"
                       :title="strings.composerAttach"
                       :aria-label="strings.composerAttach"
+                      :disabled="isHubPage"
                       @click="attachInputRef?.click()"
                     >
                       <svg
@@ -1005,7 +852,7 @@ onBeforeUnmount(() => {
                       :title="
                         hasPendingFileDropErrors
                           ? strings.composerSubmitBlockedFileError
-                          : launch?.is_preview
+                          : isHubPage
                             ? strings.composerSubmitDisabledPreview
                             : composerIdle
                               ? strings.composerSubmitDisabledIdle
@@ -1014,16 +861,16 @@ onBeforeUnmount(() => {
                       :aria-label="
                         hasPendingFileDropErrors
                           ? strings.composerSubmitBlockedFileError
-                          : launch?.is_preview
+                          : isHubPage
                             ? strings.composerSubmitDisabledPreview
                             : composerIdle
                               ? strings.composerSubmitDisabledIdle
                               : strings.composerSubmitIconAria
                       "
                       :disabled="
-                        Boolean(launch?.is_preview) ||
+                        isHubPage ||
                         submitting ||
-                        (!launch?.is_preview && composerIdle) ||
+                        (!isHubPage && composerIdle) ||
                         hasPendingFileDropErrors
                       "
                       :aria-busy="submitting"
@@ -1310,6 +1157,9 @@ onBeforeUnmount(() => {
                       }}</span>
                   </div>
                   <p class="setupStatusExplain">{{ strings.setupPathExplain }}</p>
+                  <p v-if="!pathEnv.configured && pathEnv.reason" class="setupStatusReason">
+                    {{ pathEnv.reason }}
+                  </p>
                   <p class="setupStatusMeta">
                     <span class="setupStatusMetaKey">{{
                       strings.setupBinDir
@@ -1334,6 +1184,9 @@ onBeforeUnmount(() => {
                   <p class="setupStatusExplain">
                     {{ strings.setupCursorExplain }}
                   </p>
+                  <p v-if="!mcpCursorInstalled && mcpCursorReason" class="setupStatusReason">
+                    {{ mcpCursorReason }}
+                  </p>
                   <p class="setupStatusMeta">
                     <span class="setupStatusMetaKey">{{
                       strings.setupConfigFile
@@ -1357,6 +1210,9 @@ onBeforeUnmount(() => {
                   </div>
                   <p class="setupStatusExplain">
                     {{ strings.setupWindsurfExplain }}
+                  </p>
+                  <p v-if="!mcpWindsurfInstalled && mcpWindsurfReason" class="setupStatusReason">
+                    {{ mcpWindsurfReason }}
                   </p>
                   <p class="setupStatusMeta">
                     <span class="setupStatusMetaKey">{{
