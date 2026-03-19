@@ -36,7 +36,6 @@ fn relay_mcp_entry() -> Result<Value> {
     Ok(json!({
         "command": command,
         "args": args,
-        "timeout": 600,
         "autoApprove": ["relay_interactive_feedback"]
     }))
 }
@@ -50,16 +49,57 @@ pub fn mcp_config_json_pretty() -> Result<String> {
     Ok(serde_json::to_string_pretty(&root)?)
 }
 
-fn has_relay_in_file(path: &Path) -> bool {
-    let Ok(text) = fs::read_to_string(path) else {
-        return false;
+/// True if config has relay-mcp entry, its `command` path exists, and equals current relay binary path.
+fn relay_mcp_configured_and_command_matches(path: &Path) -> bool {
+    relay_mcp_reason(path).is_none()
+}
+
+/// When relay-mcp is not correctly configured at path, returns reason for the user to fix manually.
+fn relay_mcp_reason(path: &Path) -> Option<String> {
+    let expected_path = relay_mcp_command_and_args()
+        .ok()
+        .map(|(s, _)| PathBuf::from(s))?;
+    let text = match fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(_) => {
+            return Some("Config file missing or unreadable. Use one-click install.".to_string())
+        }
     };
-    let Ok(v) = serde_json::from_str::<Value>(&text) else {
-        return false;
+    let v: Value = match serde_json::from_str(&text) {
+        Ok(x) => x,
+        Err(_) => {
+            return Some("Config is not valid JSON. Fix or re-run one-click install.".to_string())
+        }
     };
-    v.get("mcpServers")
-        .and_then(|s| s.get("relay-mcp"))
-        .is_some()
+    let servers = match v.get("mcpServers").and_then(|s| s.as_object()) {
+        Some(s) => s,
+        None => return Some("No mcpServers in config. Use one-click install.".to_string()),
+    };
+    let relay = match servers.get("relay-mcp") {
+        Some(r) => r,
+        None => return Some("relay-mcp not in config. Use one-click install.".to_string()),
+    };
+    let command = match relay.get("command").and_then(|c| c.as_str()) {
+        Some(c) => c,
+        None => return Some("relay-mcp has no command. Re-run one-click install.".to_string()),
+    };
+    let config_path = PathBuf::from(command);
+    if !config_path.exists() {
+        return Some(format!(
+            "relay-mcp command path does not exist: {} (fix or re-run one-click install).",
+            config_path.display()
+        ));
+    }
+    let expected_canon = expected_path.canonicalize().ok()?;
+    let config_canon = config_path.canonicalize().ok()?;
+    if expected_canon != config_canon {
+        return Some(format!(
+            "relay-mcp command path does not match current relay (config: {}, current: {}). Re-run one-click install or edit config.",
+            config_canon.display(),
+            expected_canon.display()
+        ));
+    }
+    None
 }
 
 fn install_relay_mcp_at(path: &Path, invalid_json_hint: &'static str) -> Result<()> {
@@ -109,8 +149,19 @@ pub fn cursor_mcp_json_path() -> Result<PathBuf> {
 pub fn cursor_has_relay_mcp() -> bool {
     cursor_mcp_json_path()
         .ok()
-        .map(|p| has_relay_in_file(&p))
+        .map(|p| relay_mcp_configured_and_command_matches(&p))
         .unwrap_or(false)
+}
+
+/// When Cursor relay-mcp is not configured, returns reason for the user to fix manually.
+pub fn cursor_relay_mcp_reason() -> Option<String> {
+    let path = match cursor_mcp_json_path() {
+        Ok(p) => p,
+        Err(_) => {
+            return Some("Cannot get config path (check HOME). Use one-click install.".to_string())
+        }
+    };
+    relay_mcp_reason(&path)
 }
 
 pub fn install_relay_mcp_cursor() -> Result<()> {
@@ -136,8 +187,19 @@ pub fn windsurf_mcp_json_path() -> Result<PathBuf> {
 pub fn windsurf_has_relay_mcp() -> bool {
     windsurf_mcp_json_path()
         .ok()
-        .map(|p| has_relay_in_file(&p))
+        .map(|p| relay_mcp_configured_and_command_matches(&p))
         .unwrap_or(false)
+}
+
+/// When Windsurf relay-mcp is not configured, returns reason for the user to fix manually.
+pub fn windsurf_relay_mcp_reason() -> Option<String> {
+    let path = match windsurf_mcp_json_path() {
+        Ok(p) => p,
+        Err(_) => {
+            return Some("Cannot get config path (check HOME). Use one-click install.".to_string())
+        }
+    };
+    relay_mcp_reason(&path)
 }
 
 pub fn install_relay_mcp_windsurf() -> Result<()> {
