@@ -1,14 +1,12 @@
 <script setup lang="ts">
 /**
- * Settings → Rule prompts: mode, EN/ZH preview, copy, IDE snippet.
+ * Settings → Rule prompts: bilingual (中英合本) preview and copy, IDE snippet.
  */
 import { computed, ref } from "vue";
 import {
-  getRelayRulePrompt,
-  getRelayRulePromptEn,
-  getRelayRulePromptZh,
+  getRelayRulePromptBilingual,
   type RulePromptMode,
-} from "../../cursorRulesTemplates";
+} from "../../ideRulesTemplates";
 import { locale, t } from "../../i18n";
 import { safeMarkdownToHtml } from "../../utils/safeMarkdown";
 
@@ -24,23 +22,14 @@ function qaMd(html: string) {
 
 const rulePromptMode = ref<RulePromptMode>("mild");
 const rulesCopyToast = ref("");
-const rulePromptEn = computed(() =>
-  getRelayRulePromptEn(rulePromptMode.value, undefined),
+const rulePromptBilingual = computed(() =>
+  getRelayRulePromptBilingual(rulePromptMode.value),
 );
-const rulePromptZh = computed(() =>
-  getRelayRulePromptZh(rulePromptMode.value, undefined),
-);
+const rulePromptView = ref<"md" | "src">("md");
+const rulePromptBilingualHtml = computed(() => qaMd(rulePromptBilingual.value));
 
-const rulePromptViewEn = ref<"md" | "src">("md");
-const rulePromptViewZh = ref<"md" | "src">("md");
-const rulePromptEnHtml = computed(() => qaMd(rulePromptEn.value));
-const rulePromptZhHtml = computed(() => qaMd(rulePromptZh.value));
-
-function setRulePromptViewEn(mode: "md" | "src") {
-  rulePromptViewEn.value = mode;
-}
-function setRulePromptViewZh(mode: "md" | "src") {
-  rulePromptViewZh.value = mode;
+function setRulePromptView(mode: "md" | "src") {
+  rulePromptView.value = mode;
 }
 
 const rulePromptsIdeHtml = computed(() => {
@@ -58,9 +47,7 @@ const S = computed(() => props.strings);
 async function copyRulePrompt() {
   rulesCopyToast.value = "";
   try {
-    await navigator.clipboard.writeText(
-      getRelayRulePrompt(rulePromptMode.value, undefined),
-    );
+    await navigator.clipboard.writeText(rulePromptBilingual.value);
     rulesCopyToast.value = t("rulePromptsCopied");
   } catch {
     rulesCopyToast.value = t("rulePromptsCopyErr");
@@ -92,12 +79,8 @@ async function copyRulePrompt() {
           :aria-checked="rulePromptMode === 'mild'"
           @click="rulePromptMode = 'mild'"
         >
-          <span class="cursorRulesModeTitle">{{
-            S.rulePromptsModeMild
-          }}</span>
-          <span class="cursorRulesModeDesc">{{
-            S.rulePromptsModeMildDesc
-          }}</span>
+          <span class="cursorRulesModeTitle">{{ S.rulePromptsModeMild }}</span>
+          <span class="cursorRulesModeDesc">{{ S.rulePromptsModeMildDesc }}</span>
         </button>
         <button
           type="button"
@@ -107,12 +90,8 @@ async function copyRulePrompt() {
           :aria-checked="rulePromptMode === 'loop'"
           @click="rulePromptMode = 'loop'"
         >
-          <span class="cursorRulesModeTitle">{{
-            S.rulePromptsModeLoop
-          }}</span>
-          <span class="cursorRulesModeDesc">{{
-            S.rulePromptsModeLoopDesc
-          }}</span>
+          <span class="cursorRulesModeTitle">{{ S.rulePromptsModeLoop }}</span>
+          <span class="cursorRulesModeDesc">{{ S.rulePromptsModeLoopDesc }}</span>
         </button>
         <button
           type="button"
@@ -122,12 +101,8 @@ async function copyRulePrompt() {
           :aria-checked="rulePromptMode === 'toolOnly'"
           @click="rulePromptMode = 'toolOnly'"
         >
-          <span class="cursorRulesModeTitle">{{
-            S.rulePromptsModeTool
-          }}</span>
-          <span class="cursorRulesModeDesc">{{
-            S.rulePromptsModeToolDesc
-          }}</span>
+          <span class="cursorRulesModeTitle">{{ S.rulePromptsModeTool }}</span>
+          <span class="cursorRulesModeDesc">{{ S.rulePromptsModeToolDesc }}</span>
         </button>
       </div>
 
@@ -138,7 +113,7 @@ async function copyRulePrompt() {
       <div class="rulePromptBilingual">
         <div class="rulePromptLangRow">
           <p class="rulePromptLangLabel rulePromptLangLabel--row">
-            {{ S.rulePromptsLabelEn }}
+            {{ S.rulePromptsLabelBilingual }}
           </p>
           <div class="rulePromptRowTools">
             <div
@@ -149,10 +124,10 @@ async function copyRulePrompt() {
               <button
                 type="button"
                 class="rulePromptViewIconBtn"
-                :class="{ active: rulePromptViewEn === 'md' }"
-                :aria-pressed="rulePromptViewEn === 'md'"
+                :class="{ active: rulePromptView === 'md' }"
+                :aria-pressed="rulePromptView === 'md'"
                 :title="S.rulePromptsViewMd"
-                @click="setRulePromptViewEn('md')"
+                @click="setRulePromptView('md')"
               >
                 <svg
                   class="rulePromptViewIconSvg"
@@ -173,10 +148,10 @@ async function copyRulePrompt() {
               <button
                 type="button"
                 class="rulePromptViewIconBtn"
-                :class="{ active: rulePromptViewEn === 'src' }"
-                :aria-pressed="rulePromptViewEn === 'src'"
+                :class="{ active: rulePromptView === 'src' }"
+                :aria-pressed="rulePromptView === 'src'"
                 :title="S.rulePromptsViewSource"
-                @click="setRulePromptViewEn('src')"
+                @click="setRulePromptView('src')"
               >
                 <svg
                   class="rulePromptViewIconSvg"
@@ -209,89 +184,18 @@ async function copyRulePrompt() {
             </div>
           </div>
         </div>
-        <template v-if="rulePromptViewEn === 'md'">
+        <template v-if="rulePromptView === 'md'">
           <div
             class="rulePromptMdBody qaRoundMd cursorRulesPre cursorRulesPre--prompt"
             tabindex="0"
-            v-html="rulePromptEnHtml"
+            v-html="rulePromptBilingualHtml"
           />
         </template>
         <pre
           v-else
           class="cursorRulesPre cursorRulesPre--prompt"
           tabindex="0"
-        >{{ rulePromptEn }}</pre>
-        <div class="rulePromptLangRow rulePromptLangRow--zh">
-          <p
-            class="rulePromptLangLabel rulePromptLangLabel--row rulePromptLangLabel--zhHead"
-          >
-            {{ S.rulePromptsLabelZh }}
-          </p>
-          <div
-            class="rulePromptViewToggles"
-            role="group"
-            :aria-label="S.rulePromptsToggleZhAria"
-          >
-            <button
-              type="button"
-              class="rulePromptViewIconBtn"
-              :class="{ active: rulePromptViewZh === 'md' }"
-              :aria-pressed="rulePromptViewZh === 'md'"
-              :title="S.rulePromptsViewMd"
-              @click="setRulePromptViewZh('md')"
-            >
-              <svg
-                class="rulePromptViewIconSvg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path
-                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-                />
-                <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="rulePromptViewIconBtn"
-              :class="{ active: rulePromptViewZh === 'src' }"
-              :aria-pressed="rulePromptViewZh === 'src'"
-              :title="S.rulePromptsViewSource"
-              @click="setRulePromptViewZh('src')"
-            >
-              <svg
-                class="rulePromptViewIconSvg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <polyline points="16 18 22 12 16 6" />
-                <polyline points="8 6 2 12 8 18" />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <template v-if="rulePromptViewZh === 'md'">
-          <div
-            class="rulePromptMdBody qaRoundMd cursorRulesPre cursorRulesPre--zh"
-            tabindex="0"
-            v-html="rulePromptZhHtml"
-          />
-        </template>
-        <pre
-          v-else
-          class="cursorRulesPre cursorRulesPre--zh"
-          tabindex="0"
-        >{{ rulePromptZh }}</pre>
+        >{{ rulePromptBilingual }}</pre>
       </div>
 
       <h4 class="rulePromptsSubhead rulePromptsSubhead--spaced">
