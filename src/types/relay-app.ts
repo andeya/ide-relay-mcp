@@ -2,16 +2,26 @@
  * Shared TypeScript types for the Relay GUI (Tauri frontend).
  */
 
+export type CommandItem = {
+  name: string;
+  id: string;
+  category?: string;
+  description?: string;
+};
+
 export type LaunchState = {
   retell: string;
   /** Correlates with MCP HTTP wait; empty for hub preview. */
   request_id: string;
+  /** Tab strip label: MM-DD HH:mm from session_id. */
   title: string;
-  /** Chat/session title from MCP tool; empty if not passed. */
-  session_title: string;
   tab_id: string;
-  client_tab_id: string;
+  relay_mcp_session_id: string;
   is_preview: boolean;
+  /** Commands for slash-completion in input; bound to this session. */
+  commands?: CommandItem[];
+  /** Skills (same shape as commands) for slash-completion in input. */
+  skills?: CommandItem[];
 };
 
 /** Matches backend `ControlStatus` JSON serialization (snake_case). */
@@ -28,8 +38,7 @@ export type QaRound = {
   skipped?: boolean;
   submitted?: boolean;
   tab_id: string;
-  /** Matches `LaunchState.client_tab_id` for this chat tab. */
-  client_tab_id?: string;
+  relay_mcp_session_id?: string;
 };
 
 export type FeedbackTabsState = {
@@ -42,6 +51,13 @@ export type PathEnvStatus = {
   configured: boolean;
   bin_dir: string;
   platform: string;
+  /** When not configured, reason for the user to fix manually. */
+  reason?: string;
+};
+
+export type McpStatus = {
+  installed: boolean;
+  reason?: string;
 };
 
 export type SettingsSegment = "setup" | "rulePrompts" | "cache";
