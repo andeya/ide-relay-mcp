@@ -1,7 +1,7 @@
 {
   "name": "relay-mcp",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Human feedback layer for AI IDEs",
   "author": "andeya <andeyalee@outlook.com>",
@@ -23,7 +23,11 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri": "tauri",
-    "icons:build": "npm run tauri -- icon src-tauri/icons/source/relay-icon.svg"
+    "icons:build": "npm run tauri -- icon src-tauri/icons/source/relay-icon.svg",
+    "version:bump": "node scripts/bump-version.mjs",
+    "version:patch": "node scripts/bump-version.mjs patch",
+    "version:minor": "node scripts/bump-version.mjs minor",
+    "version:major": "node scripts/bump-version.mjs major"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
