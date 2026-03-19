@@ -78,6 +78,11 @@ Full API and security notes: **[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**.
 
 **Pause MCP** (Settings): tool returns sentinel `<<<RELAY_MCP_PAUSED>>>` — agents should not call again until resumed.
 
+<p align="center">
+  <img src="docs/ScreenShot_2.png" alt="Relay composer slash menu for commands and skills" width="440" style="max-width:100%; height:auto;" />
+</p>
+<p align="center"><sub><strong>Slash completion</strong> — <code>commands</code> / <code>skills</code> from the tool populate the palette (optional <strong>category</strong> badges).</sub></p>
+
 ---
 
 ## Quick start
