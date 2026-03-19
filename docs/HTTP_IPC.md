@@ -15,7 +15,7 @@ sequenceDiagram
     Http->>UI: emit relay_tabs_changed
     Mcp->>Http: GET /v1/feedback/wait/:id
     UI->>Http: submit_tab_feedback
-    Http-->>Mcp: text/plain Answer
+    Http-->>Mcp: JSON { relay_mcp_session_id, human }
     Mcp-->>IDE: tool result
 ```
 
@@ -39,22 +39,21 @@ sequenceDiagram
 
 ### `POST /v1/feedback`
 
-- Body JSON: `retell` (required, non-empty after trim), `session_title` (optional, **GUI ignores**, legacy clients), `client_tab_id` (optional).
-- Behavior: non-empty `client_tab_id` merges into the tab with that id and cancels the previous in-flight wait (MCP may get empty string); otherwise opens a new tab.
-- **Title:** GUI assigns **Chat 1**, **Chat 2**, … (global increment); each `client_tab_id` binds to a number on first use, then reuses it. Empty `client_tab_id` → new tab gets the next number. See [CLIENT_TAB_ID.md](CLIENT_TAB_ID.md).
+- Body JSON: `retell` (required, non-empty after trim), `relay_mcp_session_id` (optional; empty = new session), `commands` / `skills` (JSON arrays of `{name, id, category?, description?}`). **New session:** both required (either may be `[]`). **Existing session:** both optional; if present, **merged** into that tab’s lists with **dedupe by `id`** (existing wins, duplicate `id` from request is skipped).
+- Behavior: non-empty `relay_mcp_session_id` merges into the tab with that id and cancels the previous in-flight wait; otherwise opens a new tab and assigns a new session id (ms timestamp). Tab label = **MM-DD HH:mm** from that id.
 - Response: `{ "request_id": "<uuid>" }`
-- Empty `retell` → **400**.
+- Empty `retell` → **400**. See [RELAY_MCP_SESSION_ID.md](RELAY_MCP_SESSION_ID.md).
 
 ### `GET /v1/feedback/wait/:request_id`
 
-- Blocks until the user submits an Answer, closes/dismisses (empty string), **600s** timeout, or the tab is superseded by another POST (old wait gets empty string).
-- Response: `Content-Type: text/plain; charset=utf-8`, body = Answer.
+- Blocks until the user submits an Answer, dismisses, **60 min** timeout (default), or the tab is superseded by another POST.
+- Response: `Content-Type: application/json; charset=utf-8`, body = `{"relay_mcp_session_id":"<ms>","human":"<Answer text>"}` (empty `human` on dismiss/timeout).
 
 ## MCP flow
 
 1. Read `gui_endpoint.json`; if absent, spawn **`relay gui`** and poll.
 2. `POST /v1/feedback` → `request_id`
-3. `GET .../wait/:request_id` (long poll, ureq timeout ~700s)
+3. `GET .../wait/:request_id` (long poll, ureq timeout ~61 min)
 4. Body returned as `tools/call` result.
 
 ## Frontend
