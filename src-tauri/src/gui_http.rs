@@ -122,7 +122,7 @@ impl RelayGuiRuntime {
             let payload = serde_json::json!({
                 "port": port,
                 "token": token,
-                "pid": std::process::id() as u32,
+                "pid": std::process::id(),
             });
             if let Err(e) = std::fs::write(&path, payload.to_string()) {
                 eprintln!("relay gui_http: write endpoint {}", e);
