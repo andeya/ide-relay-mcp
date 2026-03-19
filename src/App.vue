@@ -21,6 +21,8 @@ import SettingsCachePanel from "./components/settings/SettingsCachePanel.vue";
 import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsPanel.vue";
 import relayLogoUrl from "./assets/relay-logo.svg?url";
 import QaReplyAttachments from "./components/QaReplyAttachments.vue";
+import RelayComposerInput from "./components/RelayComposerInput.vue";
+import { slashItemDetailPreview } from "./composables/feedbackComposerUtils";
 import { parseRelayFeedbackReply } from "./utils/parseRelayFeedbackReply";
 import { safeMarkdownToHtml } from "./utils/safeMarkdown";
 
@@ -51,6 +53,13 @@ function slashMenuLabel(cmd: CommandItem) {
   return n.startsWith("/") ? n : `/${n}`;
 }
 
+function slashMenuCategoryLabel(raw: string | undefined) {
+  const c = (raw ?? "").trim();
+  if (!c) return "";
+  if (/^agent_skill$/i.test(c)) return t("slashCategoryAgentSkill");
+  return c;
+}
+
 const {
   isHubPage,
   tabs,
@@ -60,7 +69,7 @@ const {
   selectTab,
   flashingTabIds,
   feedback,
-  bindTextareaRef,
+  bindRelayComposerRef,
   pendingImages,
   pendingFileDrops,
   dragActive,
@@ -68,7 +77,8 @@ const {
   error,
   submitting,
   expired,
-  composerIdle,
+  composerDrafting,
+  composerSwallowPlainEnter,
   hasPendingFileDropErrors,
   status,
   statusLabel,
@@ -81,10 +91,8 @@ const {
   onKeydown,
   onComposerCompositionStart,
   onComposerCompositionEnd,
-  onComposerInput,
+  onComposerCaretHead,
   onComposerScroll,
-  composerMirrorRef,
-  composerHighlightHtml,
   slashOpen,
   slashDropdownRef,
   slashSelectedIndex,
@@ -98,6 +106,18 @@ const {
   removePendingImage,
   removePendingFileDrop,
 } = useFeedbackWindow();
+
+const slashA11yPopupId = computed(() =>
+  slashOpen.value && !expired.value && !isHubPage.value
+    ? "relay-slash-listbox"
+    : null,
+);
+
+const slashA11yActiveId = computed(() => {
+  if (!slashOpen.value || expired.value || isHubPage.value) return null;
+  if (filteredCommands.value.length === 0) return "slash-cmd-empty";
+  return `slash-cmd-${slashSelectedIndex.value}`;
+});
 
 function pendingFileChipLabel(
   fd: { path: string; name: string } | { file: File },
@@ -735,41 +755,28 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
                 <div class="composerTextareaWrap">
-                  <div
-                    ref="composerMirrorRef"
-                    class="composerMirrorScroll"
-                    :class="{
-                      'composerMirrorScroll--thumbs':
-                        (pendingImages.length || pendingFileDrops.length) &&
-                        !expired,
-                    }"
-                    aria-hidden="true"
-                  >
-                    <div
-                      class="composerMirrorInner"
-                      v-html="composerHighlightHtml"
-                    />
-                  </div>
-                  <textarea
-                    :ref="bindTextareaRef"
+                  <RelayComposerInput
+                    :ref="bindRelayComposerRef"
                     v-model="feedback"
-                    class="mainInputComposer composerTextarea composerTextarea--mirrorOverlay"
-                    :class="{
-                      'composerTextarea--thumbs':
-                        (pendingImages.length || pendingFileDrops.length) &&
-                        !expired,
-                    }"
                     :readonly="expired || isHubPage"
                     :placeholder="strings.placeholder"
+                    :swallow-plain-enter="composerSwallowPlainEnter"
+                    :slash-active-descendant-id="slashA11yActiveId"
+                    :slash-comb-popup-id="slashA11yPopupId"
+                    :has-thumbs="
+                      !!(pendingImages.length || pendingFileDrops.length) &&
+                      !expired
+                    "
                     @paste="onComposerPaste"
-                    @input="onComposerInput"
-                    @scroll="onComposerScroll"
                     @keydown="onKeydown"
+                    @scroll="onComposerScroll"
                     @compositionstart="onComposerCompositionStart"
                     @compositionend="onComposerCompositionEnd"
+                    @caret-head="onComposerCaretHead"
                   />
                   <div
                     v-if="slashOpen && !expired && !isHubPage"
+                    id="relay-slash-listbox"
                     class="slashDropdown"
                     role="listbox"
                     aria-label="Commands"
@@ -777,6 +784,7 @@ onBeforeUnmount(() => {
                     <div ref="slashDropdownRef" class="slashDropdownList">
                       <div
                         v-for="(cmd, i) in filteredCommands"
+                        :id="'slash-cmd-' + i"
                         :key="cmd.id"
                         role="option"
                         :aria-selected="i === slashSelectedIndex"
@@ -787,9 +795,9 @@ onBeforeUnmount(() => {
                       >
                         <div class="slashDropdownItemHead">
                           <span
-                            v-if="cmd.category"
+                            v-if="slashMenuCategoryLabel(cmd.category)"
                             class="slashDropdownItemCategory"
-                          >{{ cmd.category }}</span>
+                          >{{ slashMenuCategoryLabel(cmd.category) }}</span>
                           <span class="slashDropdownItemName">{{
                             slashMenuLabel(cmd)
                           }}</span>
@@ -797,12 +805,14 @@ onBeforeUnmount(() => {
                         <span
                           v-if="cmd.description"
                           class="slashDropdownItemDesc"
+                          :title="cmd.description"
                         >
-                          {{ cmd.description }}
+                          {{ slashItemDetailPreview(cmd.description) }}
                         </span>
                       </div>
                       <div
                         v-if="filteredCommands.length === 0"
+                        id="slash-cmd-empty"
                         class="slashDropdownItem slashDropdownItem--empty slashDropdownEmptyState"
                         role="option"
                         aria-disabled="true"
@@ -826,17 +836,13 @@ onBeforeUnmount(() => {
                       {{
                         isHubPage
                           ? strings.mainHintPreview
-                          : composerIdle
+                          : composerDrafting
                             ? strings.composerHintDraft
                             : strings.composerHint
                       }}
                     </p>
                     <p
-                      v-if="
-                        !isHubPage &&
-                        status === 'active' &&
-                        !composerIdle
-                      "
+                      v-if="!isHubPage && status === 'active'"
                       class="composerFooterHintIde"
                     >
                       {{ strings.ideBlockingHint }}
@@ -881,7 +887,7 @@ onBeforeUnmount(() => {
                           ? strings.composerSubmitBlockedFileError
                           : isHubPage
                             ? strings.composerSubmitDisabledPreview
-                            : composerIdle
+                            : composerDrafting
                               ? strings.composerSubmitDisabledIdle
                               : strings.composerSubmitIconTitle
                       "
@@ -890,14 +896,14 @@ onBeforeUnmount(() => {
                           ? strings.composerSubmitBlockedFileError
                           : isHubPage
                             ? strings.composerSubmitDisabledPreview
-                            : composerIdle
+                            : composerDrafting
                               ? strings.composerSubmitDisabledIdle
                               : strings.composerSubmitIconAria
                       "
                       :disabled="
                         isHubPage ||
                         submitting ||
-                        (!isHubPage && composerIdle) ||
+                        (!isHubPage && composerDrafting) ||
                         hasPendingFileDropErrors
                       "
                       :aria-busy="submitting"
