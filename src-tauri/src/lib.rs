@@ -522,7 +522,7 @@ fn notify_windows_environment_path_changed() {
     const WM_SETTINGCHANGE: u32 = 0x001A;
     const HWND_BROADCAST: isize = 0xffff;
     const SMTO_ABORTIFHUNG: u32 = 0x0002;
-    #[link(name = "user32", kind = "system")]
+    #[link(name = "user32")]
     extern "system" {
         fn SendMessageTimeoutW(
             hwnd: isize,
