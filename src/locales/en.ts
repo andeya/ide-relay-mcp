@@ -224,6 +224,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   slashNoMatch: "No matching command or skill",
   slashNoCommandsForSession: "No commands or skills for this session (IDE did not provide any)",
   slashDropdownHint: "↑↓ Navigate · Enter or Tab to insert",
+  slashCategoryAgentSkill: "Skill",
   noteExpired:
     "This request has already timed out or been cancelled. Your text can be reviewed locally, but it can no longer be submitted.",
   close: "Close",
