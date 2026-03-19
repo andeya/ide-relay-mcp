@@ -31,6 +31,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux dependencies (Tauri / GTK / WebKit)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
       - name: fmt
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - name: clippy
