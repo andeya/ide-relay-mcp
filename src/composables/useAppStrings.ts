@@ -52,6 +52,7 @@ export function useAppStrings() {
       slashNoMatch: t("slashNoMatch"),
       slashNoCommandsForSession: t("slashNoCommandsForSession"),
       slashDropdownHint: t("slashDropdownHint"),
+      slashCategoryAgentSkill: t("slashCategoryAgentSkill"),
       composerHintDraft: t("composerHintDraft"),
       composerSubmitDisabledIdle: t("composerSubmitDisabledIdle"),
       composerSubmitBlockedFileError: t("composerSubmitBlockedFileError"),
