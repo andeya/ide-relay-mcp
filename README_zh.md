@@ -9,13 +9,14 @@
 **面向 MCP 的原生人机回路 — 单二进制、本机 HTTP、同一轮工具返回。**
 
 <p align="center">
+  <a href="https://github.com/andeya/ide-relay-mcp/releases/latest"><img src="https://img.shields.io/badge/platform-Win%20%7C%20Mac%20%7C%20Linux-888888?style=flat-square" alt="Platform"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6366f1?style=flat-square" alt="License"/></a>
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Tauri-2-24adc8?style=flat-square&logo=tauri&logoColor=white" alt="Tauri 2"/></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-MCP%20%2B%20HTTP-000000?style=flat-square&logo=rust&logoColor=white" alt="Rust"/></a>
   <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3-42b883?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue 3"/></a>
 </p>
 
-**[下载](https://github.com/andeya/ide-relay-mcp/releases/latest)** · **[English](README.md)** · **[领域用语](docs/TERMINOLOGY.md)** · **[HTTP IPC](docs/HTTP_IPC.md)** · **[Client tab ID](docs/CLIENT_TAB_ID.md)** · **[前端](docs/FRONTEND.md)** · **[发布与 CI](docs/RELEASING.md)**
+**[下载](https://github.com/andeya/ide-relay-mcp/releases/latest)** · **[English](README.md)**
 
 **作者：** andeya · [andeyalee@outlook.com](mailto:andeyalee@outlook.com)
 
