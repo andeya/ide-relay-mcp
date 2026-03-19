@@ -17,36 +17,37 @@ export default {
 
   rulePromptsTitle: "Rule prompts",
   rulePromptsLead:
-    "English is the text to paste into IDE rules (copy is English-only). Chinese is a fixed human-facing mirror of the same rules. **Switching UI language does not change the English or Chinese prompt blocks below.** Tool: relay_interactive_feedback — wire MCP under Environment & MCP.",
+    "Bilingual (中英合本) rule for relay_interactive_feedback. Copy pastes the **whole** block; paste it **at the top** of IDE rules or use a rule file that loads first (e.g. `00-relay-mcp.mdc`). Tool: relay_interactive_feedback — wire MCP under Environment & MCP.",
   rulePromptsSectionPreview: "Prompt preview",
   rulePromptsSectionIde: "Where to paste (by IDE)",
   rulePromptsModeMild: "Standard (recommended)",
-  rulePromptsModeMildDesc: "Call again only when needed; no forced loop.",
+  rulePromptsModeMildDesc:
+    "Call once at end of each turn; call again as needed when you get human. Does not force an infinite loop. Suited for most use cases.",
   rulePromptsModeLoop: "Strict loop",
-  rulePromptsModeLoopDesc: "Every turn ends with the tool; backoff on errors.",
+  rulePromptsModeLoopDesc:
+    "Every turn must end with a call; back off and retry on transport failure. Ensures the tool is never skipped.",
   rulePromptsModeTool: "Tool spec only",
-  rulePromptsModeToolDesc: "Single block to merge into existing rules.",
+  rulePromptsModeToolDesc:
+    "Tool contract only: no call policy. Merge into your existing rules as a pure tool spec.",
   rulePromptsCopy: "Paste in IDE",
   rulePromptsViewMd: "Preview",
   rulePromptsViewSource: "Source",
-  rulePromptsToggleEnAria: "English prompt display",
-  rulePromptsToggleZhAria: "Chinese reference display",
-  rulePromptsLabelEn: "English",
-  rulePromptsLabelZh: "Chinese reference",
+  rulePromptsToggleEnAria: "Rule prompt display (Markdown or source)",
+  rulePromptsLabelBilingual: "Rule (中文 + English)",
   rulePromptsCopied: "Copied.",
   rulePromptsCopyErr: "Copy failed.",
   rulePromptsLoopRisk:
     "Strict loop may run until you stop the session. Sub-agents (e.g. Task): parent owns the tool per the prompt.",
 
-  rulePromptsIdeMd: `**How to use** **Paste in IDE** above copies the **English rule prompt**. Then match each editor’s **rules area** and **MCP** below (you need both).
+  rulePromptsIdeMd: `**How to use** **Paste in IDE** above copies the **bilingual rule** (中文 + English). Then match each editor’s **rules area** and **MCP** below (you need both).
 
 ### Cursor
-- **Rules**: Settings → **Rules** → User or Project → paste the English block  
+- **Rules**: Settings → **Rules** → User or Project → paste the rule block **at the top** (or use \`.cursor/rules/00-relay-mcp.mdc\` so it loads first). The rule declares highest priority for relay_interactive_feedback.  
 - **MCP file** \`{cursorPath}\`  
 - \`command\` = local \`relay\`, \`args\` = \`["mcp"]\`; suggest \`autoApprove\`: \`relay_interactive_feedback\`
 
 ### Windsurf
-- **Instructions**: paste the same English block in Agent / MCP custom text (UI varies by version)  
+- **Instructions**: paste the same rule block in Agent / MCP custom text (UI varies by version)  
 - **MCP file** \`{windsurfPath}\`
 
 ### VS Code
@@ -57,7 +58,7 @@ export default {
 - **Custom instructions** + MCP \`command\` = **full path** to relay, \`args\` = \`["mcp"]\`
 
 ### Other IDEs
-Any MCP + rules-capable client: paste the English block and register \`relay_interactive_feedback\`.`,
+Any MCP + rules-capable client: paste the rule block and register \`relay_interactive_feedback\`.`,
 
   setupTitle: "This machine",
   setupLead:
@@ -146,13 +147,14 @@ Any MCP + rules-capable client: paste the English block and register \`relay_int
   dockBtnCenter: "●",
   dockBtnRight: "▶",
 
-  mainSessionBadge: "Session",
+  mainSessionBadge: "Chat",
   appTitle: "Relay MCP",
   brand: "Relay",
   subtitle: "Human feedback layer for AI IDEs",
-  statusAwaiting: "Awaiting your reply",
+  statusAwaiting: "Your turn",
+  statusHubWaiting: "Waiting for IDE connection",
   ideBlockingHint:
-    "The IDE is waiting for your Answer (up to ~10 min). After you submit, the agent continues in the same turn.",
+    "The IDE is waiting for your Answer. After you submit, the agent continues in the same turn.",
   mcpPauseTitle: "Pause Relay MCP",
   mcpPauseHint:
     "When on: IDE calls to this MCP **do not open Relay** and return a fixed message immediately. Add a Cursor rule: if the tool result contains <<<RELAY_MCP_PAUSED>>>, **stop calling** relay_interactive_feedback until you turn this off here.",
@@ -219,6 +221,9 @@ Any MCP + rules-capable client: paste the English block and register \`relay_int
   qaEmptySubmit: "Submitted with no text",
   feedback: "Answer",
   placeholder: "Write your reply…",
+  slashNoMatch: "No matching command or skill",
+  slashNoCommandsForSession: "No commands or skills for this session (IDE did not provide any)",
+  slashDropdownHint: "↑↓ Navigate · Enter or Tab to insert",
   noteExpired:
     "This request has already timed out or been cancelled. Your text can be reviewed locally, but it can no longer be submitted.",
   close: "Close",
