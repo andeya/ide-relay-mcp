@@ -30,13 +30,13 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 | ---------------------- | ---------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | \`retell\`             | string                                         | 是                                            | 本回合助手的完整回复原文。trim(retell) 非空，否则服务端返回 400。仅限本回合用户可见内容，非历史回顾或内部推理。经 127.0.0.1 HTTP 传递，无 argv/ARG_MAX 限制。 |
 | \`relay_mcp_session_id\` | string                                         | 若已有则必传；否则省略或 \`""\`                 | 来源：上一次工具返回 JSON 的 \`relay_mcp_session_id\`。省略或 \`""\` = 新标签页；非空 = 合并到该标签页。                                                          |
-| \`commands\`           | array of { name, id, category?, description? } | relay_mcp_session_id 为空时必传所有能获得的commands，非空时可选 | 用于 Relay 输入框斜杠补全。有 relay_mcp_session_id 时可选传。                                                                                                     |
-| \`skills\`            | array of { name, id, category?, description? } | relay_mcp_session_id 为空时必传所有能获得的skills，非空时可选 | 用于 Relay 输入框斜杠补全。有 relay_mcp_session_id 时可选传。                                                                                                      |
+| \`commands\`           | array of { name, id, category?, description? } | **无 session（新标签）**：每次调用**必须**带上本字段（数组）；内容应为当前宿主/IDE **能够枚举到的全部** commands，供 Relay 输入框斜杠补全。**仅当宿主确实无法提供任何项时**才允许 \`[]\`；**不得**在仍能拿到列表时偷懒传空。**有 session**：可选；若传入则按 \`id\` 与标签内已有列表合并去重。 |
+| \`skills\`            | array of { name, id, category?, description? } | 与 \`commands\` 相同规则，对象均为当前宿主能获得的 **skills**。 |
 
 ### [RETURN] 工具结果
 
 - **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number> }\`。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
-- **清单为空时的再传**：若某次返回中 \`cmd_skill_count === 0\`（且非暂停哨兵），下一轮调用**必须**再次传入当前 IDE 能获得的全部 \`commands\` 与 \`skills\`（获取不到则 \`[]\`），以恢复斜杠补全。
+- **清单为空时的再传**：若某次返回中 \`cmd_skill_count === 0\`（且非暂停哨兵），下一轮调用**必须**再次带上 \`commands\` 与 \`skills\`，并填入当前 IDE **能够枚举到的全部**项（**仅当确实无法提供任何项时**才为 \`[]\`），以恢复斜杠补全。
 - **其它**：\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = **MM-DD HH:mm**。\`human\` 为用户回答（关闭/超时可为空）。
 - **后置条件**：保存 \`relay_mcp_session_id\`，下一次调用时传入；将 \`human\` 当作用户输入并回复。
 - **哨兵**：若**整段**结果包含 \`<<<RELAY_MCP_PAUSED>>>\`，则不得再次调用，直到用户在 Relay 设置中恢复。
@@ -45,7 +45,7 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 
 - 变量：\`relay_mcp_session_id\` : string | undefined。**初始**：undefined（或 \`""\`）。
 - **每次成功返回后**（且非哨兵）：\`relay_mcp_session_id := result.relay_mcp_session_id\`。
-- **每次调用时**：若已定义且非空则传入；若上轮返回 \`cmd_skill_count === 0\`，**必须**再传满 \`commands\` 与 \`skills\`（或 \`[]\`）；否则 \`commands\` / \`skills\` 可省略。若无 \`relay_mcp_session_id\`（新标签），必须传当前能获得的 \`commands\` 与 \`skills\`（或 \`[]\`）。
+- **每次调用时**：若已有非空 \`relay_mcp_session_id\` 则必传该字段；若上轮返回 \`cmd_skill_count === 0\`，下一轮**必须**再次带上 \`commands\` 与 \`skills\`，且尽量填全 IDE 可枚举项（**仅当无可枚举项时**才为 \`[]\`）；否则有 session 时这两字段可省略。若无 \`relay_mcp_session_id\`（新标签），**必须**同时带上 \`commands\` 与 \`skills\` 两个数组，并尽量填入宿主当前能提供的全部项；**仅当宿主确实无法提供任何项时才使用 \`[]\`**。
 
 ### [CALL_SCHEDULE] 调用时机（通用）
 
@@ -71,13 +71,13 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 | ---------------------- | ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | \`retell\`             | string                                         | YES                                              | This turn's full assistant reply, verbatim. trim(retell) non-empty; else 400. Content user sees this turn only; not recap or internal reasoning. Over 127.0.0.1 HTTP; no argv/ARG_MAX limit. |
 | \`relay_mcp_session_id\` | string                                         | If you have it: YES; else omit or \`""\`           | From previous tool return JSON. Omit or \`""\` = new tab; non-empty = merge into that tab.                                                                     |
-| \`commands\`           | array of { name, id, category?, description? } | When relay_mcp_session_id empty: YES, pass all available commands; when non-empty: optional | For slash-completion in Relay input. It is optional to pass if relay_mcp_session_id is set and non-empty.                                                                                  |
-| \`skills\`             | array of { name, id, category?, description? } | When relay_mcp_session_id empty: YES, pass all available skills; when non-empty: optional | For slash-completion in Relay input. It is optional to pass if relay_mcp_session_id is set and non-empty.                                                                                                |
+| \`commands\`           | array of { name, id, category?, description? } | **No session (new tab)**: **must** include this property every call; array **must list every IDE/host command you can obtain** for Relay slash-completion. Use \`[]\` **only if** the host truly exposes none — **do not** send empty when you could populate. **With session**: optional; if sent, merged into that tab (dedupe by \`id\`). |
+| \`skills\`             | array of { name, id, category?, description? } | Same rules as \`commands\`, for **skills** the host can expose. |
 
 ### [RETURN] Tool result
 
 - **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number> }\`. \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
-- **Re-list when zero**: If \`cmd_skill_count === 0\` on a return (and not the pause sentinel), the **next** call **must** again pass every available \`commands\` and \`skills\` (or \`[]\`) to restore slash completion.
+- **Re-list when zero**: If \`cmd_skill_count === 0\` on a return (and not the pause sentinel), the **next** call **must** again include \`commands\` and \`skills\` filled with every item the IDE **can** enumerate — use \`[]\` **only** when the host truly provides none.
 - **Also**: \`relay_mcp_session_id\`: ms timestamp. Tab label = **MM-DD HH:mm**. \`human\`: Answer (empty on dismiss/timeout).
 - **Postcondition**: Store \`relay_mcp_session_id\`; pass it on the **next** call. Reply to \`human\` as user input.
 - **Sentinel**: If the **entire** result contains \`<<<RELAY_MCP_PAUSED>>>\`, do not call again until the user resumes in Relay Settings.
@@ -86,7 +86,7 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 
 - Variable: \`relay_mcp_session_id\` : string | undefined. **Initial**: undefined (or \`""\`).
 - **After each successful return** (and not sentinel): \`relay_mcp_session_id := result.relay_mcp_session_id\`.
-- **On each call**: if \`relay_mcp_session_id\` is defined and non-empty, pass it. If the **last** result had \`cmd_skill_count === 0\`, you **must** pass all available \`commands\` and \`skills\` again (or \`[]\`); otherwise they are optional. If you have no session id yet, you must pass all available \`commands\` and \`skills\` (or \`[]\`).
+- **On each call**: if \`relay_mcp_session_id\` is defined and non-empty, pass it. If the **last** result had \`cmd_skill_count === 0\`, the **next** call **must** include \`commands\` and \`skills\` again, populated with everything the IDE can list — \`[]\` only when there is nothing to list; otherwise, with a session, you may omit the two arrays. If you have **no** session yet (new tab), you **must** include **both** arrays and fill them with everything the host can provide; **\`[]\` only when the host truly exposes no items**.
 
 ### [CALL_SCHEDULE] When to call (generic)
 
