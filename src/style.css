@@ -595,7 +595,8 @@ kbd {
   border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: rgba(15, 23, 42, 0.92);
-  overflow: hidden;
+  /* Must not clip .slashDropdown (positioned above the input via bottom: 100%). */
+  overflow: visible;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
@@ -741,8 +742,70 @@ kbd {
   border-top-right-radius: 0;
 }
 
+/* CodeMirror 6 composer (replaces textarea+mirror) */
+.relay-cm-host {
+  width: 100%;
+  min-height: 72px;
+  max-height: 140px;
+  resize: vertical;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.relay-cm-host--thumbs {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.relay-cm-host .cm-editor {
+  height: 100%;
+  min-height: 70px;
+  max-height: 136px;
+}
+
+.relay-cm-host .cm-scroller {
+  font-family: inherit;
+  max-height: 136px;
+}
+
+.composerCard .relay-cm-host {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  min-height: 72px;
+  max-height: 200px;
+}
+
+.composerCard .relay-cm-host .cm-editor {
+  max-height: 198px;
+}
+
+.composerCard .relay-cm-host .cm-scroller {
+  max-height: 198px;
+}
+
+/* Card keeps overflow:visible for slash menu; host must round its top or CM fills the
+   corner square and shows past the card's radius (1px border → inset radius 11px). */
+.composerCard > .composerTextareaWrap:first-child .relay-cm-host {
+  border-radius: 11px 11px 0 0;
+}
+
 .composerTextareaWrap {
   position: relative;
+  z-index: 1;
+  /* Same stack for textarea + mirror so CJK + `/` metrics match; IME overlay fix below. */
+  font-family:
+    "Inter",
+    ui-sans-serif,
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    "Noto Sans CJK SC",
+    system-ui,
+    sans-serif;
 }
 
 /* Highlighted `/slash` tokens behind the transparent textarea */
@@ -758,6 +821,11 @@ kbd {
 
 .composerMirrorScroll::-webkit-scrollbar {
   display: none;
+}
+
+/* Mirror text during IME would desync underline/candidates from the textarea. */
+.composerMirrorScroll--hiddenDuringIme {
+  visibility: hidden;
 }
 
 .composerMirrorScroll--thumbs {
@@ -791,6 +859,12 @@ kbd {
   caret-color: #e2e8f0;
 }
 
+/* Show real textarea glyphs while composing so system IME anchors correctly. */
+.composerTextarea--mirrorOverlay.composerTextarea--imeComposing {
+  color: #e2e8f0 !important;
+  -webkit-text-fill-color: #e2e8f0 !important;
+}
+
 .composerTextarea--mirrorOverlay::placeholder {
   color: #64748b;
   opacity: 1;
@@ -803,7 +877,8 @@ kbd {
 
 .composerSlashToken {
   display: inline;
-  white-space: nowrap;
+  /* Allow long ids to wrap like the textarea; nowrap caused mirror/textarea desync. */
+  white-space: inherit;
 }
 
 .composerSlashMark {
@@ -825,20 +900,37 @@ kbd {
   -webkit-box-decoration-break: clone;
 }
 
-/* Slash dropdown — opens upward (Cursor-style) */
+.composerSlashTag:empty {
+  display: none;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+}
+
+/* Slash dropdown — opens upward (Cursor-style); strong separation from composer / page chrome */
 .slashDropdown {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 100%;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   margin-top: 0;
   top: auto;
-  border-radius: 8px;
-  border: 1px solid rgba(51, 65, 85, 0.85);
-  background: rgba(15, 23, 42, 0.97);
-  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.45);
-  z-index: 10;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  outline: 1px solid rgba(15, 23, 42, 0.75);
+  outline-offset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(30, 41, 59, 0.99) 0%,
+    rgba(15, 23, 42, 0.99) 100%
+  );
+  box-shadow:
+    0 -12px 40px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(148, 163, 184, 0.08) inset,
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  z-index: 100;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -854,12 +946,12 @@ kbd {
 }
 
 .slashDropdownItem {
-  padding: 5px 10px;
+  padding: 8px 12px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+  gap: 4px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.45);
 }
 
 .slashDropdownItem:last-child {
@@ -868,38 +960,56 @@ kbd {
 
 .slashDropdownItem:hover,
 .slashDropdownItemActive {
-  background: rgba(51, 65, 85, 0.95);
+  background: rgba(51, 65, 105, 0.95);
 }
+
 
 .slashDropdownItemHead {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .slashDropdownItemCategory {
-  font-size: 0.62rem;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #a5b4fc;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  background: rgba(67, 56, 202, 0.22);
+  line-height: 1.35;
 }
 
 .slashDropdownItemName {
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 600;
-  font-size: 0.78rem;
-  color: #f1f5f9;
-  line-height: 1.25;
-}
-
-.slashDropdownItemDesc {
-  font-size: 0.68rem;
-  color: #94a3b8;
+  font-size: 0.8125rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: #f8fafc;
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.slashDropdownItemDesc {
+  font-size: 0.6875rem;
+  color: #94a3b8;
+  line-height: 1.35;
+  padding-left: 2px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  word-break: break-all;
 }
 
 .slashDropdownItem--empty {
@@ -924,15 +1034,15 @@ kbd {
 
 .slashDropdownFooter {
   flex-shrink: 0;
-  padding: 4px 10px 6px;
-  border-top: 1px solid rgba(51, 65, 85, 0.75);
-  background: rgba(2, 6, 23, 0.55);
+  padding: 6px 12px 8px;
+  border-top: 1px solid rgba(71, 85, 105, 0.75);
+  background: rgba(15, 23, 42, 0.92);
 }
 
 .slashDropdownHint {
-  font-size: 0.62rem;
+  font-size: 0.625rem;
   color: #64748b;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
 }
 
 .composerFooterBar {
