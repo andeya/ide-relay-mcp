@@ -15,7 +15,7 @@
   <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3-42b883?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue 3"/></a>
 </p>
 
-**[English](README.md)** · **[领域用语](docs/TERMINOLOGY.md)** · **[HTTP IPC](docs/HTTP_IPC.md)** · **[Client tab ID](docs/CLIENT_TAB_ID.md)** · **[前端](docs/FRONTEND.md)** · **[发布与 CI](docs/RELEASING.md)**
+**[下载](https://github.com/andeya/ide-relay-mcp/releases/latest)** · **[English](README.md)** · **[领域用语](docs/TERMINOLOGY.md)** · **[HTTP IPC](docs/HTTP_IPC.md)** · **[Client tab ID](docs/CLIENT_TAB_ID.md)** · **[前端](docs/FRONTEND.md)** · **[发布与 CI](docs/RELEASING.md)**
 
 **作者：** andeya · [andeyalee@outlook.com](mailto:andeyalee@outlook.com)
 
@@ -80,7 +80,7 @@ flowchart LR
 
 ## 快速开始
 
-1. 安装或构建 **Relay**（见 [构建](#构建)）。
+1. **获取 Relay** — 推荐从 [最新发布](https://github.com/andeya/ide-relay-mcp/releases/latest) 下载已编译的安装包（macOS、Linux、Windows）。也可 [从源码构建](#构建)：`npm ci && npm run build && npm run tauri build`。
 2. 将 IDE 的 MCP 指向 **`relay` 可执行文件**，参数 **`["mcp"]`**，**`timeout`** 设大一些（如 **600**）。
 
 ```json

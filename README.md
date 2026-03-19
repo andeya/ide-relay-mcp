@@ -15,7 +15,7 @@
   <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3-42b883?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue 3"/></a>
 </p>
 
-**[简体中文](README_zh.md)** · **[Terminology](docs/TERMINOLOGY.md)** · **[HTTP IPC](docs/HTTP_IPC.md)** · **[Client tab ID](docs/CLIENT_TAB_ID.md)** · **[Frontend](docs/FRONTEND.md)** · **[Release & CI](docs/RELEASING.md)**
+**[Download](https://github.com/andeya/ide-relay-mcp/releases/latest)** · **[简体中文](README_zh.md)** · **[Terminology](docs/TERMINOLOGY.md)** · **[HTTP IPC](docs/HTTP_IPC.md)** · **[Client tab ID](docs/CLIENT_TAB_ID.md)** · **[Frontend](docs/FRONTEND.md)** · **[Release & CI](docs/RELEASING.md)**
 
 **Author:** andeya · [andeyalee@outlook.com](mailto:andeyalee@outlook.com)
 
@@ -80,7 +80,7 @@ Full API and security notes: **[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**.
 
 ## Quick start
 
-1. Install or build **Relay** (see [Build](#build)).
+1. **Get Relay** — Prefer the [latest release](https://github.com/andeya/ide-relay-mcp/releases/latest) (prebuilt installers for macOS, Linux, Windows). Or [build from source](#build): `npm ci && npm run build && npm run tauri build`.
 2. Point your IDE’s MCP at the **`relay`** binary with args **`["mcp"]`** and a generous **`timeout`** (e.g. **600**).
 
 ```json
