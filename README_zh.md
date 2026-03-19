@@ -78,6 +78,11 @@ flowchart LR
 
 **暂停 MCP**（设置）：工具返回哨兵 `<<<RELAY_MCP_PAUSED>>>` — 恢复前智能体不应再次调用。
 
+<p align="center">
+  <img src="docs/ScreenShot_2.png" alt="Relay 输入框斜杠命令与技能补全" width="440" style="max-width:100%; height:auto;" />
+</p>
+<p align="center"><sub><strong>斜杠补全</strong> — MCP 传入的 <code>commands</code> / <code>skills</code> 出现在输入框上方（可选 <strong>category</strong> 徽标）。</sub></p>
+
 ---
 
 ## 快速开始
