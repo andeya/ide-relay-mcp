@@ -1,8 +1,9 @@
 /**
- * Multi-tab feedback: Enter always submits (never newline); Shift+Enter = newline;
- * ⌘/Ctrl+Enter = submit and close this tab. Same in preview / idle (no stray newlines).
+ * Multi-tab feedback: when a tab has a pending MCP request, plain Enter submits; Shift+Enter = newline;
+ * ⌘/Ctrl+Enter = submit and close this tab. Idle tabs (no request_id) draft with Enter = newline.
  */
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import type { ComponentPublicInstance } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -16,10 +17,11 @@ import type {
   LaunchState,
   QaRound,
 } from "../types/relay-app";
+import type { RelayComposerEditorExpose } from "../types/composer-cm";
 import {
   feedbackTabLabel as tabLabel,
   fileUrlToPath,
-  highlightComposerSlashTags,
+  filterAndSortSlashCommands,
   looksLikeSingleFilePath,
 } from "./feedbackComposerUtils";
 
@@ -70,14 +72,15 @@ export function useFeedbackWindow() {
   const feedback = ref("");
   /** IME composition (e.g. CJK input); ignore Enter until composition ends. */
   const imeComposing = ref(false);
-  const feedbackTextareaRef = ref<HTMLTextAreaElement | null>(null);
+  const relayComposerRef = shallowRef<RelayComposerEditorExpose | null>(null);
+  /** Caret index from CodeMirror updateListener (avoids ref/expose timing for `/` menu). */
+  const composerCaretHead = ref(0);
   /** Slash commands: open state, query after "/", anchor index of "/", selected index in list. */
   const slashOpen = ref(false);
   const slashQuery = ref("");
   const slashAnchorStart = ref(0);
   const slashSelectedIndex = ref(0);
   const slashDropdownRef = ref<HTMLElement | null>(null);
-  const composerMirrorRef = ref<HTMLElement | null>(null);
   const pendingImages = ref<PendingImage[]>([]);
   const status = ref<ControlStatus>(null);
   const dragActive = ref(false);
@@ -104,14 +107,7 @@ export function useFeedbackWindow() {
     const commands = launch.value?.commands ?? [];
     const skills = launch.value?.skills ?? [];
     const list = [...commands, ...skills];
-    const q = slashQuery.value.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
-      (c) =>
-        (c.name?.toLowerCase().includes(q)) ||
-        (c.id?.toLowerCase().includes(q)) ||
-        (c.description?.toLowerCase().includes(q)),
-    );
+    return filterAndSortSlashCommands(list, slashQuery.value);
   });
 
   /** True when this session has any commands or skills (so empty dropdown = no match). False = IDE sent none, show slashNoCommandsForSession. */
@@ -129,20 +125,18 @@ export function useFeedbackWindow() {
     slashSelectedIndex.value = 0;
   }
 
-  function updateSlashFromInput() {
-    if (imeComposing.value || expired.value || closing) return;
+  /** @param textSnapshot — pass CM doc from caret event to avoid v-model lag. */
+  function updateSlashFromInput(textSnapshot?: string) {
+    // Do not skip while imeComposing: on some systems `/` triggers composition; skipping
+    // blocks opening the menu, and compositionstart used to closeSlash and race with input.
+    if (expired.value || closing) return;
     const L = launch.value;
     if (L?.is_preview) {
       closeSlash();
       return;
     }
-    const el = feedbackTextareaRef.value;
-    if (!el) {
-      closeSlash();
-      return;
-    }
-    const text = feedback.value;
-    const pos = el.selectionStart ?? 0;
+    const text = textSnapshot ?? feedback.value;
+    const pos = composerCaretHead.value;
     if (pos === 0) {
       closeSlash();
       return;
@@ -167,32 +161,20 @@ export function useFeedbackWindow() {
   }
 
   function insertSlashCommand(cmd: CommandItem) {
-    const el = feedbackTextareaRef.value;
-    if (!el || !slashOpen.value) return;
+    const surface = relayComposerRef.value;
+    if (!surface || !slashOpen.value) return;
     const start = slashAnchorStart.value;
-    const end = el.selectionEnd ?? el.selectionStart ?? start;
+    const end = surface.getSelection().to;
     const name = cmd.name ?? cmd.id ?? "";
-    const v = feedback.value;
+    const v = surface.getDoc();
     const replacement = `/${name} `;
     feedback.value = v.slice(0, start) + replacement + v.slice(end);
     closeSlash();
     void nextTick(() => {
       const pos = start + replacement.length;
-      el.selectionStart = el.selectionEnd = pos;
-      el.focus();
+      surface.setSelection(pos, pos);
+      surface.focus();
     });
-  }
-
-  const composerHighlightHtml = computed(() =>
-    highlightComposerSlashTags(feedback.value),
-  );
-
-  function syncComposerMirrorScroll() {
-    const ta = feedbackTextareaRef.value;
-    const mirror = composerMirrorRef.value;
-    if (!ta || !mirror) return;
-    mirror.scrollTop = ta.scrollTop;
-    mirror.scrollLeft = ta.scrollLeft;
   }
 
   watch(
@@ -210,8 +192,6 @@ export function useFeedbackWindow() {
     },
     { flush: "post" },
   );
-
-  watch(feedback, () => void nextTick(() => syncComposerMirrorScroll()));
 
   const qaRounds = computed((): QaRound[] => {
     const raw = tabsState.value?.qa_rounds;
@@ -259,10 +239,37 @@ export function useFeedbackWindow() {
   const expired = computed(
     () => status.value === "timed_out" || status.value === "cancelled",
   );
-  const composerIdle = computed(() => status.value === "idle");
+  /**
+   * True while there is no answerable MCP slot: no `request_id` or server reports `idle`.
+   * Aligns footer hints + send disabled state with `composerSwallowPlainEnter` (avoids `status === null`
+   * briefly showing the wrong hint when `request_id` is already empty).
+   */
+  const composerDrafting = computed(() => {
+    if (launch.value?.is_preview) return false;
+    if (!launch.value?.request_id?.trim()) return true;
+    if (status.value === "idle") return true;
+    return false;
+  });
   const hasPendingFileDropErrors = computed(() =>
     pendingFileDrops.value.some((fd) => Boolean(fd.error)),
   );
+  /**
+   * Plain Enter = submit only when `submit()` would run (not idle drafting). Must match `submit()`:
+   * `submit` returns early only for `status === "idle"`, but `status` is often `null` until
+   * `read_tab_status` resolves — swallow must still be true whenever `request_id` is set, or Enter
+   * inserts a newline while submit would have succeeded.
+   *
+   * Hub (`is_preview`): composer is read-only; swallow stays true so plain Enter does not insert.
+   * `submit(false)` returns immediately on preview — Enter has no visible effect (⌘/Ctrl+Enter closes via `submit(true)`).
+   */
+  const composerSwallowPlainEnter = computed(() => {
+    if (submitting.value) return true;
+    if (hasPendingFileDropErrors.value) return true;
+    if (launch.value?.is_preview) return true;
+    if (!launch.value?.request_id?.trim()) return false;
+    if (status.value === "idle") return false;
+    return true;
+  });
   const statusLabel = computed(() => {
     void locale.value;
     if (isHubPage.value) return t("statusHubWaiting");
@@ -287,25 +294,30 @@ export function useFeedbackWindow() {
   function insertPathsFixed(paths: string[]) {
     if (!paths.length) return;
     const block = paths.join("\n");
-    const el = feedbackTextareaRef.value;
-    if (!el) {
+    const surface = relayComposerRef.value;
+    if (!surface) {
       if (!feedback.value) feedback.value = block;
       else feedback.value = feedback.value.replace(/\s*$/, "") + "\n" + block;
       return;
     }
-    const start = el.selectionStart ?? 0;
+    const doc = surface.getDoc();
+    const start = surface.getSelection().from;
     const prefix =
-      start > 0 && feedback.value.slice(0, start).trim().length > 0
-        ? (feedback.value[start - 1] === "\n" ? "" : "\n") + block
+      start > 0 && doc.slice(0, start).trim().length > 0
+        ? (doc[start - 1] === "\n" ? "" : "\n") + block
         : block;
-    const v = feedback.value;
-    const end = el.selectionEnd ?? 0;
+    const v = doc;
+    const end = surface.getSelection().to;
     feedback.value = v.slice(0, start) + prefix + v.slice(end);
     void nextTick(() => {
       const pos = start + prefix.length;
-      el.selectionStart = el.selectionEnd = pos;
-      el.focus();
+      surface.setSelection(pos, pos);
+      surface.focus();
     });
+  }
+
+  function onComposerScroll() {
+    /* CodeMirror manages its own scroller; no mirror layer. */
   }
 
   function draftKeyForTab(tab: LaunchState | null | undefined, tabId: string) {
@@ -314,7 +326,13 @@ export function useFeedbackWindow() {
     return c || tabId;
   }
 
+  function onComposerCaretHead(head: number, doc: string) {
+    composerCaretHead.value = head;
+    updateSlashFromInput(doc);
+  }
+
   watch(activeTabId, (id) => {
+    composerCaretHead.value = 0;
     closeSlash();
     if (id) {
       const s = new Set(flashingTabIds.value);
@@ -539,6 +557,7 @@ export function useFeedbackWindow() {
     const id = activeTabId.value;
     if (!tab || !id || closing) return;
 
+    // Hub tab: read-only composer; only ⌘/Ctrl+Enter (closeTabAfter) does work. Plain Enter is swallowed in CM.
     if (tab.is_preview) {
       if (!closeTabAfter) return;
       submitting.value = true;
@@ -628,6 +647,7 @@ export function useFeedbackWindow() {
         } else {
           status.value = null;
           await refreshStatus();
+          void nextTick(() => relayComposerRef.value?.focus());
         }
       } catch (err) {
         error.value = err instanceof Error ? err.message : String(err);
@@ -914,7 +934,9 @@ export function useFeedbackWindow() {
   }
   function onComposerCompositionEnd() {
     imeComposing.value = false;
-    void nextTick(() => updateSlashFromInput());
+    void nextTick(() =>
+      updateSlashFromInput(relayComposerRef.value?.getDoc()),
+    );
   }
 
   function onKeydown(event: KeyboardEvent) {
@@ -933,6 +955,10 @@ export function useFeedbackWindow() {
         return;
       }
       if (event.key === "ArrowDown") {
+        if (list.length === 0) {
+          closeSlash();
+          return;
+        }
         event.preventDefault();
         slashSelectedIndex.value = Math.min(
           slashSelectedIndex.value + 1,
@@ -941,6 +967,10 @@ export function useFeedbackWindow() {
         return;
       }
       if (event.key === "ArrowUp") {
+        if (list.length === 0) {
+          closeSlash();
+          return;
+        }
         event.preventDefault();
         slashSelectedIndex.value = Math.max(0, slashSelectedIndex.value - 1);
         return;
@@ -950,10 +980,12 @@ export function useFeedbackWindow() {
         if (cmd) {
           event.preventDefault();
           insertSlashCommand(cmd);
+          return;
         }
+        event.preventDefault();
+        closeSlash();
         return;
-      }
-      if (event.key === "Tab") {
+      } else if (event.key === "Tab") {
         const cmd = list[slashSelectedIndex.value];
         if (cmd) {
           event.preventDefault();
@@ -965,19 +997,14 @@ export function useFeedbackWindow() {
     const isEnter = event.key === "Enter" || event.code === "NumpadEnter";
     if (!isEnter) return;
 
-    // Shift+Enter always inserts newline; plain Enter never does when it would not submit.
     if (event.shiftKey) return;
 
-    const L = launch.value;
-    /** Same idea as send button disabled: no-op (no newline), not “silent newline”. */
-    const enterWouldNotSubmit =
-      submitting.value ||
-      hasPendingFileDropErrors.value ||
-      Boolean(L?.is_preview) ||
-      (!L?.is_preview && status.value === "idle");
-
-    if (enterWouldNotSubmit) {
+    if (submitting.value || hasPendingFileDropErrors.value) {
       event.preventDefault();
+      return;
+    }
+
+    if (!composerSwallowPlainEnter.value) {
       return;
     }
 
@@ -1039,9 +1066,20 @@ export function useFeedbackWindow() {
     pendingFileDrops.value = [];
   });
 
-  function bindTextareaRef(el: unknown) {
-    feedbackTextareaRef.value =
-      el instanceof HTMLTextAreaElement ? el : null;
+  function bindRelayComposerRef(el: unknown) {
+    if (el == null) {
+      relayComposerRef.value = null;
+      return;
+    }
+    const inst = el as ComponentPublicInstance & Partial<RelayComposerEditorExpose>;
+    if (typeof inst.getCursor === "function") {
+      relayComposerRef.value = inst as RelayComposerEditorExpose;
+      return;
+    }
+    const exposed = (inst as unknown as { $?: { exposed?: RelayComposerEditorExpose } })
+      .$?.exposed;
+    relayComposerRef.value =
+      exposed && typeof exposed.getCursor === "function" ? exposed : null;
   }
 
   return {
@@ -1054,8 +1092,7 @@ export function useFeedbackWindow() {
     selectTab,
     flashingTabIds,
     feedback,
-    feedbackTextareaRef,
-    bindTextareaRef,
+    bindRelayComposerRef,
     pendingImages,
     pendingFileDrops,
     status,
@@ -1064,7 +1101,8 @@ export function useFeedbackWindow() {
     error,
     submitting,
     expired,
-    composerIdle,
+    composerDrafting,
+    composerSwallowPlainEnter,
     hasPendingFileDropErrors,
     statusLabel,
     submitLabel,
@@ -1080,10 +1118,8 @@ export function useFeedbackWindow() {
     onKeydown,
     onComposerCompositionStart,
     onComposerCompositionEnd,
-    onComposerInput: updateSlashFromInput,
-    onComposerScroll: syncComposerMirrorScroll,
-    composerMirrorRef,
-    composerHighlightHtml,
+    onComposerCaretHead,
+    onComposerScroll,
     slashOpen,
     slashDropdownRef,
     slashQuery,
@@ -1092,6 +1128,7 @@ export function useFeedbackWindow() {
     filteredCommands,
     hasSlashList,
     insertSlashCommand,
+    imeComposing,
     initAfterLocale,
     reloadTabs,
     qaRounds,
