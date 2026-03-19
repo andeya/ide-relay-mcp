@@ -380,3 +380,48 @@ mod merge_command_items_tests {
         assert_eq!(got[0].id, "x");
     }
 }
+
+#[cfg(test)]
+mod feedback_tool_result_tests {
+    use super::{cmd_skill_count, feedback_tool_result_string, CommandItem, LaunchState};
+    use serde_json::Value;
+
+    fn sample_tab() -> LaunchState {
+        LaunchState {
+            retell: "r".into(),
+            request_id: "req".into(),
+            title: "t".into(),
+            tab_id: "tid".into(),
+            relay_mcp_session_id: "1700000000000".into(),
+            is_preview: false,
+            commands: Some(vec![CommandItem {
+                name: "a".into(),
+                id: "c1".into(),
+                category: None,
+                description: None,
+            }]),
+            skills: Some(vec![CommandItem {
+                name: "s".into(),
+                id: "s1".into(),
+                category: None,
+                description: None,
+            }]),
+        }
+    }
+
+    #[test]
+    fn cmd_skill_count_sums_lists() {
+        let t = sample_tab();
+        assert_eq!(cmd_skill_count(&t), 2);
+    }
+
+    #[test]
+    fn feedback_tool_result_json_shape() {
+        let t = sample_tab();
+        let s = feedback_tool_result_string(&t, "hello");
+        let v: Value = serde_json::from_str(&s).expect("json");
+        assert_eq!(v["relay_mcp_session_id"], "1700000000000");
+        assert_eq!(v["human"], "hello");
+        assert_eq!(v["cmd_skill_count"], 2);
+    }
+}
