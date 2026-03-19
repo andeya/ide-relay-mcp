@@ -14,6 +14,9 @@ use crate::mcp_http;
 use crate::storage::{log_write, prepare_user_data_dir};
 use crate::{CommandItem, MCP_PAUSED_TOOL_REPLY, TOOL_NAME};
 
+/// MCP / JSON-RPC: client cancelled an in-flight request (LSP-style code used in the wild).
+const JSONRPC_REQUEST_CANCELLED: i64 = -32800;
+
 #[derive(Debug)]
 struct ServerState {
     config_dir: PathBuf,
@@ -53,9 +56,55 @@ impl ServerState {
     }
 }
 
-fn handle_json_line(state: &mut ServerState, line: &str) -> Result<()> {
+/// Best-effort extract JSON-RPC `id` from a line that failed [`serde_json::from_str`].
+fn scrape_jsonrpc_id(line: &str) -> Option<Value> {
+    let key = "\"id\"";
+    let idx = line.find(key)?;
+    let mut rest = line[idx + key.len()..].trim_start();
+    rest = rest.strip_prefix(':')?.trim_start();
+    if let Some(stripped) = rest.strip_prefix('"') {
+        let end = stripped.find('"')?;
+        return Some(Value::String(stripped[..end].to_string()));
+    }
+    let mut end_byte = 0usize;
+    for (i, c) in rest.char_indices() {
+        if c == '-' || c.is_ascii_digit() {
+            end_byte = i + c.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if end_byte == 0 {
+        return None;
+    }
+    let n: i64 = rest[..end_byte].parse().ok()?;
+    Some(Value::Number(n.into()))
+}
+
+fn notification_cancel_targets(msg: &Value, pending_tools_call_id: &Value) -> bool {
+    if msg.get("id").is_some() {
+        return false;
+    }
+    if msg.get("method").and_then(Value::as_str) != Some("notifications/cancelled") {
+        return false;
+    }
+    let Some(params) = msg.get("params") else {
+        return false;
+    };
+    let rid = params.get("requestId").or_else(|| params.get("request_id"));
+    match rid {
+        Some(v) => v == pending_tools_call_id,
+        None => false,
+    }
+}
+
+fn handle_json_line(
+    state: &mut ServerState,
+    line: &str,
+    stdin_rx: &Receiver<String>,
+) -> Result<()> {
     match serde_json::from_str::<Value>(line) {
-        Ok(msg) => dispatch_message(state, &msg)?,
+        Ok(msg) => dispatch_message(state, &msg, stdin_rx)?,
         Err(err) => {
             let sample: String = line.chars().take(200).collect();
             let _ = log_write(
@@ -63,6 +112,9 @@ fn handle_json_line(state: &mut ServerState, line: &str) -> Result<()> {
                 "JSON_PARSE_ERROR",
                 &format!("{} | {}", err, sample),
             );
+            if let Some(id) = scrape_jsonrpc_id(line) {
+                state.send_error(id, -32700, format!("Parse error: {}", err))?;
+            }
         }
     }
     Ok(())
@@ -82,11 +134,100 @@ fn respond_tool_result(state: &mut ServerState, id: Value, feedback: String) -> 
     state.send_result(id, payload)
 }
 
-fn handle_cancel_notification(_state: &mut ServerState, _msg: &Value) -> Result<()> {
+/// Log when there is no in-flight `tools/call` to attach this notification to.
+fn handle_cancel_notification(state: &mut ServerState, msg: &Value) -> Result<()> {
+    let sample: String = msg.to_string().chars().take(320).collect();
+    let _ = log_write(&state.config_dir, "MCP_CANCELLED_ORPHAN", &sample);
     Ok(())
 }
 
-fn handle_tool_call(state: &mut ServerState, msg: &Value) -> Result<()> {
+fn wait_feedback_round(
+    state: &mut ServerState,
+    rpc_id: Value,
+    retell: String,
+    relay_mcp_session_id: String,
+    commands: Option<Vec<CommandItem>>,
+    skills: Option<Vec<CommandItem>>,
+    stdin_rx: &Receiver<String>,
+) -> Result<()> {
+    let (tool_tx, tool_rx) = mpsc::channel::<Result<String, String>>();
+    let retell_t = retell.clone();
+    let sid_t = relay_mcp_session_id.clone();
+    thread::spawn(move || {
+        let r = mcp_http::feedback_round(&retell_t, &sid_t, commands.as_deref(), skills.as_deref());
+        let _ = tool_tx.send(r.map_err(|e| e.to_string()));
+    });
+
+    loop {
+        match tool_rx.recv_timeout(Duration::from_millis(120)) {
+            Ok(Ok(answer)) => {
+                if !answer.is_empty() {
+                    state.loop_index = 0;
+                }
+                let _ = log_write(&state.config_dir, "USER_REPLY", &answer);
+                respond_tool_result(state, rpc_id, answer)?;
+                return Ok(());
+            }
+            Ok(Err(e)) => {
+                state.send_error(rpc_id, -32603, format!("Relay GUI: {}", e))?;
+                return Ok(());
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                state.send_error(
+                    rpc_id,
+                    -32603,
+                    "Relay GUI: internal error (feedback thread disconnected)",
+                )?;
+                return Ok(());
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                while let Ok(line) = stdin_rx.try_recv() {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    match serde_json::from_str::<Value>(&line) {
+                        Ok(msg) => {
+                            if notification_cancel_targets(&msg, &rpc_id) {
+                                let _ = log_write(&state.config_dir, "MCP_CANCELLED", "");
+                                state.send_error(
+                                    rpc_id.clone(),
+                                    JSONRPC_REQUEST_CANCELLED,
+                                    "Request cancelled (notifications/cancelled)",
+                                )?;
+                                return Ok(());
+                            }
+                            if msg.get("id").is_some() {
+                                let mid = msg["id"].clone();
+                                state.send_error(
+                                    mid,
+                                    -32603,
+                                    "Relay: a tools/call is already waiting for human feedback; wait for the Answer or cancel that request",
+                                )?;
+                            }
+                        }
+                        Err(err) => {
+                            let sample: String = line.chars().take(200).collect();
+                            let _ = log_write(
+                                &state.config_dir,
+                                "JSON_PARSE_ERROR",
+                                &format!("{} | {}", err, sample),
+                            );
+                            if let Some(id) = scrape_jsonrpc_id(&line) {
+                                state.send_error(id, -32700, format!("Parse error: {}", err))?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn handle_tool_call(
+    state: &mut ServerState,
+    msg: &Value,
+    stdin_rx: &Receiver<String>,
+) -> Result<()> {
     let name = msg
         .get("params")
         .and_then(|params| params.get("name"))
@@ -154,24 +295,15 @@ fn handle_tool_call(state: &mut ServerState, msg: &Value) -> Result<()> {
     let _ = log_write(&state.config_dir, "AI_REQUEST", &log_line);
 
     let Some((rule, is_oneshot)) = auto_reply_peek(&state.config_dir, state.loop_index) else {
-        match mcp_http::feedback_round(
-            &retell,
-            &relay_mcp_session_id,
-            commands.as_deref(),
-            skills.as_deref(),
-        ) {
-            Ok(answer) => {
-                if !answer.is_empty() {
-                    state.loop_index = 0;
-                }
-                let _ = log_write(&state.config_dir, "USER_REPLY", &answer);
-                respond_tool_result(state, rpc_id, answer)?;
-            }
-            Err(e) => {
-                state.send_error(rpc_id, -32603, format!("Relay GUI: {}", e))?;
-            }
-        }
-        return Ok(());
+        return wait_feedback_round(
+            state,
+            rpc_id,
+            retell,
+            relay_mcp_session_id,
+            commands,
+            skills,
+            stdin_rx,
+        );
     };
 
     if is_oneshot {
@@ -190,7 +322,11 @@ fn handle_tool_call(state: &mut ServerState, msg: &Value) -> Result<()> {
     Ok(())
 }
 
-fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
+fn dispatch_message(
+    state: &mut ServerState,
+    msg: &Value,
+    stdin_rx: &Receiver<String>,
+) -> Result<()> {
     let Some(method) = msg.get("method").and_then(Value::as_str) else {
         return Ok(());
     };
@@ -223,10 +359,10 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                     "tools": [
                         {
                             "name": TOOL_NAME,
-                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id, human, and cmd_skill_count (commands+skills on that tab). If cmd_skill_count is 0 on a return, the next call with that session must pass all available commands and skills again (or []). No session id: pass both lists (or []). With session id: optional merge (dedupe by id).",
+                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id, human, and cmd_skill_count. New tab (no session): always include commands and skills arrays filled with every item the IDE/host can expose; use [] only if truly none. If cmd_skill_count was 0 on the last reply, next call must repopulate both arrays the same way. With session id: commands/skills optional; when sent, merged (dedupe by id).",
                             "inputSchema": {
                                 "type": "object",
-                                "description": "retell required. Use last result cmd_skill_count: if 0 (and session not empty), next call must pass all available commands and skills for that session (or []). Without relay_mcp_session_id: pass commands and skills (or []). With relay_mcp_session_id: pass it; optionally pass commands/skills to merge (dedupe by id).",
+                                "description": "retell required. New session: include commands and skills with full IDE-provided lists when possible; [] only when host exposes no items. After cmd_skill_count 0, next call must include both arrays repopulated the same way. With relay_mcp_session_id: pass it; commands/skills optional unless repopulating after zero.",
                                 "properties": {
                                     "retell": {
                                         "type": "string",
@@ -234,11 +370,11 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                                     },
                                     "relay_mcp_session_id": {
                                         "type": "string",
-                                        "description": "Optional on first call; required on subsequent calls. Returned JSON includes relay_mcp_session_id, human, cmd_skill_count. Remember relay_mcp_session_id for the next call; if cmd_skill_count was 0, repopulate commands and skills."
+                                        "description": "Omit or empty string for a new tab; otherwise pass the id from the previous tool result. If the last cmd_skill_count was 0, next call must again send commands and skills (full lists when possible, else [] only if none exist)."
                                     },
                                     "commands": {
                                         "type": "array",
-                                        "description": "When relay_mcp_session_id is empty: required — pass all available IDE commands (or []). When relay_mcp_session_id is set: optional; if sent, merged into existing commands for that tab (dedupe by id). Shape: [{name, id, category?, description?}].",
+                                        "description": "New tab: required as a property every call—array must list every IDE command you can obtain for slash-completion; use [] only if the host truly provides none (do not send empty when data exists). With session: optional; if sent, merged into this tab (dedupe by id). Shape: [{name, id, category?, description?}].",
                                         "items": {
                                             "type": "object",
                                             "properties": {
@@ -251,7 +387,7 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                                     },
                                     "skills": {
                                         "type": "array",
-                                        "description": "When relay_mcp_session_id is empty: required — pass all available IDE skills (or []). When relay_mcp_session_id is set: optional; if sent, merged into existing skills for that tab (dedupe by id). Same shape as commands.",
+                                        "description": "Same rules as commands: new tab must include the array populated with every IDE skill you can obtain; [] only if none exist. With session: optional; merge (dedupe by id) if sent.",
                                         "items": {
                                             "type": "object",
                                             "properties": {
@@ -271,7 +407,7 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
             )?;
         }
         "tools/call" => {
-            handle_tool_call(state, msg)?;
+            handle_tool_call(state, msg, stdin_rx)?;
         }
         _ => {
             state.send_error(
@@ -311,7 +447,7 @@ pub fn run_feedback_server() -> Result<()> {
             if line.trim().is_empty() {
                 continue;
             }
-            handle_json_line(&mut state, &line)?;
+            handle_json_line(&mut state, &line, &rx)?;
         }
 
         if disconnected {
@@ -323,7 +459,7 @@ pub fn run_feedback_server() -> Result<()> {
                 if line.trim().is_empty() {
                     continue;
                 }
-                handle_json_line(&mut state, &line)?;
+                handle_json_line(&mut state, &line, &rx)?;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -368,5 +504,59 @@ pub fn run_feedback_cli(
         Err(mpsc::RecvTimeoutError::Disconnected) => Err(anyhow::anyhow!(
             "internal error: feedback thread disconnected"
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn scrape_jsonrpc_id_string() {
+        let line = r#"{"jsonrpc":"2.0","method":"ping","id":"abc"}"#;
+        assert_eq!(scrape_jsonrpc_id(line), Some(Value::String("abc".into())));
+    }
+
+    #[test]
+    fn scrape_jsonrpc_id_number() {
+        let line = r#"{"jsonrpc":"2.0","method":"ping","id": 42}"#;
+        assert_eq!(scrape_jsonrpc_id(line), Some(Value::Number(42.into())));
+    }
+
+    #[test]
+    fn scrape_jsonrpc_id_none_on_garbage() {
+        assert_eq!(scrape_jsonrpc_id("not json"), None);
+    }
+
+    #[test]
+    fn notification_cancel_matches() {
+        let pending = json!(7);
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": { "requestId": 7 }
+        });
+        assert!(notification_cancel_targets(&msg, &pending));
+    }
+
+    #[test]
+    fn notification_cancel_request_id_alias() {
+        let pending = json!("x");
+        let msg = json!({
+            "method": "notifications/cancelled",
+            "params": { "request_id": "x" }
+        });
+        assert!(notification_cancel_targets(&msg, &pending));
+    }
+
+    #[test]
+    fn notification_cancel_wrong_id() {
+        let pending = json!(1);
+        let msg = json!({
+            "method": "notifications/cancelled",
+            "params": { "requestId": 2 }
+        });
+        assert!(!notification_cancel_targets(&msg, &pending));
     }
 }
