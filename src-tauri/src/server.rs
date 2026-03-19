@@ -237,7 +237,7 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                                     },
                                     "commands": {
                                         "type": "array",
-                                        "description": "Required (may be []) when relay_mcp_session_id is empty. When relay_mcp_session_id is set, optional; if sent, merged into existing commands for that tab (dedupe by id). Shape: [{name, id, category?, description?}].",
+                                        "description": "When relay_mcp_session_id is empty: required — pass all available IDE commands (or []). When relay_mcp_session_id is set: optional; if sent, merged into existing commands for that tab (dedupe by id). Shape: [{name, id, category?, description?}].",
                                         "items": {
                                             "type": "object",
                                             "properties": {
@@ -250,7 +250,7 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                                     },
                                     "skills": {
                                         "type": "array",
-                                        "description": "Required (may be []) when relay_mcp_session_id is empty. When set on the session, optional; if sent, merged into existing skills for that tab (dedupe by id). Same shape as commands.",
+                                        "description": "When relay_mcp_session_id is empty: required — pass all available IDE skills (or []). When relay_mcp_session_id is set: optional; if sent, merged into existing skills for that tab (dedupe by id). Same shape as commands.",
                                         "items": {
                                             "type": "object",
                                             "properties": {

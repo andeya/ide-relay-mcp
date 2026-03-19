@@ -45,6 +45,33 @@ function tabLabel(tab: LaunchState): string {
   return `#${tab.tab_id.slice(-6)}`;
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Mark `/name` tokens: keep `/` as plain text; wrap only the name in a pill (mirror layer). */
+function highlightComposerSlashTags(text: string): string {
+  if (!text) return "";
+  const re = /(^|[\n ])(\/[^\s]+)/g;
+  let out = "";
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    out += escapeHtml(text.slice(last, m.index));
+    const token = m[2];
+    const body = token.startsWith("/") ? token.slice(1) : token;
+    out +=
+      escapeHtml(m[1]) +
+      `<span class="composerSlashToken"><span class="composerSlashMark">/</span><span class="composerSlashTag">${escapeHtml(body)}</span></span>`;
+    last = re.lastIndex;
+  }
+  out += escapeHtml(text.slice(last));
+  return out;
+}
+
 function looksLikeSingleFilePath(line: string): boolean {
   const t = line.trim();
   if (!t || t.includes("\n")) return false;
@@ -114,6 +141,7 @@ export function useFeedbackWindow() {
   const slashAnchorStart = ref(0);
   const slashSelectedIndex = ref(0);
   const slashDropdownRef = ref<HTMLElement | null>(null);
+  const composerMirrorRef = ref<HTMLElement | null>(null);
   const pendingImages = ref<PendingImage[]>([]);
   const status = ref<ControlStatus>(null);
   const dragActive = ref(false);
@@ -206,16 +234,29 @@ export function useFeedbackWindow() {
     const el = feedbackTextareaRef.value;
     if (!el || !slashOpen.value) return;
     const start = slashAnchorStart.value;
-    const end = el.selectionStart ?? start;
-    const insertText = cmd.name ?? cmd.id ?? "";
+    const end = el.selectionEnd ?? el.selectionStart ?? start;
+    const name = cmd.name ?? cmd.id ?? "";
     const v = feedback.value;
-    feedback.value = v.slice(0, start) + insertText + v.slice(end);
+    const replacement = `/${name} `;
+    feedback.value = v.slice(0, start) + replacement + v.slice(end);
     closeSlash();
     void nextTick(() => {
-      const pos = start + insertText.length;
+      const pos = start + replacement.length;
       el.selectionStart = el.selectionEnd = pos;
       el.focus();
     });
+  }
+
+  const composerHighlightHtml = computed(() =>
+    highlightComposerSlashTags(feedback.value),
+  );
+
+  function syncComposerMirrorScroll() {
+    const ta = feedbackTextareaRef.value;
+    const mirror = composerMirrorRef.value;
+    if (!ta || !mirror) return;
+    mirror.scrollTop = ta.scrollTop;
+    mirror.scrollLeft = ta.scrollLeft;
   }
 
   watch(
@@ -233,6 +274,8 @@ export function useFeedbackWindow() {
     },
     { flush: "post" },
   );
+
+  watch(feedback, () => void nextTick(() => syncComposerMirrorScroll()));
 
   const qaRounds = computed((): QaRound[] => {
     const raw = tabsState.value?.qa_rounds;
@@ -1102,6 +1145,9 @@ export function useFeedbackWindow() {
     onComposerCompositionStart,
     onComposerCompositionEnd,
     onComposerInput: updateSlashFromInput,
+    onComposerScroll: syncComposerMirrorScroll,
+    composerMirrorRef,
+    composerHighlightHtml,
     slashOpen,
     slashDropdownRef,
     slashQuery,

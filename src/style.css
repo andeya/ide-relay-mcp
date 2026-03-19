@@ -745,36 +745,121 @@ kbd {
   position: relative;
 }
 
-/* Slash dropdown — Cursor-style: list + footer hint */
+/* Highlighted `/slash` tokens behind the transparent textarea */
+.composerMirrorScroll {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: auto;
+  pointer-events: none;
+  scrollbar-width: none;
+  border-radius: inherit;
+}
+
+.composerMirrorScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.composerMirrorScroll--thumbs {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.composerMirrorInner {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #e2e8f0;
+}
+
+.composerCard .composerMirrorInner {
+  padding: 10px 12px;
+  min-height: 72px;
+}
+
+.composerTextarea--mirrorOverlay {
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  caret-color: #e2e8f0;
+}
+
+.composerTextarea--mirrorOverlay::placeholder {
+  color: #64748b;
+  opacity: 1;
+  -webkit-text-fill-color: #64748b;
+}
+
+.composerCard .composerTextarea--mirrorOverlay {
+  background: transparent !important;
+}
+
+.composerSlashToken {
+  display: inline;
+  white-space: nowrap;
+}
+
+.composerSlashMark {
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.composerSlashTag {
+  display: inline;
+  padding: 0.06em 0.38em 0.08em;
+  margin-left: 0.02em;
+  border-radius: 5px;
+  background: rgba(79, 70, 229, 0.35);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  color: #eef2ff;
+  font-weight: 600;
+  font-size: 0.92em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Slash dropdown — opens upward (Cursor-style) */
 .slashDropdown {
   position: absolute;
   left: 0;
   right: 0;
-  top: 100%;
-  margin-top: 2px;
+  bottom: 100%;
+  margin-bottom: 6px;
+  margin-top: 0;
+  top: auto;
   border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(30, 41, 59, 0.98);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(51, 65, 85, 0.85);
+  background: rgba(15, 23, 42, 0.97);
+  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.45);
   z-index: 10;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  font-size: 0.75rem;
 }
 
 .slashDropdownList {
-  max-height: 220px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(40vh, 260px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .slashDropdownItem {
-  padding: 8px 12px;
+  padding: 5px 10px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+  gap: 1px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.55);
 }
 
 .slashDropdownItem:last-child {
@@ -783,7 +868,7 @@ kbd {
 
 .slashDropdownItem:hover,
 .slashDropdownItemActive {
-  background: rgba(99, 102, 241, 0.18);
+  background: rgba(51, 65, 85, 0.95);
 }
 
 .slashDropdownItemHead {
@@ -794,22 +879,23 @@ kbd {
 }
 
 .slashDropdownItemCategory {
-  font-size: 0.7rem;
-  font-weight: 500;
+  font-size: 0.62rem;
+  font-weight: 600;
   color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   flex-shrink: 0;
 }
 
 .slashDropdownItemName {
   font-weight: 600;
-  font-size: 0.9rem;
-  color: #e2e8f0;
+  font-size: 0.78rem;
+  color: #f1f5f9;
+  line-height: 1.25;
 }
 
 .slashDropdownItemDesc {
-  font-size: 0.8rem;
+  font-size: 0.68rem;
   color: #94a3b8;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -825,12 +911,12 @@ kbd {
 .slashDropdownEmptyState {
   justify-content: center;
   align-items: center;
-  padding: 14px 12px;
-  min-height: 52px;
+  padding: 10px 10px;
+  min-height: 44px;
 }
 
 .slashDropdownEmptyText {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   color: #64748b;
   text-align: center;
   line-height: 1.4;
@@ -838,13 +924,13 @@ kbd {
 
 .slashDropdownFooter {
   flex-shrink: 0;
-  padding: 6px 12px 8px;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
-  background: rgba(15, 23, 42, 0.6);
+  padding: 4px 10px 6px;
+  border-top: 1px solid rgba(51, 65, 85, 0.75);
+  background: rgba(2, 6, 23, 0.55);
 }
 
 .slashDropdownHint {
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   color: #64748b;
   letter-spacing: 0.02em;
 }

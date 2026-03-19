@@ -15,7 +15,7 @@ import { locale, t } from "./i18n";
 import { useAppStrings } from "./composables/useAppStrings";
 import { useFeedbackWindow } from "./composables/useFeedbackWindow";
 import { useMcpAndPathSettings } from "./composables/useMcpAndPathSettings";
-import type { SettingsSegment } from "./types/relay-app";
+import type { CommandItem, SettingsSegment } from "./types/relay-app";
 import type { SettingsToastPayload } from "./composables/useRelayCacheSettings";
 import SettingsCachePanel from "./components/settings/SettingsCachePanel.vue";
 import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsPanel.vue";
@@ -42,6 +42,13 @@ function parseUserReply(raw: string) {
 }
 function qaMd(html: string) {
   return safeMarkdownToHtml(html);
+}
+
+/** Show `/Name` in slash menu (Cursor-style) without duplicating a leading slash. */
+function slashMenuLabel(cmd: CommandItem) {
+  const n = (cmd.name ?? cmd.id ?? "").trim();
+  if (!n) return "/";
+  return n.startsWith("/") ? n : `/${n}`;
 }
 
 const {
@@ -75,6 +82,9 @@ const {
   onComposerCompositionStart,
   onComposerCompositionEnd,
   onComposerInput,
+  onComposerScroll,
+  composerMirrorRef,
+  composerHighlightHtml,
   slashOpen,
   slashDropdownRef,
   slashSelectedIndex,
@@ -726,10 +736,25 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
                 <div class="composerTextareaWrap">
+                  <div
+                    ref="composerMirrorRef"
+                    class="composerMirrorScroll"
+                    :class="{
+                      'composerMirrorScroll--thumbs':
+                        (pendingImages.length || pendingFileDrops.length) &&
+                        !expired,
+                    }"
+                    aria-hidden="true"
+                  >
+                    <div
+                      class="composerMirrorInner"
+                      v-html="composerHighlightHtml"
+                    />
+                  </div>
                   <textarea
                     :ref="bindTextareaRef"
                     v-model="feedback"
-                    class="mainInputComposer composerTextarea"
+                    class="mainInputComposer composerTextarea composerTextarea--mirrorOverlay"
                     :class="{
                       'composerTextarea--thumbs':
                         (pendingImages.length || pendingFileDrops.length) &&
@@ -739,6 +764,7 @@ onBeforeUnmount(() => {
                     :placeholder="strings.placeholder"
                     @paste="onComposerPaste"
                     @input="onComposerInput"
+                    @scroll="onComposerScroll"
                     @keydown="onKeydown"
                     @compositionstart="onComposerCompositionStart"
                     @compositionend="onComposerCompositionEnd"
@@ -765,7 +791,9 @@ onBeforeUnmount(() => {
                             v-if="cmd.category"
                             class="slashDropdownItemCategory"
                           >{{ cmd.category }}</span>
-                          <span class="slashDropdownItemName">{{ cmd.name }}</span>
+                          <span class="slashDropdownItemName">{{
+                            slashMenuLabel(cmd)
+                          }}</span>
                         </div>
                         <span
                           v-if="cmd.description"
