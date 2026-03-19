@@ -218,6 +218,7 @@ export default {
   slashNoMatch: "无匹配的命令或技能",
   slashNoCommandsForSession: "本会话暂无命令或技能（IDE 未传入）",
   slashDropdownHint: "↑↓ 选择 · Enter 或 Tab 插入",
+  slashCategoryAgentSkill: "技能",
   noteExpired: "该请求已超时或已被取消。内容仅可本地查看，无法再提交。",
   close: "关闭",
   submit: "提交（Enter）",
