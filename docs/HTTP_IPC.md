@@ -15,7 +15,7 @@ sequenceDiagram
     Http->>UI: emit relay_tabs_changed
     Mcp->>Http: GET /v1/feedback/wait/:id
     UI->>Http: submit_tab_feedback
-    Http-->>Mcp: JSON { relay_mcp_session_id, human }
+    Http-->>Mcp: JSON { relay_mcp_session_id, human, cmd_skill_count }
     Mcp-->>IDE: tool result
 ```
 
@@ -47,7 +47,7 @@ sequenceDiagram
 ### `GET /v1/feedback/wait/:request_id`
 
 - Blocks until the user submits an Answer, dismisses, **60 min** timeout (default), or the tab is superseded by another POST.
-- Response: `Content-Type: application/json; charset=utf-8`, body = `{"relay_mcp_session_id":"<ms>","human":"<Answer text>"}` (empty `human` on dismiss/timeout).
+- Response: `Content-Type: application/json; charset=utf-8`, body = `{"relay_mcp_session_id":"<ms>","human":"<Answer text>","cmd_skill_count":<n>}` (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss/timeout).
 
 ## MCP flow
 

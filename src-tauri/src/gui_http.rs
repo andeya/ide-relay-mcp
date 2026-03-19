@@ -1,9 +1,10 @@
 //! Local HTTP for MCP ↔ GUI (`docs/HTTP_IPC.md`).
 
 use crate::{
-    apply_reply_for_tab, finish_tab_remove_empty_close, format_session_id_as_title, mcp_http,
-    merge_command_items, new_tab_id, push_qa_round, relay_mcp_session_id_now,
-    skip_open_round_for_tab, CommandItem, ControlStatus, FeedbackTabsState, LaunchState,
+    apply_reply_for_tab, feedback_tool_result_string, finish_tab_remove_empty_close,
+    format_session_id_as_title, mcp_http, merge_command_items, new_tab_id, push_qa_round,
+    relay_mcp_session_id_now, skip_open_round_for_tab, CommandItem, ControlStatus,
+    FeedbackTabsState, LaunchState,
 };
 use axum::{
     extract::{Path, State},
@@ -52,24 +53,21 @@ fn auth_ok(headers: &HeaderMap, token: &str) -> bool {
 }
 
 fn cancel_wait(inner: &RelayGuiInner, rid: &str) {
-    let session_id = {
+    let empty_result = {
         let g = inner.tabs.lock().unwrap();
         g.tabs
             .iter()
             .find(|t| t.request_id == rid)
-            .map(|t| t.relay_mcp_session_id.clone())
-            .unwrap_or_default()
+            .map(|t| feedback_tool_result_string(t, ""))
+            .unwrap_or_else(|| {
+                serde_json::json!({
+                    "relay_mcp_session_id": "",
+                    "human": "",
+                    "cmd_skill_count": 0,
+                })
+                .to_string()
+            })
     };
-    let empty_result = serde_json::to_string(&serde_json::json!({
-        "relay_mcp_session_id": session_id,
-        "human": ""
-    }))
-    .unwrap_or_else(|_| {
-        format!(
-            "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
-            session_id
-        )
-    });
     let mut wtx = inner.wait_tx.lock().unwrap();
     let mut wrx = inner.wait_rx.lock().unwrap();
     if let Some(tx) = wtx.remove(rid) {
@@ -274,11 +272,7 @@ impl RelayGuiRuntime {
         if rid.is_empty() {
             return Err("no pending request".into());
         }
-        let json_result = serde_json::json!({
-            "relay_mcp_session_id": t.relay_mcp_session_id,
-            "human": feedback
-        });
-        let result_string = serde_json::to_string(&json_result).map_err(|e| e.to_string())?;
+        let result_string = feedback_tool_result_string(&t, &feedback);
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
         apply_reply_for_tab(&mut g, tab_id, &feedback, false);
         drop(g);
@@ -302,15 +296,7 @@ impl RelayGuiRuntime {
             return Ok(());
         };
         if !t.request_id.is_empty() {
-            let empty_result = serde_json::to_string(
-                &serde_json::json!({"relay_mcp_session_id": t.relay_mcp_session_id, "human": ""}),
-            )
-            .unwrap_or_else(|_| {
-                format!(
-                    "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
-                    t.relay_mcp_session_id
-                )
-            });
+            let empty_result = feedback_tool_result_string(&t, "");
             self.complete_request(&t.request_id, empty_result);
         }
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
@@ -335,16 +321,7 @@ impl RelayGuiRuntime {
             return Ok(());
         }
         if !t.request_id.is_empty() {
-            let empty_result = serde_json::to_string(&serde_json::json!({
-                "relay_mcp_session_id": t.relay_mcp_session_id,
-                "human": ""
-            }))
-            .unwrap_or_else(|_| {
-                format!(
-                    "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
-                    t.relay_mcp_session_id
-                )
-            });
+            let empty_result = feedback_tool_result_string(&t, "");
             self.complete_request(&t.request_id, empty_result);
         }
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
@@ -500,19 +477,15 @@ async fn post_feedback(
                 .tabs
                 .iter()
                 .find(|t| t.request_id == rid)
-                .map(|t| {
-                    serde_json::to_string(&serde_json::json!({
-                        "relay_mcp_session_id": t.relay_mcp_session_id,
-                        "human": ""
-                    }))
-                    .unwrap_or_else(|_| {
-                        format!(
-                            "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
-                            t.relay_mcp_session_id
-                        )
+                .map(|t| feedback_tool_result_string(t, ""))
+                .unwrap_or_else(|| {
+                    serde_json::json!({
+                        "relay_mcp_session_id": "",
+                        "human": "",
+                        "cmd_skill_count": 0,
                     })
-                })
-                .unwrap_or_else(|| r#"{"relay_mcp_session_id":"","human":""}"#.to_string());
+                    .to_string()
+                });
             if let Some(tx) = inner.wait_tx.lock().unwrap().remove(&rid) {
                 let _ = tx.send(empty_result);
             }
@@ -559,23 +532,26 @@ async fn wait_feedback(
                     g.tabs
                         .iter()
                         .find(|t| t.request_id == rid2)
-                        .map(|t| {
-                            serde_json::to_string(&serde_json::json!({
-                                "relay_mcp_session_id": t.relay_mcp_session_id,
-                                "human": ""
-                            }))
-                            .unwrap_or_else(|_| {
-                                format!(
-                                    "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
-                                    t.relay_mcp_session_id
-                                )
+                        .map(|t| feedback_tool_result_string(t, ""))
+                        .unwrap_or_else(|| {
+                            serde_json::json!({
+                                "relay_mcp_session_id": "",
+                                "human": "",
+                                "cmd_skill_count": 0,
                             })
+                            .to_string()
                         })
-                        .unwrap_or_else(|| r#"{"relay_mcp_session_id":"","human":""}"#.to_string())
                 }
             })
             .await
-            .unwrap_or_else(|_| r#"{"relay_mcp_session_id":"","human":""}"#.to_string());
+            .unwrap_or_else(|_| {
+                serde_json::json!({
+                    "relay_mcp_session_id": "",
+                    "human": "",
+                    "cmd_skill_count": 0,
+                })
+                .to_string()
+            });
             let inner_cleanup = st.inner.clone();
             let rid_cleanup = rid.clone();
             let _ = tokio::task::spawn_blocking(move || {

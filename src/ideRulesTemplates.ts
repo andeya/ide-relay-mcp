@@ -35,7 +35,9 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 
 ### [RETURN] 工具结果
 
-- **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>" }\`。\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = **MM-DD HH:mm**。\`human\` 为用户回答（关闭/超时可为空）。
+- **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number> }\`。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
+- **清单为空时的再传**：若某次返回中 \`cmd_skill_count === 0\`（且非暂停哨兵），下一轮调用**必须**再次传入当前 IDE 能获得的全部 \`commands\` 与 \`skills\`（获取不到则 \`[]\`），以恢复斜杠补全。
+- **其它**：\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = **MM-DD HH:mm**。\`human\` 为用户回答（关闭/超时可为空）。
 - **后置条件**：保存 \`relay_mcp_session_id\`，下一次调用时传入；将 \`human\` 当作用户输入并回复。
 - **哨兵**：若**整段**结果包含 \`<<<RELAY_MCP_PAUSED>>>\`，则不得再次调用，直到用户在 Relay 设置中恢复。
 
@@ -43,7 +45,7 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 
 - 变量：\`relay_mcp_session_id\` : string | undefined。**初始**：undefined（或 \`""\`）。
 - **每次成功返回后**（且非哨兵）：\`relay_mcp_session_id := result.relay_mcp_session_id\`。
-- **每次调用时**：若已定义且非空则传入且可选传 \`commands\`、\`skills\`；否则省略或 \`""\` 且必须传所有能获得的 \`commands\` 与 \`skills\`，如果获取不到，则传空数组。
+- **每次调用时**：若已定义且非空则传入；若上轮返回 \`cmd_skill_count === 0\`，**必须**再传满 \`commands\` 与 \`skills\`（或 \`[]\`）；否则 \`commands\` / \`skills\` 可省略。若无 \`relay_mcp_session_id\`（新标签），必须传当前能获得的 \`commands\` 与 \`skills\`（或 \`[]\`）。
 
 ### [CALL_SCHEDULE] 调用时机（通用）
 
@@ -74,7 +76,9 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 
 ### [RETURN] Tool result
 
-- **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>" }\`. \`relay_mcp_session_id\`: ms timestamp. Relay tab label = **MM-DD HH:mm**. \`human\`: user's Answer (empty on dismiss/timeout).
+- **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number> }\`. \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
+- **Re-list when zero**: If \`cmd_skill_count === 0\` on a return (and not the pause sentinel), the **next** call **must** again pass every available \`commands\` and \`skills\` (or \`[]\`) to restore slash completion.
+- **Also**: \`relay_mcp_session_id\`: ms timestamp. Tab label = **MM-DD HH:mm**. \`human\`: Answer (empty on dismiss/timeout).
 - **Postcondition**: Store \`relay_mcp_session_id\`; pass it on the **next** call. Reply to \`human\` as user input.
 - **Sentinel**: If the **entire** result contains \`<<<RELAY_MCP_PAUSED>>>\`, do not call again until the user resumes in Relay Settings.
 
@@ -82,7 +86,7 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 
 - Variable: \`relay_mcp_session_id\` : string | undefined. **Initial**: undefined (or \`""\`).
 - **After each successful return** (and not sentinel): \`relay_mcp_session_id := result.relay_mcp_session_id\`.
-- **On each call**: if defined and non-empty, pass it;passing \`commands\` or \`skills\` is optional in this case. Otherwise, omit or \`""\`, and you must pass all available \`commands\` and \`skills\` (if none are available, pass empty arrays for both).
+- **On each call**: if \`relay_mcp_session_id\` is defined and non-empty, pass it. If the **last** result had \`cmd_skill_count === 0\`, you **must** pass all available \`commands\` and \`skills\` again (or \`[]\`); otherwise they are optional. If you have no session id yet, you must pass all available \`commands\` and \`skills\` (or \`[]\`).
 
 ### [CALL_SCHEDULE] When to call (generic)
 

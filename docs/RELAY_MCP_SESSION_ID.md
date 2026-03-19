@@ -2,7 +2,7 @@
 
 ## Merge key: `relay_mcp_session_id`
 
-- **First call:** Omit `relay_mcp_session_id` (or pass empty). Relay creates a new tab and generates a session id (millisecond timestamp). The tool returns JSON: `{"relay_mcp_session_id":"<ms>","human":"<user Answer>"}`.
+- **First call:** Omit `relay_mcp_session_id` (or pass empty). Relay creates a new tab and generates a session id (millisecond timestamp). The tool returns JSON: `{"relay_mcp_session_id":"<ms>","human":"<user Answer>","cmd_skill_count":<n>}`.
 - **You must remember** the returned `relay_mcp_session_id` and **reply to the `human` content**.
 - **Next calls:** You **must** pass that `relay_mcp_session_id` so the request merges into the same Relay tab.
 
@@ -15,10 +15,12 @@
 
 - **New session** (no `relay_mcp_session_id`): you **must** pass both **`commands`** and **`skills`**: JSON arrays `[{ "name", "id", "category?", "description?" }]` (either may be `[]`). Relay binds them for **slash-completion** in the Answer input (typing `/` shows the list).
 - **Existing session** (non-empty `relay_mcp_session_id`): passing **`commands`** and/or **`skills`** is **optional**. If sent, each list is **merged** into that tab’s existing `commands` / `skills`: new items are appended; any item whose **`id`** already exists is **skipped** (dedupe by `id`, first occurrence kept).
+- **When `cmd_skill_count` is 0:** If the last tool result had **`cmd_skill_count === 0`** (and not the pause sentinel), the agent **must** pass all available **`commands`** and **`skills`** again on the next call (or `[]`) so slash-completion is repopulated.
 - **Prefer real lists on first call:** pass actual IDE / MCP descriptors when you can, not only `[]`, so the slash menu is useful.
 
 ## MCP tool result
 
-- Every non-paused, non–auto-reply result is JSON: `{"relay_mcp_session_id":"<string>","human":"<string>"}`.
+- Every non-paused, non–auto-reply result is JSON: `{"relay_mcp_session_id":"<string>","human":"<string>","cmd_skill_count":<number>}`.
+- **`cmd_skill_count`** is the number of command + skill items currently stored on that Relay tab (length of slash menu source).
 - `human` is the user’s Answer text (empty on dismiss/timeout).
 - **Pause:** If the result contains `<<<RELAY_MCP_PAUSED>>>`, do not call the tool again until the user resumes in Settings.

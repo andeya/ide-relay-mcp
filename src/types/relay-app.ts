@@ -9,6 +9,13 @@ export type CommandItem = {
   description?: string;
 };
 
+/** MCP / HTTP wait payload for one relay_interactive_feedback round. */
+export type RelayFeedbackToolResult = {
+  relay_mcp_session_id: string;
+  human: string;
+  cmd_skill_count: number;
+};
+
 export type LaunchState = {
   retell: string;
   /** Correlates with MCP HTTP wait; empty for hub preview. */

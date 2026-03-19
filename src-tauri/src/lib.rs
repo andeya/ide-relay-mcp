@@ -234,6 +234,22 @@ pub fn apply_reply_for_tab(g: &mut FeedbackTabsState, tab_id: &str, reply: &str,
     }
 }
 
+/// Total slash-completion entries (commands + skills) stored on this tab.
+pub fn cmd_skill_count(tab: &LaunchState) -> usize {
+    tab.commands.as_ref().map(|v| v.len()).unwrap_or(0)
+        + tab.skills.as_ref().map(|v| v.len()).unwrap_or(0)
+}
+
+/// JSON string returned to MCP / `GET .../wait` (stable shape for agents).
+pub fn feedback_tool_result_string(tab: &LaunchState, human: &str) -> String {
+    serde_json::json!({
+        "relay_mcp_session_id": tab.relay_mcp_session_id,
+        "human": human,
+        "cmd_skill_count": cmd_skill_count(tab),
+    })
+    .to_string()
+}
+
 pub fn finish_tab_remove_empty_close(
     g: &mut FeedbackTabsState,
     tab_id: &str,

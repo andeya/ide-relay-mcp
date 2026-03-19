@@ -181,7 +181,8 @@ fn handle_tool_call(state: &mut ServerState, msg: &Value) -> Result<()> {
     // Return same JSON shape as GUI feedback so the agent can parse relay_mcp_session_id and human.
     let auto_reply_result = json!({
         "relay_mcp_session_id": "",
-        "human": rule.text
+        "human": rule.text,
+        "cmd_skill_count": 0
     })
     .to_string();
     respond_tool_result(state, rpc_id, auto_reply_result)?;
@@ -222,10 +223,10 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                     "tools": [
                         {
                             "name": TOOL_NAME,
-                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id and human. No session id: pass both commands and skills (either may be empty). With session id: pass it each time; commands and skills are optional and merge into the tab lists (dedupe by id).",
+                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id, human, and cmd_skill_count (commands+skills on that tab). If cmd_skill_count is 0 on a return, the next call with that session must pass all available commands and skills again (or []). No session id: pass both lists (or []). With session id: optional merge (dedupe by id).",
                             "inputSchema": {
                                 "type": "object",
-                                "description": "retell required. Without relay_mcp_session_id: pass commands and skills. With relay_mcp_session_id: pass it; optionally pass commands and/or skills to append to that tab's lists (same id skipped, dedupe by id).",
+                                "description": "retell required. Use last result cmd_skill_count: if 0 (and session not empty), next call must pass all available commands and skills for that session (or []). Without relay_mcp_session_id: pass commands and skills (or []). With relay_mcp_session_id: pass it; optionally pass commands/skills to merge (dedupe by id).",
                                 "properties": {
                                     "retell": {
                                         "type": "string",
@@ -233,7 +234,7 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                                     },
                                     "relay_mcp_session_id": {
                                         "type": "string",
-                                        "description": "Optional on first call; required on subsequent calls. Returned in JSON as {\"relay_mcp_session_id\":\"<ms>\",\"human\":\"...\"}. Remember it and pass it on the next request."
+                                        "description": "Optional on first call; required on subsequent calls. Returned JSON includes relay_mcp_session_id, human, cmd_skill_count. Remember relay_mcp_session_id for the next call; if cmd_skill_count was 0, repopulate commands and skills."
                                     },
                                     "commands": {
                                         "type": "array",
