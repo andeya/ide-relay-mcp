@@ -13,10 +13,9 @@
 
 ## `commands` and `skills`
 
-- **New session** (no `relay_mcp_session_id`): you **must** pass both **`commands`** and **`skills`**: JSON arrays `[{ "name", "id", "category?", "description?" }]` (either may be `[]`). Relay binds them for **slash-completion** in the Answer input (typing `/` shows the list).
-- **Existing session** (non-empty `relay_mcp_session_id`): passing **`commands`** and/or **`skills`** is **optional**. If sent, each list is **merged** into that tab’s existing `commands` / `skills`: new items are appended; any item whose **`id`** already exists is **skipped** (dedupe by `id`, first occurrence kept).
-- **When `cmd_skill_count` is 0:** If the last tool result had **`cmd_skill_count === 0`** (and not the pause sentinel), the agent **must** pass all available **`commands`** and **`skills`** again on the next call (or `[]`) so slash-completion is repopulated.
-- **Prefer real lists on first call:** pass actual IDE / MCP descriptors when you can, not only `[]`, so the slash menu is useful.
+- **New session** (no `relay_mcp_session_id`): every call **must** include both **`commands`** and **`skills`** as arrays. Each array **should list every item the IDE/host can expose** (`{ name, id, category?, description? }`) for **slash-completion**. Use **`[]` only when the host truly provides no items** — do not send empty arrays when you could populate them.
+- **Existing session** (non-empty `relay_mcp_session_id`): **`commands`** / **`skills`** are **optional** unless you need to repopulate (see below). If sent, lists are **merged** into that tab: new items appended; duplicate **`id`** skipped (first wins).
+- **When `cmd_skill_count` is 0:** On the next call (not pause sentinel), **must** include **`commands`** and **`skills`** again, filled with everything the IDE **can** enumerate — **`[]` only if there is nothing to enumerate**.
 
 ## MCP tool result
 
