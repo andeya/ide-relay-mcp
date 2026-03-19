@@ -5,7 +5,6 @@
       "args": [
         "mcp"
       ],
-      "timeout": 600,
       "autoApprove": [
         "relay_interactive_feedback"
       ]
