@@ -9,6 +9,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { locale, t } from "../i18n";
 import type {
+  CommandItem,
   ControlStatus,
   DragDropUnlisten,
   FeedbackTabsState,
@@ -31,14 +32,10 @@ function tabLabel(tab: LaunchState): string {
   if (tab.is_preview) {
     return "Hub";
   }
-  /** Tab strip label: `title` is **Chat N** from backend; then optional `session_title`, then retell preview. */
+  /** Tab strip label: `title` is MM-DD HH:mm from backend; else retell preview. */
   const w = tab.title?.trim();
   if (w) {
     return w.length > 22 ? `${w.slice(0, 20)}…` : w;
-  }
-  const s = tab.session_title?.trim();
-  if (s) {
-    return s.length > 22 ? `${s.slice(0, 20)}…` : s;
   }
   const sum = tab.retell?.trim() || "";
   if (sum) {
@@ -96,7 +93,7 @@ function nextImgId() {
 export function useFeedbackWindow() {
   const tabsState = ref<FeedbackTabsState | null>(null);
   const feedbackByTab = ref<Record<string, string>>({});
-  /** Draft images per client_tab_id (or tab_id); survives reloadTabs when same session. */
+  /** Draft images per relay_mcp_session_id (or tab_id); survives reloadTabs when same session. */
   const pendingImagesByTab = ref<Record<string, { id: string; file: File }[]>>(
     {},
   );
@@ -111,6 +108,12 @@ export function useFeedbackWindow() {
   /** IME composition (e.g. CJK input); ignore Enter until composition ends. */
   const imeComposing = ref(false);
   const feedbackTextareaRef = ref<HTMLTextAreaElement | null>(null);
+  /** Slash commands: open state, query after "/", anchor index of "/", selected index in list. */
+  const slashOpen = ref(false);
+  const slashQuery = ref("");
+  const slashAnchorStart = ref(0);
+  const slashSelectedIndex = ref(0);
+  const slashDropdownRef = ref<HTMLElement | null>(null);
   const pendingImages = ref<PendingImage[]>([]);
   const status = ref<ControlStatus>(null);
   const dragActive = ref(false);
@@ -133,22 +136,120 @@ export function useFeedbackWindow() {
     return tabsState.value.tabs.find((x) => x.tab_id === id) ?? null;
   });
 
+  const filteredCommands = computed((): CommandItem[] => {
+    const commands = launch.value?.commands ?? [];
+    const skills = launch.value?.skills ?? [];
+    const list = [...commands, ...skills];
+    const q = slashQuery.value.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      (c) =>
+        (c.name?.toLowerCase().includes(q)) ||
+        (c.id?.toLowerCase().includes(q)) ||
+        (c.description?.toLowerCase().includes(q)),
+    );
+  });
+
+  /** True when this session has any commands or skills (so empty dropdown = no match). False = IDE sent none, show slashNoCommandsForSession. */
+  const hasSlashList = computed(
+    () =>
+      ((launch.value?.commands?.length ?? 0) +
+        (launch.value?.skills?.length ?? 0)) >
+      0,
+  );
+
+  function closeSlash() {
+    slashOpen.value = false;
+    slashQuery.value = "";
+    slashAnchorStart.value = 0;
+    slashSelectedIndex.value = 0;
+  }
+
+  function updateSlashFromInput() {
+    if (imeComposing.value || expired.value || closing) return;
+    const L = launch.value;
+    if (L?.is_preview) {
+      closeSlash();
+      return;
+    }
+    const el = feedbackTextareaRef.value;
+    if (!el) {
+      closeSlash();
+      return;
+    }
+    const text = feedback.value;
+    const pos = el.selectionStart ?? 0;
+    if (pos === 0) {
+      closeSlash();
+      return;
+    }
+    let i = pos - 1;
+    while (i >= 0 && text[i] !== "\n" && text[i] !== " ") {
+      i -= 1;
+    }
+    i += 1;
+    if (i >= pos || text[i] !== "/") {
+      closeSlash();
+      return;
+    }
+    const anchor = i;
+    const query = text.slice(anchor + 1, pos);
+    slashOpen.value = true;
+    slashAnchorStart.value = anchor;
+    slashQuery.value = query;
+    const len = filteredCommands.value.length;
+    slashSelectedIndex.value =
+      len > 0 ? Math.min(slashSelectedIndex.value, len - 1) : 0;
+  }
+
+  function insertSlashCommand(cmd: CommandItem) {
+    const el = feedbackTextareaRef.value;
+    if (!el || !slashOpen.value) return;
+    const start = slashAnchorStart.value;
+    const end = el.selectionStart ?? start;
+    const insertText = cmd.name ?? cmd.id ?? "";
+    const v = feedback.value;
+    feedback.value = v.slice(0, start) + insertText + v.slice(end);
+    closeSlash();
+    void nextTick(() => {
+      const pos = start + insertText.length;
+      el.selectionStart = el.selectionEnd = pos;
+      el.focus();
+    });
+  }
+
+  watch(
+    [slashOpen, slashSelectedIndex],
+    () => {
+      if (!slashOpen.value) return;
+      void nextTick(() => {
+        const el = slashDropdownRef.value;
+        if (!el) return;
+        const child = el.children[slashSelectedIndex.value] as
+          | HTMLElement
+          | undefined;
+        child?.scrollIntoView({ block: "nearest" });
+      });
+    },
+    { flush: "post" },
+  );
+
   const qaRounds = computed((): QaRound[] => {
     const raw = tabsState.value?.qa_rounds;
     const tab = tabsState.value?.tabs.find((x) => x.tab_id === activeTabId.value);
     if (!tab) return [];
 
-    const cid = (tab.client_tab_id || "").trim();
+    const cid = (tab.relay_mcp_session_id || "").trim();
     let list: QaRound[] = [];
     if (Array.isArray(raw) && raw.length > 0) {
       if (cid) {
-        list = raw.filter((r) => (r.client_tab_id || "").trim() === cid);
+        list = raw.filter((r) => (r.relay_mcp_session_id || "").trim() === cid);
       } else if (tab.is_preview) {
         list = [];
       } else {
         list = raw.filter(
           (r) =>
-            !(r.client_tab_id || "").trim() && r.tab_id === tab.tab_id,
+            !(r.relay_mcp_session_id || "").trim() && r.tab_id === tab.tab_id,
         );
       }
     }
@@ -162,7 +263,7 @@ export function useFeedbackWindow() {
           skipped: false,
           submitted: false,
           tab_id: tab.tab_id,
-          client_tab_id: tab.client_tab_id || "",
+          relay_mcp_session_id: tab.relay_mcp_session_id || "",
         },
       ];
     }
@@ -173,6 +274,9 @@ export function useFeedbackWindow() {
     () => tabs.value.some((x) => !x.is_preview),
   );
 
+  /** True when current tab is Hub (preview). Use this for all Hub-only UI; do not branch on launch?.is_preview elsewhere. */
+  const isHubPage = computed(() => !!launch.value?.is_preview);
+
   const expired = computed(
     () => status.value === "timed_out" || status.value === "cancelled",
   );
@@ -182,6 +286,7 @@ export function useFeedbackWindow() {
   );
   const statusLabel = computed(() => {
     void locale.value;
+    if (isHubPage.value) return t("statusHubWaiting");
     if (status.value === "timed_out") return t("statusTimedOut");
     if (status.value === "cancelled") return t("statusCancelled");
     if (status.value === "idle") return t("statusIdle");
@@ -226,11 +331,12 @@ export function useFeedbackWindow() {
 
   function draftKeyForTab(tab: LaunchState | null | undefined, tabId: string) {
     if (!tab) return tabId;
-    const c = tab.client_tab_id?.trim();
+    const c = tab.relay_mcp_session_id?.trim();
     return c || tabId;
   }
 
   watch(activeTabId, (id) => {
+    closeSlash();
     if (id) {
       const s = new Set(flashingTabIds.value);
       s.delete(id);
@@ -248,10 +354,7 @@ export function useFeedbackWindow() {
 
   async function setWindowTitle() {
     const window = getCurrentWindow();
-    const defaultTitle = "Chat";
-    const tab = launch.value;
-    const head = tab?.title?.trim() || defaultTitle;
-    await window.setTitle(head);
+    await window.setTitle("Relay");
   }
 
   async function reloadTabs(depth = 0) {
@@ -832,6 +935,7 @@ export function useFeedbackWindow() {
   }
   function onComposerCompositionEnd() {
     imeComposing.value = false;
+    void nextTick(() => updateSlashFromInput());
   }
 
   function onKeydown(event: KeyboardEvent) {
@@ -841,6 +945,43 @@ export function useFeedbackWindow() {
       (event as KeyboardEvent & { keyCode?: number }).keyCode === 229
     ) {
       return;
+    }
+    if (slashOpen.value) {
+      const list = filteredCommands.value;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeSlash();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        slashSelectedIndex.value = Math.min(
+          slashSelectedIndex.value + 1,
+          Math.max(0, list.length - 1),
+        );
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        slashSelectedIndex.value = Math.max(0, slashSelectedIndex.value - 1);
+        return;
+      }
+      if (event.key === "Enter" || event.code === "NumpadEnter") {
+        const cmd = list[slashSelectedIndex.value];
+        if (cmd) {
+          event.preventDefault();
+          insertSlashCommand(cmd);
+        }
+        return;
+      }
+      if (event.key === "Tab") {
+        const cmd = list[slashSelectedIndex.value];
+        if (cmd) {
+          event.preventDefault();
+          insertSlashCommand(cmd);
+        }
+        return;
+      }
     }
     const isEnter = event.key === "Enter" || event.code === "NumpadEnter";
     if (!isEnter) return;
@@ -926,6 +1067,7 @@ export function useFeedbackWindow() {
 
   return {
     launch,
+    isHubPage,
     tabs,
     activeTabId,
     hasRealTabs,
@@ -959,6 +1101,16 @@ export function useFeedbackWindow() {
     onKeydown,
     onComposerCompositionStart,
     onComposerCompositionEnd,
+    onComposerInput: updateSlashFromInput,
+    slashOpen,
+    slashDropdownRef,
+    slashQuery,
+    slashAnchorStart,
+    slashSelectedIndex,
+    filteredCommands,
+    hasSlashList,
+    insertSlashCommand,
+    closeSlash,
     initAfterLocale,
     reloadTabs,
     qaRounds,
