@@ -42,20 +42,15 @@ enum Commands {
         #[arg(
             short = 't',
             long,
-            default_value_t = 600,
-            help = "Seconds to wait for submit"
+            default_value_t = 60,
+            help = "Minutes to wait for submit"
         )]
         timeout: u64,
         #[arg(
-            long,
-            help = "Sent in POST body; Relay GUI ignores it (titles are Chat N). Optional for scripts."
+            long = "relay-mcp-session-id",
+            help = "Session id (same as MCP relay_mcp_session_id): merge into one Relay tab; omit for new session."
         )]
-        session_title: Option<String>,
-        #[arg(
-            long = "client-tab-id",
-            help = "Stable tab id (same as MCP client_tab_id): merge into one Relay tab per id, or distinct ids for multiple tabs"
-        )]
-        client_tab_id: Option<String>,
+        relay_mcp_session_id: Option<String>,
     },
 }
 
@@ -145,6 +140,9 @@ struct RelayPathEnvStatus {
     configured: bool,
     bin_dir: String,
     platform: &'static str,
+    /// When not configured, reason for the user to fix manually.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
 }
 
 #[tauri::command]
@@ -159,10 +157,16 @@ fn get_relay_path_env_status() -> Result<RelayPathEnvStatus, String> {
     } else {
         "other"
     };
+    let configured = relay_mcp::relay_path_persistently_configured();
     Ok(RelayPathEnvStatus {
-        configured: relay_mcp::relay_path_persistently_configured(),
+        configured,
         bin_dir: dir.to_string_lossy().into_owned(),
         platform,
+        reason: if configured {
+            None
+        } else {
+            relay_mcp::relay_path_config_reason()
+        },
     })
 }
 
@@ -181,6 +185,26 @@ fn get_mcp_config_json() -> Result<String, String> {
 #[tauri::command]
 fn get_mcp_cursor_installed() -> bool {
     relay_mcp::mcp_setup::cursor_has_relay_mcp()
+}
+
+#[derive(serde::Serialize)]
+struct McpStatus {
+    installed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+#[tauri::command]
+fn get_mcp_cursor_status() -> McpStatus {
+    let installed = relay_mcp::mcp_setup::cursor_has_relay_mcp();
+    McpStatus {
+        installed,
+        reason: if installed {
+            None
+        } else {
+            relay_mcp::mcp_setup::cursor_relay_mcp_reason()
+        },
+    }
 }
 
 #[tauri::command]
@@ -203,6 +227,19 @@ fn uninstall_mcp_from_cursor() -> Result<(), String> {
 #[tauri::command]
 fn get_mcp_windsurf_installed() -> bool {
     relay_mcp::mcp_setup::windsurf_has_relay_mcp()
+}
+
+#[tauri::command]
+fn get_mcp_windsurf_status() -> McpStatus {
+    let installed = relay_mcp::mcp_setup::windsurf_has_relay_mcp();
+    McpStatus {
+        installed,
+        reason: if installed {
+            None
+        } else {
+            relay_mcp::mcp_setup::windsurf_relay_mcp_reason()
+        },
+    }
 }
 
 #[tauri::command]
@@ -377,7 +414,7 @@ fn run_tauri(initial: LaunchState) {
             skipped: false,
             submitted: false,
             tab_id: tid,
-            client_tab_id: String::new(),
+            relay_mcp_session_id: String::new(),
         }]
     };
     let initial_state = FeedbackTabsState {
@@ -385,8 +422,6 @@ fn run_tauri(initial: LaunchState) {
         active_tab_id,
         qa_rounds,
         persist_hub,
-        client_tab_id_to_seq: std::collections::HashMap::new(),
-        chat_seq_counter: 0,
     };
 
     let mut builder = tauri::Builder::default();
@@ -441,10 +476,12 @@ fn run_tauri(initial: LaunchState) {
             configure_relay_path_env_permanent,
             get_mcp_config_json,
             get_mcp_cursor_installed,
+            get_mcp_cursor_status,
             get_cursor_mcp_json_path,
             install_mcp_to_cursor,
             uninstall_mcp_from_cursor,
             get_mcp_windsurf_installed,
+            get_mcp_windsurf_status,
             get_windsurf_mcp_json_path,
             install_mcp_to_windsurf,
             uninstall_mcp_from_windsurf,
@@ -495,12 +532,11 @@ fn main() {
         Some(Commands::Feedback {
             retell,
             timeout,
-            session_title,
-            client_tab_id,
+            relay_mcp_session_id,
         }) => {
-            let st = session_title.as_deref().unwrap_or("");
-            let ctid = client_tab_id.as_deref().unwrap_or("");
-            if let Err(e) = run_feedback_cli(retell, timeout, st, ctid) {
+            let sid = relay_mcp_session_id.as_deref().unwrap_or("");
+            let timeout_seconds = timeout.saturating_mul(60);
+            if let Err(e) = run_feedback_cli(retell, timeout_seconds, sid) {
                 eprintln!("relay feedback: {e}");
                 std::process::exit(1);
             }
