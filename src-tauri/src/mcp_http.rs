@@ -79,19 +79,29 @@ pub fn ensure_gui_endpoint(max_wait: Duration) -> Result<GuiEndpoint> {
     }
 }
 
-/// POST feedback + block on wait until user answers (or empty on dismiss/timeout).
-/// Forwards `session_title` for API compatibility; GUI ignores it for window label.
-pub fn feedback_round(retell: &str, session_title: &str, client_tab_id: &str) -> Result<String> {
+/// POST feedback + block on wait until user answers (or JSON with human "" on dismiss/timeout).
+pub fn feedback_round(
+    retell: &str,
+    relay_mcp_session_id: &str,
+    commands: Option<&[crate::CommandItem]>,
+    skills: Option<&[crate::CommandItem]>,
+) -> Result<String> {
     let ep = ensure_gui_endpoint(Duration::from_secs(45))?;
 
     let post_url = format!("http://127.0.0.1:{}/v1/feedback", ep.port);
+    let mut body = serde_json::json!({
+        "retell": retell,
+        "relay_mcp_session_id": relay_mcp_session_id,
+    });
+    if let Some(cmd_list) = commands {
+        body["commands"] = serde_json::to_value(cmd_list).unwrap_or(serde_json::json!([]));
+    }
+    if let Some(skill_list) = skills {
+        body["skills"] = serde_json::to_value(skill_list).unwrap_or(serde_json::json!([]));
+    }
     let resp = ureq::post(&post_url)
         .set("Authorization", &format!("Bearer {}", ep.token))
-        .send_json(serde_json::json!({
-            "retell": retell,
-            "session_title": session_title,
-            "client_tab_id": client_tab_id,
-        }))
+        .send_json(body)
         .map_err(|e| anyhow!("POST /v1/feedback: {}", e))?;
 
     if resp.status() >= 400 {
@@ -107,7 +117,7 @@ pub fn feedback_round(retell: &str, session_title: &str, client_tab_id: &str) ->
     let wait_url = format!("http://127.0.0.1:{}/v1/feedback/wait/{}", ep.port, rid);
     let ans = ureq::get(&wait_url)
         .set("Authorization", &format!("Bearer {}", ep.token))
-        .timeout(Duration::from_secs(700))
+        .timeout(Duration::from_secs(24 * 60 * 60)) // 24h; server wait has no timeout, client needs a cap to avoid true infinite
         .call()
         .map_err(|e| anyhow!("GET wait: {}", e))?
         .into_string()
