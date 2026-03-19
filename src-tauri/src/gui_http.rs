@@ -24,6 +24,41 @@ use tauri::Emitter;
 use tokio::sync::oneshot;
 use tower_http::limit::RequestBodyLimitLayer;
 
+/// Stable JSON body when no tab matches (must stay in sync with [`crate::feedback_tool_result_string`] shape).
+fn empty_tool_result_fallback() -> String {
+    serde_json::json!({
+        "relay_mcp_session_id": "",
+        "human": "",
+        "cmd_skill_count": 0,
+    })
+    .to_string()
+}
+
+fn lock_tabs(inner: &RelayGuiInner) -> std::sync::MutexGuard<'_, FeedbackTabsState> {
+    inner
+        .tabs
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_wait_tx(
+    inner: &RelayGuiInner,
+) -> std::sync::MutexGuard<'_, HashMap<String, oneshot::Sender<String>>> {
+    inner
+        .wait_tx
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_wait_rx(
+    inner: &RelayGuiInner,
+) -> std::sync::MutexGuard<'_, HashMap<String, oneshot::Receiver<String>>> {
+    inner
+        .wait_rx
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[derive(Clone)]
 pub struct RelayGuiRuntime(Arc<RelayGuiInner>);
 
@@ -54,22 +89,15 @@ fn auth_ok(headers: &HeaderMap, token: &str) -> bool {
 
 fn cancel_wait(inner: &RelayGuiInner, rid: &str) {
     let empty_result = {
-        let g = inner.tabs.lock().unwrap();
+        let g = lock_tabs(inner);
         g.tabs
             .iter()
             .find(|t| t.request_id == rid)
             .map(|t| feedback_tool_result_string(t, ""))
-            .unwrap_or_else(|| {
-                serde_json::json!({
-                    "relay_mcp_session_id": "",
-                    "human": "",
-                    "cmd_skill_count": 0,
-                })
-                .to_string()
-            })
+            .unwrap_or_else(empty_tool_result_fallback)
     };
-    let mut wtx = inner.wait_tx.lock().unwrap();
-    let mut wrx = inner.wait_rx.lock().unwrap();
+    let mut wtx = lock_wait_tx(inner);
+    let mut wrx = lock_wait_rx(inner);
     if let Some(tx) = wtx.remove(rid) {
         let _ = tx.send(empty_result);
     }
@@ -214,8 +242,8 @@ impl RelayGuiRuntime {
     }
 
     fn complete_request(&self, rid: &str, answer: String) {
-        let tx = self.0.wait_tx.lock().unwrap().remove(rid);
-        self.0.wait_rx.lock().unwrap().remove(rid);
+        let tx = lock_wait_tx(&self.0).remove(rid);
+        lock_wait_rx(&self.0).remove(rid);
         if let Some(tx) = tx {
             let _ = tx.send(answer);
         }
@@ -232,7 +260,7 @@ impl RelayGuiRuntime {
         if t.request_id.is_empty() {
             return false;
         }
-        self.0.wait_tx.lock().unwrap().contains_key(&t.request_id)
+        lock_wait_tx(&self.0).contains_key(&t.request_id)
     }
 
     pub fn read_tab_status(&self, tab_id: &str) -> Option<ControlStatus> {
@@ -244,7 +272,7 @@ impl RelayGuiRuntime {
         if t.request_id.is_empty() {
             return Some(ControlStatus::Idle);
         }
-        if self.0.wait_tx.lock().unwrap().contains_key(&t.request_id) {
+        if lock_wait_tx(&self.0).contains_key(&t.request_id) {
             Some(ControlStatus::Active)
         } else {
             Some(ControlStatus::Cancelled)
@@ -378,7 +406,7 @@ async fn post_feedback(
 
     let rid = match tokio::task::spawn_blocking(move || {
         let rid = uuid::Uuid::new_v4().to_string();
-        let mut g = inner.tabs.lock().unwrap();
+        let mut g = lock_tabs(&inner);
         g.tabs.retain(|t| !t.is_preview);
         if g.tabs.is_empty() {
             g.qa_rounds.clear();
@@ -439,8 +467,8 @@ async fn post_feedback(
 
         let (tx, rx) = oneshot::channel::<String>();
         {
-            let mut wtx = inner.wait_tx.lock().unwrap();
-            let mut wrx = inner.wait_rx.lock().unwrap();
+            let mut wtx = lock_wait_tx(&inner);
+            let mut wrx = lock_wait_rx(&inner);
             wtx.insert(rid.clone(), tx);
             wrx.insert(rid.clone(), rx);
         }
@@ -466,27 +494,20 @@ async fn post_feedback(
         let inner = inner_orphan;
         let rid = rid_orphan;
         let _ = tokio::task::spawn_blocking(move || {
-            let mut wrx = inner.wait_rx.lock().unwrap();
+            let mut wrx = lock_wait_rx(&inner);
             if !wrx.contains_key(&rid) {
                 return;
             }
             wrx.remove(&rid);
             drop(wrx);
-            let mut g = inner.tabs.lock().unwrap();
+            let mut g = lock_tabs(&inner);
             let empty_result = g
                 .tabs
                 .iter()
                 .find(|t| t.request_id == rid)
                 .map(|t| feedback_tool_result_string(t, ""))
-                .unwrap_or_else(|| {
-                    serde_json::json!({
-                        "relay_mcp_session_id": "",
-                        "human": "",
-                        "cmd_skill_count": 0,
-                    })
-                    .to_string()
-                });
-            if let Some(tx) = inner.wait_tx.lock().unwrap().remove(&rid) {
+                .unwrap_or_else(empty_tool_result_fallback);
+            if let Some(tx) = lock_wait_tx(&inner).remove(&rid) {
                 let _ = tx.send(empty_result);
             }
             if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid).cloned() {
@@ -512,7 +533,7 @@ async fn wait_feedback(
         return StatusCode::UNAUTHORIZED.into_response();
     }
     let rx = {
-        let mut wrx = st.inner.wait_rx.lock().unwrap();
+        let mut wrx = lock_wait_rx(&st.inner);
         wrx.remove(&rid)
     };
     let Some(rx) = rx else {
@@ -528,41 +549,27 @@ async fn wait_feedback(
             let empty_result = tokio::task::spawn_blocking({
                 let inner = inner.clone();
                 move || {
-                    let g = inner.tabs.lock().unwrap();
+                    let g = lock_tabs(&inner);
                     g.tabs
                         .iter()
                         .find(|t| t.request_id == rid2)
                         .map(|t| feedback_tool_result_string(t, ""))
-                        .unwrap_or_else(|| {
-                            serde_json::json!({
-                                "relay_mcp_session_id": "",
-                                "human": "",
-                                "cmd_skill_count": 0,
-                            })
-                            .to_string()
-                        })
+                        .unwrap_or_else(empty_tool_result_fallback)
                 }
             })
             .await
-            .unwrap_or_else(|_| {
-                serde_json::json!({
-                    "relay_mcp_session_id": "",
-                    "human": "",
-                    "cmd_skill_count": 0,
-                })
-                .to_string()
-            });
+            .unwrap_or_else(|_| empty_tool_result_fallback());
             let inner_cleanup = st.inner.clone();
             let rid_cleanup = rid.clone();
             let _ = tokio::task::spawn_blocking(move || {
-                let mut g = inner_cleanup.tabs.lock().unwrap();
+                let mut g = lock_tabs(&inner_cleanup);
                 if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid_cleanup).cloned() {
                     if !t.is_preview {
                         apply_reply_for_tab(&mut g, &t.tab_id, "", true);
                         finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner_cleanup.app);
                     }
                 }
-                inner_cleanup.wait_tx.lock().unwrap().remove(&rid_cleanup);
+                lock_wait_tx(&inner_cleanup).remove(&rid_cleanup);
                 emit_tabs(&inner_cleanup.app);
             })
             .await;
