@@ -1,9 +1,9 @@
 //! Local HTTP for MCP ↔ GUI (`docs/HTTP_IPC.md`).
 
 use crate::{
-    allocate_chat_seq, apply_reply_for_tab, chat_title_for_seq, finish_tab_remove_empty_close,
-    mcp_http, new_tab_id, push_qa_round, skip_open_round_for_tab, ControlStatus, FeedbackTabsState,
-    LaunchState,
+    apply_reply_for_tab, finish_tab_remove_empty_close, format_session_id_as_title, mcp_http,
+    merge_command_items, new_tab_id, push_qa_round, relay_mcp_session_id_now,
+    skip_open_round_for_tab, CommandItem, ControlStatus, FeedbackTabsState, LaunchState,
 };
 use axum::{
     extract::{Path, State},
@@ -52,10 +52,28 @@ fn auth_ok(headers: &HeaderMap, token: &str) -> bool {
 }
 
 fn cancel_wait(inner: &RelayGuiInner, rid: &str) {
+    let session_id = {
+        let g = inner.tabs.lock().unwrap();
+        g.tabs
+            .iter()
+            .find(|t| t.request_id == rid)
+            .map(|t| t.relay_mcp_session_id.clone())
+            .unwrap_or_default()
+    };
+    let empty_result = serde_json::to_string(&serde_json::json!({
+        "relay_mcp_session_id": session_id,
+        "human": ""
+    }))
+    .unwrap_or_else(|_| {
+        format!(
+            "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
+            session_id
+        )
+    });
     let mut wtx = inner.wait_tx.lock().unwrap();
     let mut wrx = inner.wait_rx.lock().unwrap();
     if let Some(tx) = wtx.remove(rid) {
-        let _ = tx.send(String::new());
+        let _ = tx.send(empty_result);
     }
     wrx.remove(rid);
 }
@@ -256,10 +274,15 @@ impl RelayGuiRuntime {
         if rid.is_empty() {
             return Err("no pending request".into());
         }
+        let json_result = serde_json::json!({
+            "relay_mcp_session_id": t.relay_mcp_session_id,
+            "human": feedback
+        });
+        let result_string = serde_json::to_string(&json_result).map_err(|e| e.to_string())?;
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
         apply_reply_for_tab(&mut g, tab_id, &feedback, false);
         drop(g);
-        self.complete_request(&rid, feedback);
+        self.complete_request(&rid, result_string);
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
         if let Some(t) = g.tabs.iter_mut().find(|x| x.tab_id == tab_id) {
             t.request_id.clear();
@@ -279,7 +302,16 @@ impl RelayGuiRuntime {
             return Ok(());
         };
         if !t.request_id.is_empty() {
-            self.complete_request(&t.request_id, String::new());
+            let empty_result = serde_json::to_string(
+                &serde_json::json!({"relay_mcp_session_id": t.relay_mcp_session_id, "human": ""}),
+            )
+            .unwrap_or_else(|_| {
+                format!(
+                    "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
+                    t.relay_mcp_session_id
+                )
+            });
+            self.complete_request(&t.request_id, empty_result);
         }
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
         apply_reply_for_tab(&mut g, tab_id, "", true);
@@ -303,7 +335,17 @@ impl RelayGuiRuntime {
             return Ok(());
         }
         if !t.request_id.is_empty() {
-            self.complete_request(&t.request_id, String::new());
+            let empty_result = serde_json::to_string(&serde_json::json!({
+                "relay_mcp_session_id": t.relay_mcp_session_id,
+                "human": ""
+            }))
+            .unwrap_or_else(|_| {
+                format!(
+                    "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
+                    t.relay_mcp_session_id
+                )
+            });
+            self.complete_request(&t.request_id, empty_result);
         }
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
         apply_reply_for_tab(&mut g, tab_id, "", true);
@@ -328,12 +370,12 @@ async fn health(State(st): State<AxumState>, headers: HeaderMap) -> impl IntoRes
 #[derive(Deserialize)]
 struct PostFeedbackBody {
     retell: String,
-    /// Accepted for API compatibility; GUI assigns **Chat N** from `client_tab_id` only.
     #[serde(default)]
-    #[allow(dead_code)]
-    session_title: String,
+    relay_mcp_session_id: String,
     #[serde(default)]
-    client_tab_id: String,
+    commands: Option<Vec<CommandItem>>,
+    #[serde(default)]
+    skills: Option<Vec<CommandItem>>,
 }
 
 async fn post_feedback(
@@ -353,7 +395,9 @@ async fn post_feedback(
     }
     let inner = st.inner.clone();
     let retell = body.retell;
-    let client_tab_id = body.client_tab_id;
+    let relay_mcp_session_id = body.relay_mcp_session_id;
+    let commands = body.commands;
+    let skills = body.skills;
 
     let rid = match tokio::task::spawn_blocking(move || {
         let rid = uuid::Uuid::new_v4().to_string();
@@ -363,10 +407,10 @@ async fn post_feedback(
             g.qa_rounds.clear();
         }
 
-        let merge_idx = if !client_tab_id.is_empty() {
+        let merge_idx = if !relay_mcp_session_id.is_empty() {
             g.tabs
                 .iter()
-                .position(|t| t.client_tab_id == client_tab_id && !t.is_preview)
+                .position(|t| t.relay_mcp_session_id == relay_mcp_session_id && !t.is_preview)
         } else {
             None
         };
@@ -380,29 +424,34 @@ async fn post_feedback(
             let merge_was_active = g.active_tab_id == old_tid;
             skip_open_round_for_tab(&mut g, &old_tid);
             let tab_id = new_tab_id();
-            push_qa_round(&mut g, &retell, &tab_id, &client_tab_id);
+            push_qa_round(&mut g, &retell, &tab_id, &relay_mcp_session_id);
             let t = &mut g.tabs[idx];
             t.retell = retell.clone();
             t.request_id = rid.clone();
-            t.session_title.clear();
             t.tab_id = tab_id.clone();
-            t.client_tab_id = client_tab_id.clone();
+            t.commands = merge_command_items(t.commands.clone(), commands.clone());
+            t.skills = merge_command_items(t.skills.clone(), skills.clone());
             if merge_was_active {
                 g.active_tab_id = tab_id.clone();
             }
         } else {
+            let sid = if relay_mcp_session_id.is_empty() {
+                relay_mcp_session_id_now()
+            } else {
+                relay_mcp_session_id.clone()
+            };
+            let title = format_session_id_as_title(&sid);
             let tid = new_tab_id();
-            push_qa_round(&mut g, &retell, &tid, &client_tab_id);
-            let seq = allocate_chat_seq(&mut g, &client_tab_id);
-            let title = chat_title_for_seq(seq);
+            push_qa_round(&mut g, &retell, &tid, &sid);
             g.tabs.push(LaunchState {
                 retell: retell.clone(),
                 request_id: rid.clone(),
                 title,
-                session_title: String::new(),
                 tab_id: tid.clone(),
-                client_tab_id: client_tab_id.clone(),
+                relay_mcp_session_id: sid.clone(),
                 is_preview: false,
+                commands: commands.clone(),
+                skills: skills.clone(),
             });
         }
 
@@ -431,11 +480,12 @@ async fn post_feedback(
         }
     };
 
-    // POST without matching GET /wait would leak oneshot slots; clean up after 620s (past 600s wait timeout).
+    // POST without matching GET /wait would leak oneshot slots; clean up after 60min+20s (past 60min wait timeout).
     let inner_orphan = st.inner.clone();
     let rid_orphan = rid.clone();
+    const WAIT_TIMEOUT_SECS: u64 = 60 * 60; // 60 minutes
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(620)).await;
+        tokio::time::sleep(Duration::from_secs(WAIT_TIMEOUT_SECS + 20)).await;
         let inner = inner_orphan;
         let rid = rid_orphan;
         let _ = tokio::task::spawn_blocking(move || {
@@ -445,8 +495,27 @@ async fn post_feedback(
             }
             wrx.remove(&rid);
             drop(wrx);
-            let _ = inner.wait_tx.lock().unwrap().remove(&rid);
             let mut g = inner.tabs.lock().unwrap();
+            let empty_result = g
+                .tabs
+                .iter()
+                .find(|t| t.request_id == rid)
+                .map(|t| {
+                    serde_json::to_string(&serde_json::json!({
+                        "relay_mcp_session_id": t.relay_mcp_session_id,
+                        "human": ""
+                    }))
+                    .unwrap_or_else(|_| {
+                        format!(
+                            "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
+                            t.relay_mcp_session_id
+                        )
+                    })
+                })
+                .unwrap_or_else(|| r#"{"relay_mcp_session_id":"","human":""}"#.to_string());
+            if let Some(tx) = inner.wait_tx.lock().unwrap().remove(&rid) {
+                let _ = tx.send(empty_result);
+            }
             if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid).cloned() {
                 if !t.is_preview {
                     apply_reply_for_tab(&mut g, &t.tab_id, "", true);
@@ -477,38 +546,59 @@ async fn wait_feedback(
         return (StatusCode::NOT_FOUND, "unknown request_id").into_response();
     };
 
-    match tokio::time::timeout(Duration::from_secs(600), rx).await {
-        Ok(Ok(s)) => (
-            [(
-                axum::http::header::CONTENT_TYPE,
-                "text/plain; charset=utf-8",
-            )],
-            s,
-        )
-            .into_response(),
-        _ => {
+    // No timeout: wait until user submits or dismisses (oneshot completes). If sender is dropped without send, treat as empty.
+    let result = match rx.await {
+        Ok(s) => s,
+        Err(_) => {
             let inner = st.inner.clone();
             let rid2 = rid.clone();
+            let empty_result = tokio::task::spawn_blocking({
+                let inner = inner.clone();
+                move || {
+                    let g = inner.tabs.lock().unwrap();
+                    g.tabs
+                        .iter()
+                        .find(|t| t.request_id == rid2)
+                        .map(|t| {
+                            serde_json::to_string(&serde_json::json!({
+                                "relay_mcp_session_id": t.relay_mcp_session_id,
+                                "human": ""
+                            }))
+                            .unwrap_or_else(|_| {
+                                format!(
+                                    "{{\"relay_mcp_session_id\":\"{}\",\"human\":\"\"}}",
+                                    t.relay_mcp_session_id
+                                )
+                            })
+                        })
+                        .unwrap_or_else(|| r#"{"relay_mcp_session_id":"","human":""}"#.to_string())
+                }
+            })
+            .await
+            .unwrap_or_else(|_| r#"{"relay_mcp_session_id":"","human":""}"#.to_string());
+            let inner_cleanup = st.inner.clone();
+            let rid_cleanup = rid.clone();
             let _ = tokio::task::spawn_blocking(move || {
-                let mut g = inner.tabs.lock().unwrap();
-                if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid2).cloned() {
+                let mut g = inner_cleanup.tabs.lock().unwrap();
+                if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid_cleanup).cloned() {
                     if !t.is_preview {
                         apply_reply_for_tab(&mut g, &t.tab_id, "", true);
-                        finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner.app);
+                        finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner_cleanup.app);
                     }
                 }
-                inner.wait_tx.lock().unwrap().remove(&rid2);
-                emit_tabs(&inner.app);
+                inner_cleanup.wait_tx.lock().unwrap().remove(&rid_cleanup);
+                emit_tabs(&inner_cleanup.app);
             })
             .await;
-            (
-                [(
-                    axum::http::header::CONTENT_TYPE,
-                    "text/plain; charset=utf-8",
-                )],
-                String::new(),
-            )
-                .into_response()
+            empty_result
         }
-    }
+    };
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "application/json; charset=utf-8",
+        )],
+        result,
+    )
+        .into_response()
 }
