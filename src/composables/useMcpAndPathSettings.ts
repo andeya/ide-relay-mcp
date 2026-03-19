@@ -4,7 +4,7 @@
 import { computed, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { locale, t } from "../i18n";
-import type { PathEnvStatus } from "../types/relay-app";
+import type { McpStatus, PathEnvStatus } from "../types/relay-app";
 
 export type RefreshHubResult = {
   ok: boolean;
@@ -15,8 +15,10 @@ export type RefreshHubResult = {
 export function useMcpAndPathSettings() {
   const mcpJson = ref("");
   const mcpCursorInstalled = ref(false);
+  const mcpCursorReason = ref<string | null>(null);
   const cursorMcpPath = ref("");
   const mcpWindsurfInstalled = ref(false);
+  const mcpWindsurfReason = ref<string | null>(null);
   const windsurfMcpPath = ref("");
   const mcpWindsurfBusy = ref(false);
   const hubMsg = ref("");
@@ -61,10 +63,14 @@ export function useMcpAndPathSettings() {
       mcpJson.value = "// " + (e instanceof Error ? e.message : String(e));
     }
     try {
-      mcpCursorInstalled.value = await invoke<boolean>("get_mcp_cursor_installed");
-      mcpWindsurfInstalled.value = await invoke<boolean>(
-        "get_mcp_windsurf_installed",
-      );
+      const [cursorStatus, windsurfStatus] = await Promise.all([
+        invoke<McpStatus>("get_mcp_cursor_status"),
+        invoke<McpStatus>("get_mcp_windsurf_status"),
+      ]);
+      mcpCursorInstalled.value = cursorStatus.installed;
+      mcpCursorReason.value = cursorStatus.reason ?? null;
+      mcpWindsurfInstalled.value = windsurfStatus.installed;
+      mcpWindsurfReason.value = windsurfStatus.reason ?? null;
       try {
         cursorMcpPath.value = await invoke<string>("get_cursor_mcp_json_path");
       } catch {
@@ -245,6 +251,8 @@ export function useMcpAndPathSettings() {
     hubUninstallBusy,
     mcpCursorBusy,
     copyToast,
+    mcpCursorReason,
+    mcpWindsurfReason,
     pathEnv,
     pathEnvMsg,
     pathEnvErr,
