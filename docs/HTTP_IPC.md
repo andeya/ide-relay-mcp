@@ -39,22 +39,33 @@ sequenceDiagram
 
 ### `POST /v1/feedback`
 
-- Body JSON: `retell` (required, non-empty after trim), `relay_mcp_session_id` (optional; empty = new session), `commands` / `skills` (JSON arrays of `{name, id, category?, description?}`). **New session:** both required (either may be `[]`). **Existing session:** both optional; if present, **merged** into that tab’s lists with **dedupe by `id`** (existing wins, duplicate `id` from request is skipped).
+- Body JSON: `retell` (required, non-empty after trim), `relay_mcp_session_id` (optional; empty = new session), `commands` / `skills` (JSON arrays of `{name, id, category?, description?}`). **New session:** both properties must be present; each array should list everything the IDE can expose for slash-completion — **`[]` only when the host truly has no items** (wire format still accepts empty arrays). **Existing session:** both optional; if present, **merged** with **dedupe by `id`** (existing wins). If the last tool result had `cmd_skill_count === 0`, the client should send both arrays again repopulated the same way.
 - Behavior: non-empty `relay_mcp_session_id` merges into the tab with that id and cancels the previous in-flight wait; otherwise opens a new tab and assigns a new session id (ms timestamp). Tab label = **MM-DD HH:mm** from that id.
 - Response: `{ "request_id": "<uuid>" }`
 - Empty `retell` → **400**. See [RELAY_MCP_SESSION_ID.md](RELAY_MCP_SESSION_ID.md).
 
 ### `GET /v1/feedback/wait/:request_id`
 
-- Blocks until the user submits an Answer, dismisses, **60 min** timeout (default), or the tab is superseded by another POST.
-- Response: `Content-Type: application/json; charset=utf-8`, body = `{"relay_mcp_session_id":"<ms>","human":"<Answer text>","cmd_skill_count":<n>}` (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss/timeout).
+- **HTTP handler**: the Axum route **does not** apply a per-request socket timeout; it awaits a `oneshot` until the tab completes (submit, dismiss, supersede, or sender dropped).
+- **60-minute idle cut-off**: when `POST /v1/feedback` returns a `request_id`, the server schedules a background task (≈ **60 min + 20 s**) that injects an **empty** `human` JSON result if the wait is still pending — same outcome as dismiss/timeout from the MCP user’s perspective (`human: ""`).
+- Completes when the user submits an Answer, dismisses, that orphan task fires, or the tab is **superseded** by another `POST` for the same merged session (cancels the previous wait).
+- Response: `Content-Type: application/json; charset=utf-8`, body = `{"relay_mcp_session_id":"<ms>","human":"<Answer text>","cmd_skill_count":<n>}` (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss / idle timeout / supersede).
 
 ## MCP flow
 
 1. Read `gui_endpoint.json`; if absent, spawn **`relay gui`** and poll.
 2. `POST /v1/feedback` → `request_id`
-3. `GET .../wait/:request_id` (long poll, ureq timeout ~61 min)
+3. `GET .../wait/:request_id` — long-lived response driven by GUI state (see above), not a fixed HTTP “61 minute” client timer.
 4. Body returned as `tools/call` result.
+
+### MCP client (`relay mcp` → ureq)
+
+- The HTTP **client** in `mcp_http::feedback_round` sets a **24 h** read timeout on the `GET .../wait` call as a transport-level failsafe (avoids a truly infinite block if the GUI misbehaves). **User-visible idle timeout remains ~60 minutes** from the GUI orphan task; the 24 h ceiling should not normally be hit in practice.
+
+## MCP stdio: cancellation and errors
+
+- While `tools/call` is blocked on human feedback, the server **drains the stdin queue** for `notifications/cancelled` whose `params.requestId` matches that call’s JSON-RPC `id` (also accepts `request_id`). It responds with error code **-32800** so the host does not hang. The background HTTP wait may still run until the GUI completes; the host should not assume the Relay tab closes automatically.
+- Malformed JSON lines: if an `"id"` can be scraped from the line, a **-32700** parse error is returned instead of silence.
 
 ## Frontend
 
