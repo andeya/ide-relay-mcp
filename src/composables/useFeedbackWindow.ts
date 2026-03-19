@@ -1,5 +1,6 @@
 /**
- * Multi-tab feedback: Enter = submit; ⌘/Ctrl+Enter = submit and close this tab.
+ * Multi-tab feedback: Enter always submits (never newline); Shift+Enter = newline;
+ * ⌘/Ctrl+Enter = submit and close this tab. Same in preview / idle (no stray newlines).
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
@@ -21,11 +22,16 @@ export type PendingImage = {
   file: File;
 };
 
+/** Path = drag-drop from disk; file = picked in file dialog (no path). */
+export type PendingFileDrop =
+  | { id: string; path: string; name: string; error?: string }
+  | { id: string; file: File; error?: string };
+
 function tabLabel(tab: LaunchState): string {
   if (tab.is_preview) {
     return "Hub";
   }
-  /** Same as OS window title (`session_title` or default Cursor Chat). */
+  /** Tab strip label: `title` is **Chat N** from backend; then optional `session_title`, then retell preview. */
   const w = tab.title?.trim();
   if (w) {
     return w.length > 22 ? `${w.slice(0, 20)}…` : w;
@@ -90,6 +96,17 @@ function nextImgId() {
 export function useFeedbackWindow() {
   const tabsState = ref<FeedbackTabsState | null>(null);
   const feedbackByTab = ref<Record<string, string>>({});
+  /** Draft images per client_tab_id (or tab_id); survives reloadTabs when same session. */
+  const pendingImagesByTab = ref<Record<string, { id: string; file: File }[]>>(
+    {},
+  );
+  const pendingFileDrops = ref<PendingFileDrop[]>([]);
+  const pendingFileDropsByTab = ref<Record<string, PendingFileDrop[]>>({});
+  let fileDropSeq = 0;
+  function nextFileDropId() {
+    fileDropSeq += 1;
+    return `f_${fileDropSeq}`;
+  }
   const feedback = ref("");
   /** IME composition (e.g. CJK input); ignore Enter until composition ends. */
   const imeComposing = ref(false);
@@ -100,6 +117,8 @@ export function useFeedbackWindow() {
   const loading = ref(true);
   const error = ref("");
   const flashingTabIds = ref<Set<string>>(new Set());
+  /** Prevents double submit (rapid Enter / double-click send). */
+  const submitting = ref(false);
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let unlistenDragDrop: DragDropUnlisten;
   let closing = false;
@@ -158,6 +177,9 @@ export function useFeedbackWindow() {
     () => status.value === "timed_out" || status.value === "cancelled",
   );
   const composerIdle = computed(() => status.value === "idle");
+  const hasPendingFileDropErrors = computed(() =>
+    pendingFileDrops.value.some((fd) => Boolean(fd.error)),
+  );
   const statusLabel = computed(() => {
     void locale.value;
     if (status.value === "timed_out") return t("statusTimedOut");
@@ -209,7 +231,6 @@ export function useFeedbackWindow() {
   }
 
   watch(activeTabId, (id) => {
-    revokeAllPreviews();
     if (id) {
       const s = new Set(flashingTabIds.value);
       s.delete(id);
@@ -236,9 +257,29 @@ export function useFeedbackWindow() {
   async function reloadTabs(depth = 0) {
     const preTab = launch.value;
     const preId = activeTabId.value;
+    const prevDraftKey =
+      preTab && preId ? draftKeyForTab(preTab, preId) : null;
+
     if (preTab && preId) {
       const k = draftKeyForTab(preTab, preId);
       feedbackByTab.value = { ...feedbackByTab.value, [k]: feedback.value };
+      const nextImg = { ...pendingImagesByTab.value };
+      if (pendingImages.value.length > 0) {
+        nextImg[k] = pendingImages.value.map(({ id: pid, file }) => ({
+          id: pid,
+          file,
+        }));
+      } else {
+        delete nextImg[k];
+      }
+      pendingImagesByTab.value = nextImg;
+      const nextFd = { ...pendingFileDropsByTab.value };
+      if (pendingFileDrops.value.length > 0) {
+        nextFd[k] = pendingFileDrops.value.map((f) => ({ ...f }));
+      } else {
+        delete nextFd[k];
+      }
+      pendingFileDropsByTab.value = nextFd;
     }
 
     const state = await invoke<FeedbackTabsState>("get_feedback_tabs");
@@ -261,6 +302,24 @@ export function useFeedbackWindow() {
     const tab = state.tabs.find((x) => x.tab_id === id);
     const loadKey = draftKeyForTab(tab, id);
     feedback.value = feedbackByTab.value[loadKey] ?? "";
+
+    const sameSession =
+      prevDraftKey !== null && loadKey === prevDraftKey;
+    if (!sameSession) {
+      revokeAllPreviews();
+      pendingFileDrops.value = [
+        ...(pendingFileDropsByTab.value[loadKey] ?? []),
+      ];
+      const stored = pendingImagesByTab.value[loadKey];
+      if (stored && stored.length > 0) {
+        pendingImages.value = stored.map((p) => ({
+          id: p.id,
+          file: p.file,
+          previewUrl: URL.createObjectURL(p.file),
+        }));
+      }
+    }
+
     loading.value = false;
     error.value = "";
     status.value = null;
@@ -308,6 +367,7 @@ export function useFeedbackWindow() {
     if (closing) return;
     closing = true;
     revokeAllPreviews();
+    pendingFileDrops.value = [];
     if (pollTimer !== undefined) {
       clearInterval(pollTimer);
       pollTimer = undefined;
@@ -316,39 +376,91 @@ export function useFeedbackWindow() {
     await getCurrentWindow().close();
   }
 
-  async function buildFeedbackPayload(): Promise<string> {
+  function localizePathError(raw: string): string {
+    const s = String(raw).trim();
+    if (s === "not a file") return t("composerFilePathNotAFile");
+    if (s.includes("too large") || s.includes("50MB"))
+      return t("composerFilePathTooLarge");
+    return s;
+  }
+
+  function setFileDropError(id: string, err: string) {
+    pendingFileDrops.value = pendingFileDrops.value.map((x) =>
+      x.id === id ? { ...x, error: err } : x,
+    );
+  }
+
+  async function buildFeedbackPayload(): Promise<string | null> {
     let body = feedback.value;
-    if (pendingImages.value.length > 0) {
-      const lines: string[] = [];
-      for (const img of pendingImages.value) {
-        const b64 = await fileToBase64(img.file);
+    const attachments: { kind: "image" | "file"; path: string }[] = [];
+    for (const img of pendingImages.value) {
+      const b64 = await fileToBase64(img.file);
+      const path = await invoke<string>("save_feedback_attachment", {
+        name: img.file.name || "paste.png",
+        bytesB64: b64,
+      });
+      attachments.push({ kind: "image", path });
+    }
+    for (const fd of pendingFileDrops.value) {
+      let b64: string;
+      let name: string;
+      if ("file" in fd) {
+        try {
+          b64 = await fileToBase64(fd.file);
+        } catch {
+          setFileDropError(fd.id, t("composerFileReadFailed"));
+          return null;
+        }
+        name = fd.file.name || "attachment";
+      } else {
+        try {
+          b64 = await invoke<string>("read_local_file_bytes_b64", {
+            path: fd.path,
+          });
+        } catch (e) {
+          setFileDropError(
+            fd.id,
+            localizePathError(e instanceof Error ? e.message : String(e)),
+          );
+          return null;
+        }
+        name = fd.name;
+      }
+      try {
         const path = await invoke<string>("save_feedback_attachment", {
-          name: img.file.name || "paste.png",
+          name,
           bytesB64: b64,
         });
-        lines.push(path);
+        attachments.push({ kind: "file", path });
+      } catch (e) {
+        setFileDropError(
+          fd.id,
+          e instanceof Error ? e.message : String(e),
+        );
+        return null;
       }
-      if (lines.length) {
-        const text = body.trim();
-        const meta = {
-          version: 1,
-          attachments: lines.map((path) => ({ kind: "image" as const, path })),
-        };
-        body =
-          (text ? text + "\n\n" : "") +
-          "<<<RELAY_FEEDBACK_JSON>>>\n" +
-          JSON.stringify(meta);
-      }
+    }
+    if (attachments.length > 0) {
+      const text = body.trim();
+      const meta = { version: 1, attachments };
+      body =
+        (text ? text + "\n\n" : "") +
+        "<<<RELAY_FEEDBACK_JSON>>>\n" +
+        JSON.stringify(meta);
     }
     return body;
   }
 
   async function submit(closeTabAfter = false) {
+    if (submitting.value) return;
     const tab = launch.value;
     const id = activeTabId.value;
     if (!tab || !id || closing) return;
+
     if (tab.is_preview) {
-      if (closeTabAfter) {
+      if (!closeTabAfter) return;
+      submitting.value = true;
+      try {
         try {
           await invoke("close_feedback_tab", { tabId: id });
           await reloadTabs();
@@ -356,58 +468,90 @@ export function useFeedbackWindow() {
           /* window may close from Rust */
         }
         if (!tabsState.value?.tabs.length) await closeWindow();
+      } finally {
+        submitting.value = false;
       }
       return;
     }
     if (!tab.request_id?.trim()) {
       return;
     }
-    if (expired.value) {
-      try {
-        const draftKey = draftKeyForTab(tab, id);
-        await invoke("dismiss_feedback_tab", { tabId: id });
-        revokeAllPreviews();
-        feedback.value = "";
-        delete feedbackByTab.value[draftKey];
-        await reloadTabs();
-        if (!tabsState.value?.tabs.length) {
-          await closeWindow();
-        }
-      } catch {
-        await closeWindow();
-      }
+    /** Drafting: no submit until MCP request is active */
+    if (status.value === "idle") {
       return;
     }
+    if (hasPendingFileDropErrors.value) {
+      return;
+    }
+
+    submitting.value = true;
     try {
-      const payload = await buildFeedbackPayload();
-      const draftKey = draftKeyForTab(tab, id);
-      await invoke("submit_tab_feedback", {
-        tabId: id,
-        feedback: payload,
-      });
-      revokeAllPreviews();
-      feedback.value = "";
-      delete feedbackByTab.value[draftKey];
-      if (closeTabAfter) {
+      if (expired.value) {
         try {
-          await invoke("close_feedback_tab", { tabId: id });
-        } catch (e) {
-          error.value = e instanceof Error ? e.message : String(e);
+          const draftKey = draftKeyForTab(tab, id);
+          await invoke("dismiss_feedback_tab", { tabId: id });
+          revokeAllPreviews();
+          pendingFileDrops.value = [];
+          feedback.value = "";
+          delete feedbackByTab.value[draftKey];
+          const rest = { ...pendingImagesByTab.value };
+          delete rest[draftKey];
+          pendingImagesByTab.value = rest;
+          const restFd = { ...pendingFileDropsByTab.value };
+          delete restFd[draftKey];
+          pendingFileDropsByTab.value = restFd;
+          await reloadTabs();
+          if (!tabsState.value?.tabs.length) {
+            await closeWindow();
+          }
+        } catch {
+          await closeWindow();
         }
-      }
-      try {
-        await reloadTabs();
-      } catch {
         return;
       }
-      if (!tabsState.value?.tabs.length) {
-        await closeWindow();
-      } else {
-        status.value = null;
-        await refreshStatus();
+      try {
+        const payload = await buildFeedbackPayload();
+        if (payload === null) {
+          return;
+        }
+        const draftKey = draftKeyForTab(tab, id);
+        await invoke("submit_tab_feedback", {
+          tabId: id,
+          feedback: payload,
+        });
+        revokeAllPreviews();
+        pendingFileDrops.value = [];
+        feedback.value = "";
+        delete feedbackByTab.value[draftKey];
+        const restSubmit = { ...pendingImagesByTab.value };
+        delete restSubmit[draftKey];
+        pendingImagesByTab.value = restSubmit;
+        const restFdSub = { ...pendingFileDropsByTab.value };
+        delete restFdSub[draftKey];
+        pendingFileDropsByTab.value = restFdSub;
+        if (closeTabAfter) {
+          try {
+            await invoke("close_feedback_tab", { tabId: id });
+          } catch (e) {
+            error.value = e instanceof Error ? e.message : String(e);
+          }
+        }
+        try {
+          await reloadTabs();
+        } catch {
+          return;
+        }
+        if (!tabsState.value?.tabs.length) {
+          await closeWindow();
+        } else {
+          status.value = null;
+          await refreshStatus();
+        }
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : String(err);
       }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
+    } finally {
+      submitting.value = false;
     }
   }
 
@@ -439,8 +583,15 @@ export function useFeedbackWindow() {
       }
       const k = draftKeyForTab(tab, tabId);
       delete feedbackByTab.value[k];
+      const restClose = { ...pendingImagesByTab.value };
+      delete restClose[k];
+      pendingImagesByTab.value = restClose;
+      const restFdCl = { ...pendingFileDropsByTab.value };
+      delete restFdCl[k];
+      pendingFileDropsByTab.value = restFdCl;
       if (wasActive) {
         revokeAllPreviews();
+        pendingFileDrops.value = [];
         feedback.value = "";
       }
       await reloadTabs();
@@ -481,8 +632,16 @@ export function useFeedbackWindow() {
         await invoke("close_feedback_tab", { tabId: id });
       }
       revokeAllPreviews();
+      pendingFileDrops.value = [];
       feedback.value = "";
-      delete feedbackByTab.value[draftKeyForTab(tab, id)];
+      const dk = draftKeyForTab(tab, id);
+      delete feedbackByTab.value[dk];
+      const restWin = { ...pendingImagesByTab.value };
+      delete restWin[dk];
+      pendingImagesByTab.value = restWin;
+      const restFdW = { ...pendingFileDropsByTab.value };
+      delete restFdW[dk];
+      pendingFileDropsByTab.value = restFdW;
       await reloadTabs();
       if (!tabsState.value?.tabs.length) await closeWindow();
       else {
@@ -578,6 +737,70 @@ export function useFeedbackWindow() {
     }
   }
 
+  /** File dialog: images → thumbnails; other files → file chips (submit via base64). */
+  function addAttachedFilesFromPicker(files: FileList | File[]) {
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith("image/")) {
+        addImageFiles([file]);
+      } else {
+        pendingFileDrops.value = [
+          ...pendingFileDrops.value,
+          { id: nextFileDropId(), file },
+        ];
+      }
+    }
+  }
+
+  /** Drag-drop: images → thumbnails; any other file path → file chip (submit copies bytes). */
+  async function handleDroppedPaths(paths: string[]) {
+    for (const path of paths) {
+      const trimmed = path.trim();
+      if (!trimmed) continue;
+      const extImg = /\.(png|jpe?g|gif|webp)$/i.test(trimmed);
+      if (extImg) {
+        try {
+          const data = await invoke<{
+            data_base64: string;
+            name: string;
+            mime: string;
+          }>("read_dragged_image_preview", { path: trimmed });
+          const raw = atob(data.data_base64);
+          const arr = new Uint8Array(raw.length);
+          for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+          const file = new File([arr], data.name || "image.png", {
+            type: data.mime || "image/png",
+          });
+          addImageFiles([file]);
+          continue;
+        } catch {
+          /* fall through: show as generic file */
+        }
+      }
+      const name =
+        trimmed.split(/[/\\]/).pop() ||
+        (trimmed.length > 32 ? `…${trimmed.slice(-28)}` : trimmed);
+      const id = nextFileDropId();
+      let pathErr: string | undefined;
+      try {
+        await invoke("validate_feedback_attachment_path", { path: trimmed });
+      } catch (e) {
+        pathErr = localizePathError(
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+      pendingFileDrops.value = [
+        ...pendingFileDrops.value,
+        pathErr
+          ? { id, path: trimmed, name, error: pathErr }
+          : { id, path: trimmed, name },
+      ];
+    }
+  }
+
+  function removePendingFileDrop(id: string) {
+    pendingFileDrops.value = pendingFileDrops.value.filter((x) => x.id !== id);
+  }
+
   function removePendingImage(id: string) {
     const idx = pendingImages.value.findIndex((p) => p.id === id);
     if (idx < 0) return;
@@ -622,21 +845,23 @@ export function useFeedbackWindow() {
     const isEnter = event.key === "Enter" || event.code === "NumpadEnter";
     if (!isEnter) return;
 
-    if (launch.value?.is_preview) {
-      if (event.shiftKey) return;
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        void submit(true);
-      }
+    // Shift+Enter always inserts newline; plain Enter never does when it would not submit.
+    if (event.shiftKey) return;
+
+    const L = launch.value;
+    /** Same idea as send button disabled: no-op (no newline), not “silent newline”. */
+    const enterWouldNotSubmit =
+      submitting.value ||
+      hasPendingFileDropErrors.value ||
+      Boolean(L?.is_preview) ||
+      (!L?.is_preview && status.value === "idle");
+
+    if (enterWouldNotSubmit) {
+      event.preventDefault();
       return;
     }
 
-    if (status.value === "idle") return;
-
-    if (event.shiftKey) return;
-
     event.preventDefault();
-    // Enter = submit only. ⌘/Ctrl+Enter = submit then close this tab.
     const submitAndCloseTab = event.metaKey || event.ctrlKey;
     void submit(submitAndCloseTab);
   }
@@ -672,13 +897,18 @@ export function useFeedbackWindow() {
       }
       dragActive.value = false;
       if (event.payload.type === "drop") {
-        insertPathsFixed(event.payload.paths);
+        void handleDroppedPaths(event.payload.paths);
       }
     });
     pollTimer = window.setInterval(() => {
       void pollCycle();
     }, 2000);
     await pollCycle();
+    try {
+      await invoke<number>("run_attachment_retention_purge");
+    } catch {
+      /* optional auto-purge; ignore if not in Tauri */
+    }
   }
 
   onBeforeUnmount(() => {
@@ -686,6 +916,7 @@ export function useFeedbackWindow() {
     unlistenTabs?.();
     unlistenDragDrop?.();
     revokeAllPreviews();
+    pendingFileDrops.value = [];
   });
 
   function bindTextareaRef(el: unknown) {
@@ -705,12 +936,15 @@ export function useFeedbackWindow() {
     feedbackTextareaRef,
     bindTextareaRef,
     pendingImages,
+    pendingFileDrops,
     status,
     dragActive,
     loading,
     error,
+    submitting,
     expired,
     composerIdle,
+    hasPendingFileDropErrors,
     statusLabel,
     submitLabel,
     submitCloseTabLabel,
@@ -729,6 +963,8 @@ export function useFeedbackWindow() {
     reloadTabs,
     qaRounds,
     addImageFiles,
+    addAttachedFilesFromPicker,
     removePendingImage,
+    removePendingFileDrop,
   };
 }

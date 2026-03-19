@@ -5,9 +5,13 @@ export default {
   settingsBack: "Back",
   settingsCheckStatus: "Refresh",
   settingsChecking: "Refreshing…",
+  settingsRefreshOk: "Status refreshed.",
+  settingsRefreshWarn: "Refreshed, but MCP config could not be read.",
+  settingsRefreshFail: "Refresh failed:",
   ariaOpenSettings: "Open settings",
   segSetup: "Environment & MCP",
   segRulePrompts: "Rule prompts",
+  segCache: "Cache",
 
   settingsLangAria: "Interface language",
 
@@ -22,7 +26,11 @@ export default {
   rulePromptsModeLoopDesc: "Every turn ends with the tool; backoff on errors.",
   rulePromptsModeTool: "Tool spec only",
   rulePromptsModeToolDesc: "Single block to merge into existing rules.",
-  rulePromptsCopy: "Copy English (for IDE)",
+  rulePromptsCopy: "Paste in IDE",
+  rulePromptsViewMd: "Preview",
+  rulePromptsViewSource: "Source",
+  rulePromptsToggleEnAria: "English prompt display",
+  rulePromptsToggleZhAria: "Chinese reference display",
   rulePromptsLabelEn: "English",
   rulePromptsLabelZh: "Chinese reference",
   rulePromptsCopied: "Copied.",
@@ -30,28 +38,32 @@ export default {
   rulePromptsLoopRisk:
     "Strict loop may run until you stop the session. Sub-agents (e.g. Task): parent owns the tool per the prompt.",
 
-  rulePromptsIdeBody: `[Cursor]
-Settings → Rules → User or Project rules — paste the English block above.
-MCP file: {cursorPath} — command = relay binary, args = ["mcp"]; recommend autoApprove relay_interactive_feedback
+  rulePromptsIdeMd: `**How to use** **Paste in IDE** above copies the **English rule prompt**. Then match each editor’s **rules area** and **MCP** below (you need both).
 
-[Windsurf]
-Paste the same English block into Agent / MCP custom instructions (UI may vary by version).
-MCP: {windsurfPath}
+### Cursor
+- **Rules**: Settings → **Rules** → User or Project → paste the English block  
+- **MCP file** \`{cursorPath}\`  
+- \`command\` = local \`relay\`, \`args\` = \`["mcp"]\`; suggest \`autoApprove\`: \`relay_interactive_feedback\`
 
-[VS Code]
-With an MCP extension, paste into workspace or user Rules / custom instructions; MCP command = relay, args = ["mcp"].
+### Windsurf
+- **Instructions**: paste the same English block in Agent / MCP custom text (UI varies by version)  
+- **MCP file** \`{windsurfPath}\`
 
-[Claude Desktop]
-Paste into custom instructions; MCP command = full path to relay, args = ["mcp"].
+### VS Code
+- Put the English prompt where your MCP extension expects **Rules / custom instructions**  
+- MCP: \`command\` = \`relay\` (full path recommended), \`args\` = \`["mcp"]\`
 
-[Other IDEs]
-Any client with MCP + system/project rules: paste the English block and register relay_interactive_feedback.`,
+### Claude Desktop
+- **Custom instructions** + MCP \`command\` = **full path** to relay, \`args\` = \`["mcp"]\`
+
+### Other IDEs
+Any MCP + rules-capable client: paste the English block and register \`relay_interactive_feedback\`.`,
 
   setupTitle: "This machine",
   setupLead:
-    "If anything is missing, use Install all to set PATH plus Cursor and Windsurf MCP. Other editors: copy JSON. When everything is ready, you only need uninstall or copy.",
+    "Not ready: Install all (PATH + Cursor & Windsurf MCP). When ready: copy MCP JSON in the green card below, or use per-IDE actions.",
   setupAllReadyLead:
-    "PATH, Cursor MCP, and Windsurf MCP are all set. Copy JSON for other IDEs, or use Uninstall all to revert.",
+    "PATH and both IDEs are set. JSON copy and per-IDE actions live in the green card; Uninstall all to revert.",
   setupStatus: "Configuration detail",
   setupChipPath: "Terminal PATH",
   setupPathExplain: "Folder containing the relay binary is on your user PATH",
@@ -70,21 +82,18 @@ Any client with MCP + system/project rules: paste the English block and register
   setupUninstallHint:
     "Removes relay-mcp from Cursor & Windsurf and undoes Relay’s PATH changes.",
   setupNoInstallNeeded: "Everything is already configured.",
+  setupActionsStripNeedInstall:
+    "Use Install all on the right to write PATH and Cursor / Windsurf MCP.",
+  setupActionsAria: "Install and uninstall",
   setupUninstallOnlyHint: "Uninstall is available when at least one item above is configured.",
-  setupToolParamsTitle: "Tool parameters (this machine)",
+  setupToolParamsTitle: "Human-in-the-loop & MCP on this machine",
   setupToolParamsLead:
-    "Matches MCP tools/list on this host. Restart the IDE if tool descriptions look stale.",
-  setupParamSessionTitle:
-    "session_title — strongly recommended: chat/tab title for Relay window label.",
-  setupParamClientTabId:
-    "client_tab_id — strongly recommended: stable id per IDE chat tab.",
-  setupCopyTitle: "Other editors",
-  setupCopyLead:
-    "Copy JSON to the clipboard and paste into VS Code, Claude Desktop, etc.; command = relay, args = [\"mcp\"].",
+    "Copy MCP JSON here, or use the Cursor / Windsurf panels below for per-IDE install/remove.",
   mcpCopy: "Copy MCP JSON",
   mcpCopied: "Copied to clipboard.",
   mcpCopyErr: "Copy failed.",
-  setupAdvanced: "Advanced (single-step or troubleshooting)",
+  setupAdvanced:
+    "Advanced (PATH, JSON preview… — per-IDE Cursor/Windsurf is in the green card above)",
   setupAdvPathTitle: "PATH only",
   setupAdvPathLead:
     "If full install skipped PATH (e.g. relay binary not found beside the app), add it here. Open a new terminal or fish session afterward.",
@@ -138,7 +147,6 @@ Any client with MCP + system/project rules: paste the English block and register
   dockBtnRight: "▶",
 
   mainSessionBadge: "Session",
-  mainTabBadge: "Tab",
   appTitle: "Relay MCP",
   brand: "Relay",
   subtitle: "Human feedback layer for AI IDEs",
@@ -152,16 +160,18 @@ Any client with MCP + system/project rules: paste the English block and register
   mcpPauseSwitchTitle: "Pause human-in-the-loop — IDE calls won’t open Relay",
   mcpPauseStatusOn: "Status: paused",
   mcpPauseStatusOff: "Status: active",
+  mcpPauseUpdateErr: "Could not update pause. Check permissions and try again.",
 
   setupInstallChangesNote:
-    "Full install may change: your user PATH; Cursor and Windsurf MCP JSON (paths below); Relay app data (logs, attachments, local HTTP token file).",
+    "Install/uninstall touches: user PATH, both IDEs’ MCP config, and Relay app data (logs, attachments, local HTTP).",
   statusIdle: "Waiting for next assistant turn",
   statusTimedOut: "Timed out",
   statusCancelled: "Cancelled",
   hint: "Top: **Retell** (`retell`) = this turn's assistant reply. Bottom: **Answer**.",
   mainHintPreview:
-    "Hub: arrow button submits when an MCP tab is open. Enter = submit · ⌘/Ctrl+Enter = submit & close tab.",
-  mainSummaryReadonly: "Read-only · AI: this turn (retell) · You: Answer",
+    "When a tab is waiting for your reply, type here. Enter to send · ⌘/Ctrl+Enter to send and close the tab.",
+  mainSummaryReadonly:
+    "Read-only · Left: AI (retell) · Right: ME (Answer)",
   tabStripAria: "Feedback tabs",
   tabCloseAria: "Close this tab",
   tabCloseTitle: "Close tab (shown when hovering this tab)",
@@ -170,14 +180,28 @@ Any client with MCP + system/project rules: paste the English block and register
   qaRetell: "Retell",
   qaRetellHint: "This turn's assistant reply (MCP: retell)",
   qaAssistantTurn: "AI",
+  /** Thread bubble label for the user side (composer still says “Answer”). */
+  qaUserTurnMe: "ME",
   qaUserFeedback: "Answer",
+  qaNoRetellYet: "No assistant message for this turn yet.",
   composerMessage: "Answer",
   composerAnswerSub: "Your reply",
+  /** a11y: composer region after removing visible “Answer” heading */
+  composerAriaRegion: "Your reply",
   composerHint:
-    "Send button or Enter to submit · ⌘/Ctrl+Enter: submit & close tab · Shift+Enter: newline · paste or attach images",
+    "Enter submits · Shift+Enter: new line · ⌘/Ctrl+Enter: submit & close tab · paste or attach images/files",
+  composerHintDraft:
+    "Draft while waiting; when a request arrives, Enter submits · while waiting, only Shift+Enter adds a line · paste or attach images/files",
   composerImageAria: "Image attachments preview",
-  composerAttach: "Attach image",
+  composerAttach: "Attach images or files",
   composerThumbRemove: "Remove image",
+  composerFileDropAria: "Pending file attachment",
+  composerFileDropRemove: "Remove file",
+  composerFilePathNotAFile: "Not a file (folders are not supported)",
+  composerFilePathTooLarge: "File too large (max 50MB)",
+  composerFileReadFailed: "Could not read file",
+  composerSubmitBlockedFileError:
+    "Fix or remove attachments marked in red before submitting.",
   composerImageZoomTitle: "Click to enlarge",
   imageLightboxClose: "Close preview",
   composerSubmitIconTitle:
@@ -185,6 +209,8 @@ Any client with MCP + system/project rules: paste the English block and register
   composerSubmitIconAria: "Submit answer",
   composerSubmitDisabledPreview:
     "Open when an MCP request is active — then tap to submit (Enter).",
+  composerSubmitDisabledIdle:
+    "Submit is available once an assistant request is active.",
   composerSendShort: "Submit",
   composerSendCloseShort: "Submit & close tab",
   qaPendingCurrent: "Type below, then Enter or the send button.",
@@ -193,7 +219,6 @@ Any client with MCP + system/project rules: paste the English block and register
   qaEmptySubmit: "Submitted with no text",
   feedback: "Answer",
   placeholder: "Write your reply…",
-  composerIdlePlaceholder: "Waiting for the next assistant message…",
   noteExpired:
     "This request has already timed out or been cancelled. Your text can be reviewed locally, but it can no longer be submitted.",
   close: "Close",
@@ -211,4 +236,47 @@ Any client with MCP + system/project rules: paste the English block and register
     "Windsurf — Full install writes:\n{windsurfPath}\nManual MCP: same command as in JSON.",
   ideHintClaude:
     "Claude Desktop — command = full path to relay, args = [\"mcp\"]. Approve relay_interactive_feedback if prompted.",
+
+  cacheTitle: "Storage & cache",
+  cacheSubtitle:
+    "Attachments and logs stay on this device. Industry norm: optional age-based cleanup for attachments only; logs stay manual.",
+  cacheLead:
+    "Relay data directory (attachments + feedback log). Clearing attachments breaks thumbnails for past Answers in history until you send new ones.",
+  cacheDataDir: "Data folder",
+  cacheOpenFolder: "Open folder",
+  cacheOpenFolderErr: "Could not open folder.",
+  cacheLoading: "Calculating…",
+  cacheLoadErr: "Could not read cache size.",
+  cacheTotal: "Total (attachments + log)",
+  cacheAttachments: "Attachments cache",
+  cacheLogs: "Log file",
+  cacheRefresh: "Refresh",
+  cacheClearAll: "Clear all cache",
+  cacheClearAttach: "Clear attachments only",
+  cacheClearLogs: "Clear log only",
+  cacheBusy: "Working…",
+  cacheClearedOk: "Cache cleared.",
+  cacheClearErr: "Could not clear cache.",
+  cacheConfirmClearAll:
+    "Delete all saved feedback attachments and empty the feedback log?",
+  cacheConfirmClearAttach:
+    "Delete all files in the attachments folder? Past Answer thumbnails in history will break.",
+  cacheConfirmClearLogs: "Empty feedback_log.txt? Log lines will be lost.",
+  cacheConfirmModalTitle: "Clear cache",
+  cacheConfirmBtn: "Clear",
+  cacheCancelBtn: "Cancel",
+  cacheClearing: "Clearing…",
+  cacheAutoTitle: "Auto-clean attachments",
+  cacheAutoLead:
+    "Default: remove attachment files older than 30 days when Relay opens (and when you change this). Choose Off (keep all) to disable. Does not touch the log file.",
+  cacheAutoSelectLabel: "Delete attachment files older than",
+  cacheRetentionOff: "Off (keep all)",
+  cacheDays: "days",
+  cacheMonths3: "90 days (~3 mo)",
+  cacheMonths6: "180 days (~6 mo)",
+  cacheYear1: "365 days (1 yr)",
+  cacheManualTitle: "Manual cleanup",
+  cachePurgeFreed: "Freed {n} of old attachments.",
+  cacheSectionStorage: "Usage",
+  cacheRetentionTriggerAria: "Attachment retention",
 };

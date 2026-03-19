@@ -5,9 +5,13 @@ export default {
   settingsBack: "返回",
   settingsCheckStatus: "刷新状态",
   settingsChecking: "刷新中…",
+  settingsRefreshOk: "状态已刷新。",
+  settingsRefreshWarn: "已刷新，但读取 MCP 配置失败。",
+  settingsRefreshFail: "刷新失败：",
   ariaOpenSettings: "打开设置",
   segSetup: "环境与 MCP",
   segRulePrompts: "规则提示词",
+  segCache: "缓存管理",
 
   settingsLangAria: "界面语言",
 
@@ -22,7 +26,11 @@ export default {
   rulePromptsModeLoopDesc: "每轮结束必调；失败退避重试；慎用。",
   rulePromptsModeTool: "仅工具说明",
   rulePromptsModeToolDesc: "可并入现有规则的一段定义。",
-  rulePromptsCopy: "复制英文（粘贴 IDE）",
+  rulePromptsCopy: "粘贴到IDE",
+  rulePromptsViewMd: "Markdown 预览",
+  rulePromptsViewSource: "原文",
+  rulePromptsToggleEnAria: "英文提示词显示方式",
+  rulePromptsToggleZhAria: "中文对照显示方式",
   rulePromptsLabelEn: "English",
   rulePromptsLabelZh: "中文对照",
   rulePromptsCopied: "已复制。",
@@ -30,28 +38,32 @@ export default {
   rulePromptsLoopRisk:
     "「严格循环」可能使对话持续到你手动停止；子 Agent（如 Task 委派）请按提示词内说明由父 Agent 负责调用。",
 
-  rulePromptsIdeBody: `【Cursor】
-Settings → Rules → User rules 或 Project rules，粘贴上方英文全文。
-MCP：{cursorPath}（command 为 relay 可执行文件，args 为 [\"mcp\"]；建议 autoApprove relay_interactive_feedback）
+  rulePromptsIdeMd: `**怎么用** 上方 **粘贴到IDE** 复制的是**英文提示词**；再按下表把各编辑器的 **规则区** 与 **MCP** 配齐（两件事都要做）。
 
-【Windsurf】
-在 Agent / MCP 相关自定义说明处粘贴同一套英文（界面以当前版本为准）。
-MCP：{windsurfPath}
+### Cursor
+- **规则**：Settings → **Rules** → User rules 或 Project rules → 粘贴英文全文  
+- **MCP 文件** \`{cursorPath}\`  
+- \`command\` = 本机 \`relay\`，\`args\` = \`["mcp"]\`；建议 \`autoApprove\`：\`relay_interactive_feedback\`
 
-【VS Code】
-使用 MCP 相关扩展时，将英文提示词写入工作区或用户级 Rules / 自定义指令；MCP：command 为 relay，args 为 [\"mcp\"]。
+### Windsurf
+- **说明区**：Agent / MCP 相关自定义说明里粘贴**同一套**英文（界面随版本可能不同）  
+- **MCP 文件** \`{windsurfPath}\`
 
-【Claude Desktop】
-在应用提供的自定义指令处粘贴英文提示词；MCP：command 为 relay 绝对路径，args 为 [\"mcp\"]。
+### VS Code
+- 在 MCP 扩展要求的 **Rules / 自定义指令** 中写入英文提示词  
+- MCP：\`command\` = \`relay\`（建议绝对路径），\`args\` = \`["mcp"]\`
 
-【其他 IDE】
-凡支持 MCP 与系统/项目级规则：粘贴英文全文，并确保已注册工具 relay_interactive_feedback。`,
+### Claude Desktop
+- **自定义指令** 贴英文；MCP 的 \`command\` 须为 relay **绝对路径**，\`args\`：\`["mcp"]\`
+
+### 其他 IDE
+支持 MCP + 系统/项目级规则即可：贴英文全文，并注册工具 \`relay_interactive_feedback\`。`,
 
   setupTitle: "本机环境",
   setupLead:
-    "若尚未配齐，可用一键安装同时写入 PATH 与 Cursor、Windsurf 的 MCP；其它编辑器请复制 JSON。已配齐时只需维护或卸载。",
+    "未就绪：点右侧「一键安装」（PATH + Cursor / Windsurf MCP）。就绪后：下方绿框可复制 MCP JSON，或只动某一个 IDE。",
   setupAllReadyLead:
-    "PATH、Cursor 与 Windsurf 的 MCP 均已就绪。可复制 JSON 给其它 IDE；需还原时请一键卸载。",
+    "PATH 与两编辑器 MCP 已就绪。绿框内可复制 JSON、做单 IDE 操作；要还原请点「一键卸载」。",
   setupStatus: "配置详情",
   setupChipPath: "终端 PATH",
   setupPathExplain: "relay 可执行文件所在目录已加入当前用户 PATH",
@@ -70,21 +82,18 @@ MCP：{windsurfPath}
   setupUninstallHint:
     "从 Cursor、Windsurf 移除 relay-mcp，并撤销 Relay 写入的 PATH。",
   setupNoInstallNeeded: "已全部配置，无需再安装。",
+  setupActionsStripNeedInstall:
+    "点击右侧「一键安装」写入 PATH 与 Cursor / Windsurf 的 MCP。",
+  setupActionsAria: "安装与卸载",
   setupUninstallOnlyHint: "至少一项已配置时可一键卸载还原。",
-  setupToolParamsTitle: "工具参数（本机）",
+  setupToolParamsTitle: "人机回路与本机 MCP",
   setupToolParamsLead:
-    "与当前机器上 MCP tools/list 一致；若说明未更新可重启 IDE。",
-  setupParamSessionTitle:
-    "session_title — 强烈建议：会话/标签标题，用于 Relay 窗口标签。",
-  setupParamClientTabId:
-    "client_tab_id — 强烈建议：每个 IDE 聊天标签的稳定 ID。",
-  setupCopyTitle: "其它编辑器",
-  setupCopyLead:
-    "复制 JSON 到剪贴板；command 为本机 relay，args 为 [\"mcp\"]。",
+    "本页：可复制的 MCP JSON、以及仅改 Cursor 或 Windsurf 时的快捷操作。",
   mcpCopy: "复制 MCP JSON",
   mcpCopied: "已复制到剪贴板。",
   mcpCopyErr: "复制失败。",
-  setupAdvanced: "高级选项（排障或单独操作）",
+  setupAdvanced:
+    "高级选项（PATH / JSON 等排障；Cursor·Windsurf 单 IDE 已在上方「人机回路」绿框内）",
   setupAdvPathTitle: "只补写 PATH",
   setupAdvPathLead:
     "若一键安装时 PATH 未成功（例如未找到 relay 可执行文件），可单独写入。新开终端或 fish 新会话后生效。",
@@ -139,8 +148,6 @@ MCP：{windsurfPath}
   dockBtnRight: "▶",
 
   mainSessionBadge: "会话",
-  /** i18n: badge when only generic tab title (Chat N) is shown in header */
-  mainTabBadge: "标签",
   appTitle: "Relay MCP",
   brand: "Relay",
   subtitle: "面向 AI IDE 的人工反馈层",
@@ -154,16 +161,17 @@ MCP：{windsurfPath}
   mcpPauseSwitchTitle: "暂停人机回路：后续 IDE 调用不再弹窗",
   mcpPauseStatusOn: "当前：已暂停",
   mcpPauseStatusOff: "当前：正常",
+  mcpPauseUpdateErr: "无法更新暂停状态，请检查权限后重试。",
 
   setupInstallChangesNote:
-    "一键安装可能修改：用户 PATH；Cursor / Windsurf 的 MCP 配置文件（见下方路径）；Relay 应用数据目录（日志、附件、本机 HTTP 端点信息）。",
+    "上述安装/卸载会动到：用户 PATH、两 IDE 的 MCP 配置、以及 Relay 数据目录（日志、附件、本机 HTTP）。",
   statusIdle: "等待下一轮助手请求",
   statusTimedOut: "已超时",
   statusCancelled: "已取消",
   hint: "上：`retell` = 本轮助手回复；下：**Answer · 你的回复**。",
   mainHintPreview:
-    "占位页：有 MCP 请求后可用箭头提交。Enter 提交 · ⌘/Ctrl+Enter 提交并关标签页。",
-  mainSummaryReadonly: "只读 · AI：本轮回复（retell）· 你：Answer",
+    "有待回复的标签时在此输入。Enter 发送 · ⌘/Ctrl+Enter 发送并关闭该标签。",
+  mainSummaryReadonly: "只读 · 左：AI（retell）· 右：我（Answer）",
   tabStripAria: "反馈标签",
   tabCloseAria: "关闭此标签",
   tabCloseTitle: "关闭标签（悬停本标签后显示）",
@@ -172,19 +180,31 @@ MCP：{windsurfPath}
   qaRetell: "本轮回复",
   qaRetellHint: "助手本轮对用户可见内容（MCP：`retell`）",
   qaAssistantTurn: "AI",
+  qaUserTurnMe: "我",
   qaUserFeedback: "Answer（你的回复）",
+  qaNoRetellYet: "本轮尚无助手消息。",
   composerMessage: "Answer",
   composerAnswerSub: "你的回复",
+  composerAriaRegion: "你的回复输入区",
   composerHint:
-    "发送按钮或 Enter 提交 · ⌘/Ctrl+Enter 提交并关标签页 · Shift+Enter 换行 · 粘贴或插入图片",
+    "Enter 提交 · Shift+Enter 换行 · ⌘/Ctrl+Enter 提交并关标签页 · 粘贴或附加图片/文件",
+  composerHintDraft:
+    "可先起草；请求到达后 Enter 提交 · 等待期间仅 Shift+Enter 换行 · 可粘贴或附加图片/文件",
   composerImageAria: "待发送图片预览",
-  composerAttach: "插入图片",
+  composerAttach: "附加图片或文件",
   composerThumbRemove: "移除图片",
+  composerFileDropAria: "待发送文件",
+  composerFileDropRemove: "移除文件",
+  composerFilePathNotAFile: "不是文件（不支持文件夹）",
+  composerFilePathTooLarge: "文件过大（最大 50MB）",
+  composerFileReadFailed: "无法读取该文件",
+  composerSubmitBlockedFileError: "请先移除或修正标红附件后再提交。",
   composerImageZoomTitle: "点击放大查看",
   imageLightboxClose: "关闭预览",
   composerSubmitIconTitle: "提交（Enter）；提交并关标签页：⌘/Ctrl+Enter。",
   composerSubmitIconAria: "提交回复",
   composerSubmitDisabledPreview: "有 MCP 请求后可点此提交（或按 Enter）。",
+  composerSubmitDisabledIdle: "等待助手请求到达后可提交。",
   composerSendShort: "提交",
   composerSendCloseShort: "提交并关标签",
   qaPendingCurrent: "在下方输入后按 Enter 或点右下角发送按钮。",
@@ -193,7 +213,6 @@ MCP：{windsurfPath}
   qaEmptySubmit: "已提交（无文字）",
   feedback: "Answer",
   placeholder: "写下你的回复…",
-  composerIdlePlaceholder: "等待助手下一轮消息后可继续回复…",
   noteExpired: "该请求已超时或已被取消。内容仅可本地查看，无法再提交。",
   close: "关闭",
   submit: "提交（Enter）",
@@ -210,4 +229,46 @@ MCP：{windsurfPath}
     "Windsurf — 一键安装写入：\n{windsurfPath}\n手动添加时 command 与 JSON 一致。",
   ideHintClaude:
     "Claude Desktop — command 为 relay 全路径，args 为 [\"mcp\"]；允许 relay_interactive_feedback。",
+
+  cacheTitle: "存储与缓存",
+  cacheSubtitle:
+    "附件与日志仅保存在本机。常见做法：仅对附件做「按天数自动清理」；日志仍建议手动清空。",
+  cacheLead:
+    "以下为 Relay 用户数据目录中「附件目录」与「反馈日志」占用的空间。清空附件后，历史对话里旧 Answer 的缩略图将无法再显示。",
+  cacheDataDir: "数据目录",
+  cacheOpenFolder: "打开数据文件夹",
+  cacheOpenFolderErr: "无法打开文件夹。",
+  cacheLoading: "正在统计…",
+  cacheLoadErr: "无法读取缓存占用。",
+  cacheTotal: "合计（附件 + 日志）",
+  cacheAttachments: "附件缓存",
+  cacheLogs: "日志文件",
+  cacheRefresh: "刷新",
+  cacheClearAll: "全部清空缓存",
+  cacheClearAttach: "仅清空附件缓存",
+  cacheClearLogs: "仅清空日志缓存",
+  cacheBusy: "处理中…",
+  cacheClearedOk: "已清空。",
+  cacheClearErr: "清空失败。",
+  cacheConfirmClearAll: "确定删除全部已保存的反馈附件并清空反馈日志？",
+  cacheConfirmClearAttach:
+    "确定删除附件目录下所有文件？历史里旧回复的图片/文件预览将失效。",
+  cacheConfirmClearLogs: "确定清空 feedback_log.txt？日志内容将丢失。",
+  cacheConfirmModalTitle: "确认清空缓存",
+  cacheConfirmBtn: "确定清空",
+  cacheCancelBtn: "取消",
+  cacheClearing: "正在清空…",
+  cacheAutoTitle: "自动清理附件",
+  cacheAutoLead:
+    "默认删除超过 30 天的已保存附件（启动 Relay 或修改下方选项时生效）；选「关闭（全部保留）」可停用自动清理。不处理日志文件。",
+  cacheAutoSelectLabel: "删除早于以下时间的附件文件",
+  cacheRetentionOff: "关闭（全部保留）",
+  cacheDays: "天",
+  cacheMonths3: "90 天（约 3 个月）",
+  cacheMonths6: "180 天（约 6 个月）",
+  cacheYear1: "365 天（1 年）",
+  cacheManualTitle: "手动清理",
+  cachePurgeFreed: "已释放约 {n} 的旧附件。",
+  cacheSectionStorage: "占用概览",
+  cacheRetentionTriggerAria: "附件保留策略",
 };

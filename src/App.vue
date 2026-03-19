@@ -14,13 +14,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { locale, t } from "./i18n";
 import { useFeedbackWindow } from "./composables/useFeedbackWindow";
 import { useMcpAndPathSettings } from "./composables/useMcpAndPathSettings";
-import {
-  getRelayRulePrompt,
-  getRelayRulePromptEn,
-  getRelayRulePromptZh,
-  type RulePromptMode,
-} from "./cursorRulesTemplates";
 import type { SettingsSegment } from "./types/relay-app";
+import type { SettingsToastPayload } from "./composables/useRelayCacheSettings";
+import SettingsCachePanel from "./components/settings/SettingsCachePanel.vue";
+import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsPanel.vue";
+import relayLogoUrl from "./assets/relay-logo.svg?url";
 import QaReplyAttachments from "./components/QaReplyAttachments.vue";
 import { parseRelayFeedbackReply } from "./utils/parseRelayFeedbackReply";
 import { safeMarkdownToHtml } from "./utils/safeMarkdown";
@@ -28,6 +26,8 @@ import { safeMarkdownToHtml } from "./utils/safeMarkdown";
 const lightboxSrc = ref<string | null>(null);
 const windowDock = ref<"left" | "center" | "right">("left");
 const mcpPaused = ref(false);
+const mcpPauseBusy = ref(false);
+const mcpPauseErr = ref("");
 const qaScrollEndRef = ref<HTMLElement | null>(null);
 
 function openLightbox(src: string) {
@@ -54,11 +54,14 @@ const {
   feedback,
   bindTextareaRef,
   pendingImages,
+  pendingFileDrops,
   dragActive,
   loading,
   error,
+  submitting,
   expired,
   composerIdle,
+  hasPendingFileDropErrors,
   status,
   statusLabel,
   submit,
@@ -73,11 +76,23 @@ const {
   initAfterLocale,
   setWindowTitle,
   qaRounds,
-  addImageFiles,
+  addAttachedFilesFromPicker,
   removePendingImage,
+  removePendingFileDrop,
 } = useFeedbackWindow();
 
-/** Header pill: session label from MCP, or tab title (e.g. Chat N) when session_title is empty. */
+function pendingFileChipLabel(
+  fd: { path: string; name: string } | { file: File },
+): string {
+  return "file" in fd ? fd.file.name || "file" : fd.name;
+}
+function pendingFileChipTitle(
+  fd: { path: string; name: string } | { file: File },
+): string {
+  return "file" in fd ? fd.file.name || "" : fd.path;
+}
+
+/** Header pill: only when session_title is set (hide default «Tab Chat N»). */
 const headerChatPill = computed(() => {
   void locale.value;
   const L = launch.value;
@@ -85,10 +100,6 @@ const headerChatPill = computed(() => {
   const st = (L.session_title || "").trim();
   if (st) {
     return { badge: t("mainSessionBadge"), text: st };
-  }
-  const title = (L.title || "").trim();
-  if (title) {
-    return { badge: t("mainTabBadge"), text: title };
   }
   return null;
 });
@@ -98,7 +109,7 @@ const attachInputRef = ref<HTMLInputElement | null>(null);
 function onAttachChange(e: Event) {
   const t = e.target as HTMLInputElement;
   if (t.files?.length) {
-    addImageFiles(t.files);
+    addAttachedFilesFromPicker(t.files);
   }
   t.value = "";
 }
@@ -161,12 +172,10 @@ const {
 const strings = computed(() => {
   void locale.value;
   return {
-    brand: t("brand"),
     appTitle: t("appTitle"),
     subtitle: t("subtitle"),
     hint: t("hint"),
     mainHintPreview: t("mainHintPreview"),
-    mainSummaryReadonly: t("mainSummaryReadonly"),
     tabStripAria: t("tabStripAria"),
     tabCloseAria: t("tabCloseAria"),
     tabCloseTitle: t("tabCloseTitle"),
@@ -179,11 +188,16 @@ const strings = computed(() => {
     dockBtnRight: t("dockBtnRight"),
     qaHistoryTitle: t("qaHistoryTitle"),
     qaAssistantTurn: t("qaAssistantTurn"),
+    qaUserTurnMe: t("qaUserTurnMe"),
+    qaNoRetellYet: t("qaNoRetellYet"),
     qaUserFeedback: t("qaUserFeedback"),
     composerMessage: t("composerMessage"),
+    composerAriaRegion: t("composerAriaRegion"),
     composerHint: t("composerHint"),
     composerAttach: t("composerAttach"),
     composerThumbRemove: t("composerThumbRemove"),
+    composerFileDropAria: t("composerFileDropAria"),
+    composerFileDropRemove: t("composerFileDropRemove"),
     composerImageZoomTitle: t("composerImageZoomTitle"),
     imageLightboxClose: t("imageLightboxClose"),
     composerSubmitIconTitle: t("composerSubmitIconTitle"),
@@ -199,7 +213,9 @@ const strings = computed(() => {
     qaEmptySubmit: t("qaEmptySubmit"),
     feedback: t("feedback"),
     placeholder: t("placeholder"),
-    composerIdlePlaceholder: t("composerIdlePlaceholder"),
+    composerHintDraft: t("composerHintDraft"),
+    composerSubmitDisabledIdle: t("composerSubmitDisabledIdle"),
+    composerSubmitBlockedFileError: t("composerSubmitBlockedFileError"),
     ideBlockingHint: t("ideBlockingHint"),
     noteExpired: t("noteExpired"),
     close: t("close"),
@@ -210,6 +226,7 @@ const strings = computed(() => {
     pathEnvBtn: t("pathEnvBtn"),
     pathEnvBusy: t("pathEnvBusy"),
     segSetup: t("segSetup"),
+    segCache: t("segCache"),
     setupTitle: t("setupTitle"),
     setupInstallChangesNote: t("setupInstallChangesNote"),
     mcpPauseTitle: t("mcpPauseTitle"),
@@ -230,6 +247,8 @@ const strings = computed(() => {
     setupConfigFile: t("setupConfigFile"),
     setupBinDir: t("setupBinDir"),
     setupNoInstallNeeded: t("setupNoInstallNeeded"),
+    setupActionsStripNeedInstall: t("setupActionsStripNeedInstall"),
+    setupActionsAria: t("setupActionsAria"),
     setupUninstallOnlyHint: t("setupUninstallOnlyHint"),
     setupOn: t("setupOn"),
     setupOff: t("setupOff"),
@@ -239,10 +258,6 @@ const strings = computed(() => {
     setupUninstallHint: t("setupUninstallHint"),
     setupToolParamsTitle: t("setupToolParamsTitle"),
     setupToolParamsLead: t("setupToolParamsLead"),
-    setupParamSessionTitle: t("setupParamSessionTitle"),
-    setupParamClientTabId: t("setupParamClientTabId"),
-    setupCopyTitle: t("setupCopyTitle"),
-    setupCopyLead: t("setupCopyLead"),
     mcpCopy: t("mcpCopy"),
     setupAdvanced: t("setupAdvanced"),
     setupAdvPathTitle: t("setupAdvPathTitle"),
@@ -286,9 +301,46 @@ const strings = computed(() => {
     rulePromptsModeTool: t("rulePromptsModeTool"),
     rulePromptsModeToolDesc: t("rulePromptsModeToolDesc"),
     rulePromptsCopy: t("rulePromptsCopy"),
+    rulePromptsViewMd: t("rulePromptsViewMd"),
+    rulePromptsViewSource: t("rulePromptsViewSource"),
+    rulePromptsToggleEnAria: t("rulePromptsToggleEnAria"),
+    rulePromptsToggleZhAria: t("rulePromptsToggleZhAria"),
     rulePromptsLabelEn: t("rulePromptsLabelEn"),
     rulePromptsLabelZh: t("rulePromptsLabelZh"),
     rulePromptsLoopRisk: t("rulePromptsLoopRisk"),
+    cacheTitle: t("cacheTitle"),
+    cacheSubtitle: t("cacheSubtitle"),
+    cacheLead: t("cacheLead"),
+    cacheSectionStorage: t("cacheSectionStorage"),
+    cacheAutoTitle: t("cacheAutoTitle"),
+    cacheAutoLead: t("cacheAutoLead"),
+    cacheAutoSelectLabel: t("cacheAutoSelectLabel"),
+    cacheRetentionOff: t("cacheRetentionOff"),
+    cacheDays: t("cacheDays"),
+    cacheMonths3: t("cacheMonths3"),
+    cacheMonths6: t("cacheMonths6"),
+    cacheYear1: t("cacheYear1"),
+    cacheManualTitle: t("cacheManualTitle"),
+    cacheRetentionTriggerAria: t("cacheRetentionTriggerAria"),
+    cacheDataDir: t("cacheDataDir"),
+    cacheOpenFolder: t("cacheOpenFolder"),
+    cacheOpenFolderErr: t("cacheOpenFolderErr"),
+    cacheLoading: t("cacheLoading"),
+    cacheLoadErr: t("cacheLoadErr"),
+    cacheTotal: t("cacheTotal"),
+    cacheAttachments: t("cacheAttachments"),
+    cacheLogs: t("cacheLogs"),
+    cacheRefresh: t("cacheRefresh"),
+    cacheClearAll: t("cacheClearAll"),
+    cacheClearAttach: t("cacheClearAttach"),
+    cacheClearLogs: t("cacheClearLogs"),
+    cacheBusy: t("cacheBusy"),
+    cacheClearedOk: t("cacheClearedOk"),
+    cacheClearErr: t("cacheClearErr"),
+    cacheConfirmModalTitle: t("cacheConfirmModalTitle"),
+    cacheConfirmBtn: t("cacheConfirmBtn"),
+    cacheCancelBtn: t("cacheCancelBtn"),
+    cacheClearing: t("cacheClearing"),
   };
 });
 
@@ -332,46 +384,26 @@ watch(hasRealTabs, (v) => {
 });
 const settingsSeg = ref<SettingsSegment>("setup");
 const settingsCheckBusy = ref(false);
-const rulePromptMode = ref<RulePromptMode>("mild");
-const rulesCopyToast = ref("");
-const rulePromptEn = computed(() =>
-  getRelayRulePromptEn(rulePromptMode.value, undefined),
-);
-const rulePromptZh = computed(() =>
-  getRelayRulePromptZh(rulePromptMode.value, undefined),
-);
+const settingsRefreshToast = ref<{
+  type: "ok" | "warn" | "err";
+  text: string;
+} | null>(null);
+let settingsRefreshToastTimer: ReturnType<typeof setTimeout> | undefined;
 
-const retellParamHintLine = computed(() =>
-  locale.value === "zh"
-    ? "完整 `retell` 经本机 HTTP 传递，无命令行长度限制。"
-    : "Full `retell` is sent over local HTTP (no shell arg limit).",
-);
-
-const rulePromptsIdeGuide = computed(() => {
-  void locale.value;
-  return t("rulePromptsIdeBody", {
-    cursorPath: cursorMcpPath.value || "~/.cursor/mcp.json",
-    windsurfPath: windsurfMcpPath.value || "~/.codeium/windsurf/mcp_config.json",
-  });
-});
-
-async function copyRulePrompt() {
-  rulesCopyToast.value = "";
-  try {
-    await navigator.clipboard.writeText(
-      getRelayRulePrompt(rulePromptMode.value, undefined),
-    );
-    rulesCopyToast.value = t("rulePromptsCopied");
-  } catch {
-    rulesCopyToast.value = t("rulePromptsCopyErr");
-  }
-  setTimeout(() => {
-    rulesCopyToast.value = "";
-  }, 2500);
+function pushSettingsToast(p: SettingsToastPayload) {
+  if (settingsRefreshToastTimer) clearTimeout(settingsRefreshToastTimer);
+  settingsRefreshToast.value = { type: p.type, text: p.text };
+  settingsRefreshToastTimer = setTimeout(() => {
+    settingsRefreshToast.value = null;
+    settingsRefreshToastTimer = undefined;
+  }, p.durationMs ?? 4500);
 }
+
+const cacheSegmentActive = computed(() => settingsSeg.value === "cache");
 
 async function openSettings() {
   uiView.value = "settings";
+  mcpPauseErr.value = "";
   void refreshMcpPaused();
   settingsCheckBusy.value = true;
   try {
@@ -383,11 +415,44 @@ async function openSettings() {
 
 async function checkInstallStatus() {
   if (settingsCheckBusy.value) return;
+  const t0 = Date.now();
   settingsCheckBusy.value = true;
+  if (settingsRefreshToastTimer) clearTimeout(settingsRefreshToastTimer);
+  settingsRefreshToast.value = null;
+  let toast: { type: "ok" | "warn" | "err"; text: string } | null = null;
   try {
-    await refreshMcpHub();
+    const r = await refreshMcpHub();
+    if (!r.ok) {
+      const detail = r.fatalError?.trim();
+      toast = {
+        type: "err",
+        text: detail
+          ? `${t("settingsRefreshFail")} ${detail}`
+          : t("settingsRefreshFail"),
+      };
+    } else if (r.mcpConfigReadFailed) {
+      toast = { type: "warn", text: t("settingsRefreshWarn") };
+    } else {
+      toast = { type: "ok", text: t("settingsRefreshOk") };
+    }
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    toast = {
+      type: "err",
+      text: `${t("settingsRefreshFail")} ${detail}`.trim(),
+    };
   } finally {
+    const minMs = 420;
+    const elapsed = Date.now() - t0;
+    if (elapsed < minMs) {
+      await new Promise((res) => setTimeout(res, minMs - elapsed));
+    }
     settingsCheckBusy.value = false;
+    settingsRefreshToast.value = toast;
+    settingsRefreshToastTimer = setTimeout(() => {
+      settingsRefreshToast.value = null;
+      settingsRefreshToastTimer = undefined;
+    }, 2800);
   }
 }
 
@@ -416,12 +481,19 @@ async function refreshMcpPaused() {
 }
 
 async function onMcpPausedChange() {
+  mcpPauseErr.value = "";
   const next = mcpPaused.value;
+  mcpPauseBusy.value = true;
   try {
     await invoke("set_mcp_paused", { paused: next });
   } catch (err) {
     mcpPaused.value = !next;
-    error.value = err instanceof Error ? err.message : String(err);
+    const detail = err instanceof Error ? err.message : String(err);
+    mcpPauseErr.value = detail
+      ? `${t("mcpPauseUpdateErr")} (${detail})`
+      : t("mcpPauseUpdateErr");
+  } finally {
+    mcpPauseBusy.value = false;
   }
 }
 
@@ -469,6 +541,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onGlobalKeydown);
+  if (settingsRefreshToastTimer) clearTimeout(settingsRefreshToastTimer);
 });
 </script>
 
@@ -488,17 +561,30 @@ onBeforeUnmount(() => {
     <section v-show="uiView === 'main'" class="panel panelMain mainWork">
       <header class="mainTopBar">
         <div class="mainTopBarLeft">
-          <span class="mainBrand">{{ strings.brand }}</span>
-          <h1 class="mainTitle">{{ strings.appTitle }}</h1>
-          <span
-            v-if="headerChatPill"
-            class="mainSessionPill"
-            :title="headerChatPill.text"
-          >
-            <span class="mainSessionPillPrefix">{{ headerChatPill.badge }}</span>
-            {{ headerChatPill.text }}
-          </span>
-          <span class="statusPill mainStatusPill">{{ statusLabel }}</span>
+          <div class="mainBrandCluster">
+            <span class="mainBrandLogoWrap">
+              <img
+                class="mainBrandLogo"
+                :src="relayLogoUrl"
+                width="24"
+                height="24"
+                alt=""
+                aria-hidden="true"
+              />
+            </span>
+            <h1 class="mainTitle">{{ strings.appTitle }}</h1>
+            <span
+              v-if="headerChatPill"
+              class="mainSessionPill"
+              :title="headerChatPill.text"
+            >
+              <span class="mainSessionPillPrefix">{{ headerChatPill.badge }}</span>
+              {{ headerChatPill.text }}
+            </span>
+          </div>
+        </div>
+        <div class="mainTopBarMid">
+          <span class="statusPill mainTopBarStatusPill">{{ statusLabel }}</span>
         </div>
         <div class="mainTopBarRight">
           <div
@@ -541,10 +627,29 @@ onBeforeUnmount(() => {
             type="button"
             class="iconGear"
             :aria-label="strings.ariaOpenSettings"
-            title="⚙"
+            :title="strings.ariaOpenSettings"
             @click="openSettings"
           >
-            ⚙️
+            <svg
+              class="iconGearSvg"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.37.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
           </button>
         </div>
       </header>
@@ -597,10 +702,6 @@ onBeforeUnmount(() => {
 
       <div class="mainColumn mainColumnAgent">
         <div class="mainContextZone mainContextZoneScroll">
-          <div class="mainContextHead">
-            <span class="mainContextTitle">{{ strings.qaHistoryTitle }}</span>
-            <span class="mainContextSub">{{ strings.mainSummaryReadonly }}</span>
-          </div>
           <div
             v-if="qaRounds.length > 0"
             ref="summaryScrollRef"
@@ -614,62 +715,101 @@ onBeforeUnmount(() => {
               :key="'q' + idx"
               class="qaRoundCard"
             >
-              <div class="qaRoundBlock qaRoundBlock--agent">
-                <div class="qaRoundAiRibbon">
-                  <span class="qaRoundAiRibbonText">{{ strings.qaAssistantTurn }}</span>
-                </div>
-                <div
-                  v-if="round.retell?.trim()"
-                  class="qaRetellPanel"
-                >
-                  <div class="qaRoundAgentScroll">
+              <div class="qaChatRow qaChatRow--ai">
+                <div class="qaChatStack qaChatStack--ai">
+                  <span class="qaChatRole qaChatRole--ai">{{
+                    strings.qaAssistantTurn
+                  }}</span>
+                  <div class="qaChatBubble qaChatBubble--ai">
                     <div
-                      class="qaRoundMd qaRoundMd--agent"
-                      v-html="qaMd(round.retell)"
+                      v-if="round.retell?.trim()"
+                      class="qaRoundAgentScroll qaRoundAgentScroll--bubble"
+                    >
+                      <div
+                        class="qaRoundMd qaRoundMd--agent"
+                        v-html="qaMd(round.retell)"
+                      />
+                    </div>
+                    <p v-else class="qaChatBubblePlaceholder">
+                      {{ strings.qaNoRetellYet }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-if="round.submitted && round.skipped"
+                class="qaChatRow qaChatRow--me"
+              >
+                <div class="qaChatStack qaChatStack--me">
+                  <span class="qaChatRole qaChatRole--me">{{
+                    strings.qaUserTurnMe
+                  }}</span>
+                  <div class="qaChatBubble qaChatBubble--me qaChatBubble--meMuted">
+                    <p class="qaRoundMuted">{{ strings.qaSkipped }}</p>
+                  </div>
+                </div>
+              </div>
+              <div
+                v-else-if="round.submitted && round.reply?.trim()"
+                class="qaChatRow qaChatRow--me"
+              >
+                <div class="qaChatStack qaChatStack--me">
+                  <span class="qaChatRole qaChatRole--me">{{
+                    strings.qaUserTurnMe
+                  }}</span>
+                  <div class="qaChatBubble qaChatBubble--me">
+                    <div
+                      v-if="parseUserReply(round.reply).text"
+                      class="qaRoundMd qaRoundMd--user qaRoundMd--bubble"
+                      v-html="qaMd(parseUserReply(round.reply).text)"
+                    />
+                    <QaReplyAttachments
+                      :paths="parseUserReply(round.reply).imagePaths"
+                      :file-paths="parseUserReply(round.reply).filePaths"
+                      :zoom-title="strings.composerImageZoomTitle"
+                      @preview="openLightbox"
                     />
                   </div>
                 </div>
               </div>
               <div
-                v-if="round.submitted && round.skipped"
-                class="qaRoundBlock qaRoundBlock--skipped"
-              >
-                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
-                <p class="qaRoundMuted">{{ strings.qaSkipped }}</p>
-              </div>
-              <div
-                v-else-if="round.submitted && round.reply?.trim()"
-                class="qaRoundBlock qaRoundBlock--user"
-              >
-                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
-                <div
-                  v-if="parseUserReply(round.reply).text"
-                  class="qaRoundMd qaRoundMd--user"
-                  v-html="qaMd(parseUserReply(round.reply).text)"
-                />
-                <QaReplyAttachments
-                  :paths="parseUserReply(round.reply).imagePaths"
-                  :zoom-title="strings.composerImageZoomTitle"
-                  @preview="openLightbox"
-                />
-              </div>
-              <div
                 v-else-if="round.submitted"
-                class="qaRoundBlock qaRoundBlock--user qaRoundBlock--empty"
+                class="qaChatRow qaChatRow--me"
               >
-                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
-                <p class="qaRoundMuted">{{ strings.qaEmptySubmit }}</p>
+                <div class="qaChatStack qaChatStack--me">
+                  <span class="qaChatRole qaChatRole--me">{{
+                    strings.qaUserTurnMe
+                  }}</span>
+                  <div class="qaChatBubble qaChatBubble--me qaChatBubble--meMuted">
+                    <p class="qaRoundMuted">{{ strings.qaEmptySubmit }}</p>
+                  </div>
+                </div>
               </div>
               <div
                 v-else-if="round.tab_id === activeTabId"
-                class="qaRoundBlock qaRoundBlock--pending"
+                class="qaChatRow qaChatRow--me"
               >
-                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
-                <p class="qaRoundHint">{{ strings.qaPendingCurrent }}</p>
+                <div class="qaChatStack qaChatStack--me">
+                  <span class="qaChatRole qaChatRole--me">{{
+                    strings.qaUserTurnMe
+                  }}</span>
+                  <div class="qaChatBubble qaChatBubble--me qaChatBubble--mePending">
+                    <p class="qaRoundHint">{{ strings.qaPendingCurrent }}</p>
+                  </div>
+                </div>
               </div>
-              <div v-else class="qaRoundBlock qaRoundBlock--pendingMuted">
-                <div class="qaRoundLabel qaRoundLabel--me">{{ strings.qaUserFeedback }}</div>
-                <p class="qaRoundMuted">{{ strings.qaPendingOther }}</p>
+              <div v-else class="qaChatRow qaChatRow--me">
+                <div class="qaChatStack qaChatStack--me">
+                  <span class="qaChatRole qaChatRole--me">{{
+                    strings.qaUserTurnMe
+                  }}</span>
+                  <div
+                    class="qaChatBubble qaChatBubble--me qaChatBubble--meMuted"
+                  >
+                    <p class="qaRoundMuted">{{ strings.qaPendingOther }}</p>
+                  </div>
+                </div>
               </div>
             </article>
             <div
@@ -685,37 +825,19 @@ onBeforeUnmount(() => {
 
         <div class="mainFooterFixed">
           <div class="mainFeedbackZone">
-            <div class="mainFieldHeader mainFieldHeader--me">
-              <div class="mainFieldTitleGroup">
-                <span class="mainFieldTitle">{{ strings.composerMessage }}</span>
-                <span class="mainFieldTitleGloss">{{
-                  strings.composerAnswerSub
-                }}</span>
-              </div>
-              <span class="mainFieldSub">{{
-                launch?.is_preview
-                  ? strings.mainHintPreview
-                  : strings.composerHint
-              }}</span>
-            </div>
-            <p
-              v-if="
-                launch &&
-                !launch.is_preview &&
-                status === 'active' &&
-                !expired
-              "
-              class="composerIdeBlockingHint"
-            >
-              {{ strings.ideBlockingHint }}
-            </p>
             <div
               class="composerShell"
               :class="{ composerShellDrag: dragActive }"
             >
-              <div class="composerCard">
+              <div
+                class="composerCard"
+                role="region"
+                :aria-label="strings.composerAriaRegion"
+              >
                 <div
-                  v-if="pendingImages.length && !expired && !composerIdle"
+                  v-if="
+                    (pendingImages.length || pendingFileDrops.length) && !expired
+                  "
                   class="composerThumbRow"
                   :aria-label="strings.composerImageAria"
                 >
@@ -735,9 +857,73 @@ onBeforeUnmount(() => {
                       type="button"
                       class="composerThumbRemove"
                       :aria-label="strings.composerThumbRemove"
-                      @click="removePendingImage(img.id)"
+                      @click.stop="removePendingImage(img.id)"
                     >
-                      ×
+                      <svg
+                        class="composerThumbRemoveSvg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div
+                    v-for="fd in pendingFileDrops"
+                    :key="fd.id"
+                    class="composerThumbWrap composerFileDropWrap"
+                    :title="pendingFileChipTitle(fd)"
+                  >
+                    <div
+                      class="composerFileDropChip"
+                      :class="{
+                        'composerFileDropChip--error': 'error' in fd && fd.error,
+                      }"
+                      :aria-label="strings.composerFileDropAria"
+                    >
+                      <svg
+                        class="composerFileDropIcon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                        />
+                        <path d="M14 2v6h6" />
+                      </svg>
+                      <span class="composerFileDropName">{{
+                        pendingFileChipLabel(fd)
+                      }}</span>
+                      <span
+                        v-if="'error' in fd && fd.error"
+                        class="composerFileDropErr"
+                        >{{ fd.error }}</span
+                      >
+                    </div>
+                    <button
+                      type="button"
+                      class="composerThumbRemove"
+                      :aria-label="strings.composerFileDropRemove"
+                      @click.stop="removePendingFileDrop(fd.id)"
+                    >
+                      <svg
+                        class="composerThumbRemoveSvg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -747,82 +933,116 @@ onBeforeUnmount(() => {
                   class="mainInputComposer composerTextarea"
                   :class="{
                     'composerTextarea--thumbs':
-                      pendingImages.length && !expired && !composerIdle,
+                      (pendingImages.length || pendingFileDrops.length) &&
+                      !expired,
                   }"
-                  :readonly="expired || composerIdle"
-                  :placeholder="
-                    composerIdle
-                      ? strings.composerIdlePlaceholder
-                      : strings.placeholder
-                  "
+                  :readonly="expired"
+                  :placeholder="strings.placeholder"
                   @paste="onComposerPaste"
                   @keydown="onKeydown"
                   @compositionstart="onComposerCompositionStart"
                   @compositionend="onComposerCompositionEnd"
                 />
                 <div
-                  v-if="!expired && !composerIdle"
-                  class="composerFooterBar composerFooterBar--icons"
+                  v-if="!expired"
+                  class="composerFooterBar composerFooterBar--chat"
                 >
-                  <input
-                    ref="attachInputRef"
-                    type="file"
-                    class="srOnly"
-                    accept="image/*"
-                    multiple
-                    @change="onAttachChange"
-                  />
-                  <button
-                    type="button"
-                    class="composerIconBtn composerIconBtnAttach"
-                    :title="strings.composerAttach"
-                    :aria-label="strings.composerAttach"
-                    @click="attachInputRef?.click()"
-                  >
-                    <svg
-                      class="composerIconSvg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
+                  <div class="composerFooterHintCol">
+                    <p class="composerFooterHintMain">
+                      {{
+                        launch?.is_preview
+                          ? strings.mainHintPreview
+                          : composerIdle
+                            ? strings.composerHintDraft
+                            : strings.composerHint
+                      }}
+                    </p>
+                    <p
+                      v-if="
+                        launch &&
+                        !launch.is_preview &&
+                        status === 'active' &&
+                        !composerIdle
+                      "
+                      class="composerFooterHintIde"
                     >
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                      <circle cx="8.5" cy="8.5" r="1.5" />
-                      <path d="M21 15l-5-5L5 21" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="composerIconBtn composerIconBtnSend"
-                    :title="
-                      launch?.is_preview
-                        ? strings.composerSubmitDisabledPreview
-                        : strings.composerSubmitIconTitle
-                    "
-                    :aria-label="
-                      launch?.is_preview
-                        ? strings.composerSubmitDisabledPreview
-                        : strings.composerSubmitIconAria
-                    "
-                    :disabled="Boolean(launch?.is_preview)"
-                    @click="submit(false)"
-                  >
-                    <svg
-                      class="composerIconSvg composerIconSvg--send"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.25"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
+                      {{ strings.ideBlockingHint }}
+                    </p>
+                  </div>
+                  <div class="composerFooterActions">
+                    <input
+                      ref="attachInputRef"
+                      type="file"
+                      class="srOnly"
+                      multiple
+                      @change="onAttachChange"
+                    />
+                    <button
+                      type="button"
+                      class="composerIconBtn composerIconBtnAttach"
+                      :title="strings.composerAttach"
+                      :aria-label="strings.composerAttach"
+                      @click="attachInputRef?.click()"
                     >
-                      <path d="M12 5v14M5 12l7-7 7 7" />
-                    </svg>
-                  </button>
+                      <svg
+                        class="composerIconSvg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.64 16.76a2 2 0 0 1-2.83-2.83l8.49-8.49"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="composerIconBtn composerIconBtnSend"
+                      :title="
+                        hasPendingFileDropErrors
+                          ? strings.composerSubmitBlockedFileError
+                          : launch?.is_preview
+                            ? strings.composerSubmitDisabledPreview
+                            : composerIdle
+                              ? strings.composerSubmitDisabledIdle
+                              : strings.composerSubmitIconTitle
+                      "
+                      :aria-label="
+                        hasPendingFileDropErrors
+                          ? strings.composerSubmitBlockedFileError
+                          : launch?.is_preview
+                            ? strings.composerSubmitDisabledPreview
+                            : composerIdle
+                              ? strings.composerSubmitDisabledIdle
+                              : strings.composerSubmitIconAria
+                      "
+                      :disabled="
+                        Boolean(launch?.is_preview) ||
+                        submitting ||
+                        (!launch?.is_preview && composerIdle) ||
+                        hasPendingFileDropErrors
+                      "
+                      :aria-busy="submitting"
+                      @click="submit(false)"
+                    >
+                      <svg
+                        class="composerIconSvg composerIconSvg--send"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.25"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 5v14M5 12l7-7 7 7" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -866,9 +1086,11 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="secondary settingsCheckBtn settingsCheckBtn--icon"
+            :class="{ 'settingsCheckBtn--busy': settingsCheckBusy }"
             :disabled="settingsCheckBusy"
             :title="strings.settingsCheckStatus"
             :aria-label="strings.settingsCheckStatus"
+            :aria-busy="settingsCheckBusy"
             @click="checkInstallStatus"
           >
             <span class="settingsCheckIcon" aria-hidden="true">↻</span>
@@ -903,6 +1125,16 @@ onBeforeUnmount(() => {
         >
           {{ strings.segRulePrompts }}
         </button>
+        <button
+          type="button"
+          role="tab"
+          class="segTab"
+          :class="{ active: settingsSeg === 'cache' }"
+          :aria-selected="settingsSeg === 'cache'"
+          @click="settingsSeg = 'cache'"
+        >
+          {{ strings.segCache }}
+        </button>
       </nav>
 
       <div class="settingsPane">
@@ -921,6 +1153,108 @@ onBeforeUnmount(() => {
                 }}
               </p>
             </header>
+
+            <section
+              v-if="pathEnv"
+              class="setupActionsStrip"
+              :aria-label="strings.setupActionsAria"
+            >
+              <div class="setupActionsStripHead">
+                <div class="setupActionsStripCopy">
+                  <p
+                    v-if="setupAllConfigured"
+                    class="setupActionsStripLead setupActionsStripLead--ok"
+                  >
+                    {{ strings.setupNoInstallNeeded }}
+                  </p>
+                  <template v-else>
+                    <p class="setupActionsStripLead">
+                      {{ strings.setupActionsStripNeedInstall }}
+                    </p>
+                    <p
+                      v-if="!setupAnythingInstalled"
+                      class="setupActionsStripSub"
+                    >
+                      {{ strings.setupUninstallOnlyHint }}
+                    </p>
+                  </template>
+                </div>
+                <div class="setupActionsStripBtns">
+                  <button
+                    v-if="!setupAllConfigured"
+                    type="button"
+                    class="primary setupInstallBtnCompact"
+                    :disabled="hubInstallBusy || hubUninstallBusy"
+                    @click="doFullInstall"
+                  >
+                    {{
+                      hubInstallBusy ? strings.mcpFullBusy : strings.setupBtnInstall
+                    }}
+                  </button>
+                  <button
+                    v-if="setupAnythingInstalled"
+                    type="button"
+                    class="setupUninstallBtnCompact"
+                    :disabled="
+                      hubInstallBusy ||
+                      hubUninstallBusy ||
+                      showUninstallConfirm
+                    "
+                    @click="onUninstallClick"
+                  >
+                    {{
+                      hubUninstallBusy
+                        ? strings.mcpFullBusy
+                        : strings.setupBtnUninstall
+                    }}
+                  </button>
+                </div>
+              </div>
+              <div
+                v-if="showUninstallConfirm"
+                class="uninstallConfirmBar"
+                role="dialog"
+                aria-modal="true"
+                :aria-label="strings.setupBtnUninstall"
+              >
+                <p class="uninstallConfirmText">
+                  {{ strings.mcpFullUninstallConfirm }}
+                </p>
+                <div class="uninstallConfirmBtns">
+                  <button
+                    type="button"
+                    class="secondary"
+                    @click="cancelUninstallConfirm"
+                  >
+                    {{ strings.setupUninstallCancel }}
+                  </button>
+                  <button
+                    type="button"
+                    class="primary btnDanger"
+                    @click="confirmAndRunUninstall"
+                  >
+                    {{ strings.setupUninstallConfirmBtn }}
+                  </button>
+                </div>
+              </div>
+              <p
+                v-if="pathEnv && !setupAllConfigured"
+                class="setupActionsFoot"
+              >
+                {{ strings.setupInstallHint }}
+              </p>
+              <p
+                v-if="pathEnv && setupAnythingInstalled"
+                class="setupActionsFoot setupActionsFoot--muted"
+              >
+                {{ strings.setupUninstallHint }}
+              </p>
+              <p v-if="hubMsg" class="note setupHubMsg">{{ hubMsg }}</p>
+              <p v-if="hubErr" class="error setupHubErr">{{ hubErr }}</p>
+              <p class="setupInstallChangesNote setupInstallChangesNote--inStrip">
+                {{ strings.setupInstallChangesNote }}
+              </p>
+            </section>
 
             <section
               class="setupMcpPauseCard"
@@ -947,14 +1281,16 @@ onBeforeUnmount(() => {
                   v-model="mcpPaused"
                   type="checkbox"
                   class="setupMcpPauseInput"
+                  :disabled="mcpPauseBusy"
                   :aria-label="strings.mcpPauseSwitchTitle"
                   @change="onMcpPausedChange"
                 />
                 <span>{{ strings.mcpPauseSwitch }}</span>
               </label>
+              <p v-if="mcpPauseErr" class="error setupMcpPauseErr" role="alert">
+                {{ mcpPauseErr }}
+              </p>
             </section>
-
-            <p class="setupInstallChangesNote note">{{ strings.setupInstallChangesNote }}</p>
 
             <section class="setupStatus" :aria-label="strings.setupStatus">
               <span class="setupStatusLabel">{{ strings.setupStatus }}</span>
@@ -1033,237 +1369,177 @@ onBeforeUnmount(() => {
               <p v-else class="note">{{ strings.loading }}</p>
             </section>
 
-            <section class="setupPrimaryCard">
-              <p
-                v-if="pathEnv && setupAllConfigured"
-                class="setupNoInstallNote"
-              >
-                {{ strings.setupNoInstallNeeded }}
-              </p>
-              <div
-                class="setupPrimaryBtns"
-                :class="{
-                  'setupPrimaryBtns--installHidden': setupAllConfigured,
-                }"
-              >
-                <button
-                  v-if="pathEnv && !setupAllConfigured"
-                  type="button"
-                  class="primary setupInstallBtn"
-                  :disabled="hubInstallBusy || hubUninstallBusy"
-                  @click="doFullInstall"
-                >
-                  {{
-                    hubInstallBusy ? strings.mcpFullBusy : strings.setupBtnInstall
-                  }}
-                </button>
-                <button
-                  v-if="pathEnv && setupAnythingInstalled"
-                  type="button"
-                  class="secondary btnDanger setupUninstallBtn"
-                  :class="{ 'setupUninstallBtn--full': setupAllConfigured }"
-                  :disabled="
-                    hubInstallBusy ||
-                    hubUninstallBusy ||
-                    showUninstallConfirm
-                  "
-                  @click="onUninstallClick"
-                >
-                  {{
-                    hubUninstallBusy
-                      ? strings.mcpFullBusy
-                      : strings.setupBtnUninstall
-                  }}
-                </button>
-              </div>
-              <p
-                v-if="pathEnv && !setupAnythingInstalled"
-                class="setupUninstallHintOnly note"
-              >
-                {{ strings.setupUninstallOnlyHint }}
-              </p>
-              <div
-                v-if="showUninstallConfirm"
-                class="uninstallConfirmBar"
-                role="dialog"
-                aria-modal="true"
-                :aria-label="strings.setupBtnUninstall"
-              >
-                <p class="uninstallConfirmText">
-                  {{ strings.mcpFullUninstallConfirm }}
-                </p>
-                <div class="uninstallConfirmBtns">
-                  <button
-                    type="button"
-                    class="secondary"
-                    @click="cancelUninstallConfirm"
-                  >
-                    {{ strings.setupUninstallCancel }}
-                  </button>
-                  <button
-                    type="button"
-                    class="primary btnDanger"
-                    @click="confirmAndRunUninstall"
-                  >
-                    {{ strings.setupUninstallConfirmBtn }}
-                  </button>
-                </div>
-              </div>
-              <p
-                v-if="pathEnv && !setupAllConfigured"
-                class="setupPrimaryHint"
-              >
-                {{ strings.setupInstallHint }}
-              </p>
-              <p
-                v-if="pathEnv && setupAnythingInstalled"
-                class="setupPrimaryHint setupPrimaryHint--muted"
-              >
-                {{ strings.setupUninstallHint }}
-              </p>
-              <p v-if="hubMsg" class="note setupHubMsg">{{ hubMsg }}</p>
-              <p v-if="hubErr" class="error setupHubErr">{{ hubErr }}</p>
-            </section>
-
             <section
-              class="setupToolParamsCard"
-              :aria-label="strings.setupToolParamsTitle"
+              class="setupConfigFrame setupConfigFrame--tools"
+              :aria-label="`${strings.setupToolParamsTitle} · ${strings.setupAdvSingle}`"
             >
-              <h4 class="setupSectionTitle">{{ strings.setupToolParamsTitle }}</h4>
-              <p class="setupSectionLead">{{ strings.setupToolParamsLead }}</p>
-              <ul class="setupToolParamsList">
-                <li>
-                  <code class="setupToolParamsCode">retell</code>
-                  <span class="setupToolParamsHint">{{ retellParamHintLine }}</span>
-                </li>
-                <li>{{ strings.setupParamSessionTitle }}</li>
-                <li>{{ strings.setupParamClientTabId }}</li>
-              </ul>
-            </section>
-
-            <section class="setupCopyCard">
-              <h4 class="setupSectionTitle">{{ strings.setupCopyTitle }}</h4>
-              <p class="setupSectionLead">{{ strings.setupCopyLead }}</p>
-              <div class="setupCopyRow">
-                <button type="button" class="secondary" @click="copyMcpJson">
-                  {{ strings.mcpCopy }}
-                </button>
-                <span v-if="copyToast" class="copyToast">{{ copyToast }}</span>
+              <div class="setupConfigFrameBody setupConfigFrameBody--center">
+                <h4 class="setupConfigFrameTitle">{{ strings.setupToolParamsTitle }}</h4>
+                <p class="setupConfigFrameLead">{{ strings.setupToolParamsLead }}</p>
+                <div class="setupToolsJsonEmbed">
+                  <div class="setupConfigFrameBar setupToolsJsonEmbedBar">
+                    <div class="setupConfigFrameBarActions">
+                      <span v-if="copyToast" class="copyToast">{{ copyToast }}</span>
+                      <button
+                        type="button"
+                        class="secondary setupConfigFrameBtn"
+                        @click="copyMcpJson"
+                      >
+                        {{ strings.mcpCopy }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="setupToolsJsonEmbedBody">
+                    <pre
+                      class="mcpPreview mcpPreviewToolsEmbed"
+                      tabindex="0"
+                    >{{ mcpJson }}</pre>
+                  </div>
+                </div>
+                <div class="setupToolsIdeEmbed">
+                  <h5 class="setupToolsIdeEmbedTitle">{{ strings.setupAdvSingle }}</h5>
+                  <div class="advIdeGrid advIdeGrid--embed">
+                    <div class="setupConfigFrame advIdeFrame">
+                      <div class="setupConfigFrameBar">
+                        <div class="setupConfigFrameBarActions">
+                          <button
+                            v-if="!mcpCursorInstalled"
+                            type="button"
+                            class="secondary setupConfigFrameBtn"
+                            :disabled="mcpCursorBusy || mcpWindsurfBusy"
+                            @click="installCursorMcpOnly"
+                          >
+                            {{
+                              mcpCursorBusy
+                                ? strings.mcpCursorBusy
+                                : strings.mcpInstallCursorOnly
+                            }}
+                          </button>
+                          <button
+                            v-if="mcpCursorInstalled"
+                            type="button"
+                            class="secondary setupConfigFrameBtn"
+                            :disabled="mcpCursorBusy || mcpWindsurfBusy"
+                            @click="uninstallCursorMcpOnly"
+                          >
+                            {{
+                              mcpCursorBusy
+                                ? strings.mcpCursorBusy
+                                : strings.mcpUninstallCursorOnly
+                            }}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="setupConfigFrameBody setupConfigFrameBody--ideCard">
+                        <p class="advIdeLine">
+                          <span class="advIdeProduct">{{
+                            strings.mcpCursorFile
+                          }}</span>
+                          <span
+                            class="advIdeState"
+                            :class="{ ok: mcpCursorInstalled }"
+                          >
+                            {{
+                              mcpCursorInstalled
+                                ? strings.mcpInCursor
+                                : strings.mcpNotInCursor
+                            }}
+                          </span>
+                        </p>
+                        <code class="advIdePath advIdePath--inCard">{{
+                          cursorMcpPath
+                        }}</code>
+                      </div>
+                    </div>
+                    <div class="setupConfigFrame advIdeFrame">
+                      <div class="setupConfigFrameBar">
+                        <div class="setupConfigFrameBarActions">
+                          <button
+                            v-if="!mcpWindsurfInstalled"
+                            type="button"
+                            class="secondary setupConfigFrameBtn"
+                            :disabled="mcpWindsurfBusy || mcpCursorBusy"
+                            @click="installWindsurfMcpOnly"
+                          >
+                            {{
+                              mcpWindsurfBusy
+                                ? strings.mcpCursorBusy
+                                : strings.mcpInstallWindsurfOnly
+                            }}
+                          </button>
+                          <button
+                            v-if="mcpWindsurfInstalled"
+                            type="button"
+                            class="secondary setupConfigFrameBtn"
+                            :disabled="mcpWindsurfBusy || mcpCursorBusy"
+                            @click="uninstallWindsurfMcpOnly"
+                          >
+                            {{
+                              mcpWindsurfBusy
+                                ? strings.mcpCursorBusy
+                                : strings.mcpUninstallWindsurfOnly
+                            }}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="setupConfigFrameBody setupConfigFrameBody--ideCard">
+                        <p class="advIdeLine">
+                          <span class="advIdeProduct">{{
+                            strings.mcpWindsurfFile
+                          }}</span>
+                          <span
+                            class="advIdeState"
+                            :class="{ ok: mcpWindsurfInstalled }"
+                          >
+                            {{
+                              mcpWindsurfInstalled
+                                ? strings.mcpInWindsurf
+                                : strings.mcpNotInWindsurf
+                            }}
+                          </span>
+                        </p>
+                        <code class="advIdePath advIdePath--inCard">{{
+                          windsurfMcpPath
+                        }}</code>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
 
             <details class="setupAdvanced">
               <summary class="setupAdvancedSummary">{{ strings.setupAdvanced }}</summary>
               <div class="setupAdvancedInner">
-                <div v-if="pathEnv" class="advBlock">
-                  <h5 class="advBlockTitle">{{ strings.setupAdvPathTitle }}</h5>
-                  <p class="advBlockLead">{{ strings.setupAdvPathLead }}</p>
-                  <code class="advPathCode">{{ pathEnv.bin_dir }}</code>
-                  <button
-                    v-if="!pathEnv.configured"
-                    type="button"
-                    class="secondary advPathBtn"
-                    :disabled="pathEnvBusy"
-                    @click="configureRelayPath"
-                  >
-                    {{ pathEnvBusy ? strings.pathEnvBusy : strings.pathEnvBtn }}
-                  </button>
-                  <p v-if="pathEnvMsg" class="note advNote">{{ pathEnvMsg }}</p>
-                  <p v-if="pathEnvErr" class="error advNote">{{ pathEnvErr }}</p>
-                </div>
-
-                <h5 class="advBlockTitle advBlockTitle--spaced">
-                  {{ strings.setupAdvSingle }}
-                </h5>
-                <div class="advIdeGrid">
-                  <div class="advIdeCol">
-                    <p class="advIdeHead">
-                      <strong>{{ strings.mcpCursorFile }}</strong>
-                      <span
-                        class="advIdeState"
-                        :class="{ ok: mcpCursorInstalled }"
-                      >
-                        {{
-                          mcpCursorInstalled
-                            ? strings.mcpInCursor
-                            : strings.mcpNotInCursor
-                        }}
-                      </span>
-                    </p>
-                    <div class="advIdeBtns">
+                <div v-if="pathEnv" class="setupConfigFrame setupConfigFrame--path">
+                  <div class="setupConfigFrameBar">
+                    <div class="setupConfigFrameBarActions">
                       <button
-                        v-if="!mcpCursorInstalled"
+                        v-if="!pathEnv.configured"
                         type="button"
-                        class="secondary"
-                        :disabled="mcpCursorBusy || mcpWindsurfBusy"
-                        @click="installCursorMcpOnly"
+                        class="secondary setupConfigFrameBtn"
+                        :disabled="pathEnvBusy"
+                        @click="configureRelayPath"
                       >
-                        {{
-                          mcpCursorBusy
-                            ? strings.mcpCursorBusy
-                            : strings.mcpInstallCursorOnly
-                        }}
-                      </button>
-                      <button
-                        v-if="mcpCursorInstalled"
-                        type="button"
-                        class="secondary"
-                        :disabled="mcpCursorBusy || mcpWindsurfBusy"
-                        @click="uninstallCursorMcpOnly"
-                      >
-                        {{
-                          mcpCursorBusy
-                            ? strings.mcpCursorBusy
-                            : strings.mcpUninstallCursorOnly
-                        }}
+                        {{ pathEnvBusy ? strings.pathEnvBusy : strings.pathEnvBtn }}
                       </button>
                     </div>
-                    <code class="advIdePath">{{ cursorMcpPath }}</code>
                   </div>
-                  <div class="advIdeCol">
-                    <p class="advIdeHead">
-                      <strong>{{ strings.mcpWindsurfFile }}</strong>
-                      <span
-                        class="advIdeState"
-                        :class="{ ok: mcpWindsurfInstalled }"
-                      >
-                        {{
-                          mcpWindsurfInstalled
-                            ? strings.mcpInWindsurf
-                            : strings.mcpNotInWindsurf
-                        }}
-                      </span>
+                  <div class="setupConfigFrameBody setupConfigFrameBody--center">
+                    <h5 class="setupConfigFrameTitle setupConfigFrameTitle--sm">
+                      {{ strings.setupAdvPathTitle }}
+                    </h5>
+                    <p class="setupConfigFrameLead setupConfigFrameLead--sm">
+                      {{ strings.setupAdvPathLead }}
                     </p>
-                    <div class="advIdeBtns">
-                      <button
-                        v-if="!mcpWindsurfInstalled"
-                        type="button"
-                        class="secondary"
-                        :disabled="mcpWindsurfBusy || mcpCursorBusy"
-                        @click="installWindsurfMcpOnly"
-                      >
-                        {{
-                          mcpWindsurfBusy
-                            ? strings.mcpCursorBusy
-                            : strings.mcpInstallWindsurfOnly
-                        }}
-                      </button>
-                      <button
-                        v-if="mcpWindsurfInstalled"
-                        type="button"
-                        class="secondary"
-                        :disabled="mcpWindsurfBusy || mcpCursorBusy"
-                        @click="uninstallWindsurfMcpOnly"
-                      >
-                        {{
-                          mcpWindsurfBusy
-                            ? strings.mcpCursorBusy
-                            : strings.mcpUninstallWindsurfOnly
-                        }}
-                      </button>
-                    </div>
-                    <code class="advIdePath">{{ windsurfMcpPath }}</code>
+                    <code class="advPathCode advPathCode--frame">{{ pathEnv.bin_dir }}</code>
                   </div>
+                  <p v-if="pathEnvMsg" class="note advNote setupConfigFrameFoot">
+                    {{ pathEnvMsg }}
+                  </p>
+                  <p v-if="pathEnvErr" class="error advNote setupConfigFrameFoot">
+                    {{ pathEnvErr }}
+                  </p>
                 </div>
 
                 <details class="setupNested">
@@ -1282,84 +1558,18 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-show="settingsSeg === 'rulePrompts'" class="segPanel">
-          <div class="installHubCard settingsCard rulePromptsCard">
-            <h3 class="installHubTitle">{{ strings.rulePromptsTitle }}</h3>
-            <p class="installHubDesc">{{ strings.rulePromptsLead }}</p>
+        <SettingsRulePromptsPanel
+          v-show="settingsSeg === 'rulePrompts'"
+          :strings="strings"
+          :cursor-mcp-path="cursorMcpPath || ''"
+          :windsurf-mcp-path="windsurfMcpPath || ''"
+        />
 
-            <h4 class="rulePromptsSubhead">{{ strings.rulePromptsSectionPreview }}</h4>
-
-            <div
-              class="cursorRulesModeGrid"
-              role="radiogroup"
-              :aria-label="strings.rulePromptsSectionPreview"
-            >
-              <button
-                type="button"
-                class="cursorRulesModeBtn"
-                :class="{ active: rulePromptMode === 'mild' }"
-                role="radio"
-                :aria-checked="rulePromptMode === 'mild'"
-                @click="rulePromptMode = 'mild'"
-              >
-                <span class="cursorRulesModeTitle">{{ strings.rulePromptsModeMild }}</span>
-                <span class="cursorRulesModeDesc">{{ strings.rulePromptsModeMildDesc }}</span>
-              </button>
-              <button
-                type="button"
-                class="cursorRulesModeBtn"
-                :class="{ active: rulePromptMode === 'loop' }"
-                role="radio"
-                :aria-checked="rulePromptMode === 'loop'"
-                @click="rulePromptMode = 'loop'"
-              >
-                <span class="cursorRulesModeTitle">{{ strings.rulePromptsModeLoop }}</span>
-                <span class="cursorRulesModeDesc">{{ strings.rulePromptsModeLoopDesc }}</span>
-              </button>
-              <button
-                type="button"
-                class="cursorRulesModeBtn"
-                :class="{ active: rulePromptMode === 'toolOnly' }"
-                role="radio"
-                :aria-checked="rulePromptMode === 'toolOnly'"
-                @click="rulePromptMode = 'toolOnly'"
-              >
-                <span class="cursorRulesModeTitle">{{ strings.rulePromptsModeTool }}</span>
-                <span class="cursorRulesModeDesc">{{ strings.rulePromptsModeToolDesc }}</span>
-              </button>
-            </div>
-
-            <p v-if="rulePromptMode === 'loop'" class="note cursorRulesRisk">
-              {{ strings.rulePromptsLoopRisk }}
-            </p>
-
-            <div class="cursorRulesPreviewHead">
-              <div class="cursorRulesCopyRow">
-                <button type="button" class="secondary" @click="copyRulePrompt">
-                  {{ strings.rulePromptsCopy }}
-                </button>
-                <span v-if="rulesCopyToast" class="copyToast">{{ rulesCopyToast }}</span>
-              </div>
-            </div>
-            <div class="rulePromptBilingual">
-              <p class="rulePromptLangLabel">{{ strings.rulePromptsLabelEn }}</p>
-              <pre class="cursorRulesPre cursorRulesPre--prompt" tabindex="0">{{
-                rulePromptEn
-              }}</pre>
-              <p class="rulePromptLangLabel rulePromptLangLabel--zh">
-                {{ strings.rulePromptsLabelZh }}
-              </p>
-              <pre class="cursorRulesPre cursorRulesPre--zh" tabindex="0">{{
-                rulePromptZh
-              }}</pre>
-            </div>
-
-            <h4 class="rulePromptsSubhead rulePromptsSubhead--spaced">
-              {{ strings.rulePromptsSectionIde }}
-            </h4>
-            <pre class="rulePromptsIdePre" tabindex="0">{{ rulePromptsIdeGuide }}</pre>
-          </div>
-        </div>
+        <SettingsCachePanel
+          :cache-segment-active="cacheSegmentActive"
+          :strings="strings"
+          :push-toast="pushSettingsToast"
+        />
 
         <footer class="settingsAppFooter">
           <p class="settingsAppMeta">
@@ -1387,9 +1597,20 @@ onBeforeUnmount(() => {
         type="button"
         class="imageLightboxClose"
         :aria-label="strings.imageLightboxClose"
+        :title="strings.imageLightboxClose"
         @click="closeLightbox"
       >
-        ×
+        <svg
+          class="imageLightboxCloseSvg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.25"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M18 6 6 18M6 6l12 12" />
+        </svg>
       </button>
       <img
         class="imageLightboxImg"
@@ -1397,6 +1618,16 @@ onBeforeUnmount(() => {
         alt=""
         @click.stop
       />
+    </div>
+
+    <div
+      v-if="settingsRefreshToast"
+      class="settingsRefreshToast settingsRefreshToast--floating"
+      :class="'settingsRefreshToast--' + settingsRefreshToast.type"
+      role="status"
+      aria-live="polite"
+    >
+      {{ settingsRefreshToast.text }}
     </div>
   </main>
 </template>

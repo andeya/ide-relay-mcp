@@ -44,6 +44,12 @@ export type PathEnvStatus = {
   platform: string;
 };
 
-export type SettingsSegment = "setup" | "rulePrompts";
+export type SettingsSegment = "setup" | "rulePrompts" | "cache";
+
+export type RelayCacheStats = {
+  attachments_bytes: number;
+  log_bytes: number;
+  data_dir: string;
+};
 
 export type DragDropUnlisten = (() => void) | undefined;

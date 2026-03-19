@@ -1,8 +1,12 @@
 //! `relay` / `relay gui` (hub), `relay mcp`, `relay feedback` (terminal).
 
+use std::fs;
+use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use clap::{Parser, Subcommand};
 use tauri::{Manager, State};
 
@@ -42,7 +46,10 @@ enum Commands {
             help = "Seconds to wait for submit"
         )]
         timeout: u64,
-        #[arg(long, help = "Optional window title hint")]
+        #[arg(
+            long,
+            help = "Sent in POST body; Relay GUI ignores it (titles are Chat N). Optional for scripts."
+        )]
         session_title: Option<String>,
         #[arg(
             long = "client-tab-id",
@@ -226,6 +233,55 @@ fn relay_full_uninstall() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_relay_data_folder() -> Result<(), String> {
+    let p = relay_mcp::prepare_user_data_dir().map_err(|e| e.to_string())?;
+    opener::open(&p).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_relay_cache_stats() -> Result<relay_mcp::RelayCacheStats, String> {
+    relay_mcp::relay_cache_stats().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_relay_cache_attachments() -> Result<(), String> {
+    relay_mcp::clear_relay_attachments_cache().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_relay_cache_logs() -> Result<(), String> {
+    relay_mcp::clear_relay_log_cache().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_relay_cache_all() -> Result<(), String> {
+    relay_mcp::clear_relay_attachments_cache().map_err(|e| e.to_string())?;
+    relay_mcp::clear_relay_log_cache().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_attachment_retention_days() -> Option<u32> {
+    relay_mcp::read_attachment_retention_days()
+}
+
+#[tauri::command]
+fn set_attachment_retention_days(days: Option<u32>) -> Result<u64, String> {
+    let d = days.filter(|x| *x > 0 && *x <= 3660);
+    relay_mcp::write_attachment_retention_days(d).map_err(|e| e.to_string())?;
+    if let Some(n) = d {
+        relay_mcp::purge_attachments_older_than_days(n).map_err(|e| e.to_string())
+    } else {
+        Ok(0)
+    }
+}
+
+#[tauri::command]
+fn run_attachment_retention_purge() -> Result<u64, String> {
+    relay_mcp::run_attachment_retention_purge().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn save_feedback_attachment(name: String, bytes_b64: String) -> Result<String, String> {
     relay_mcp::save_feedback_attachment(&name, &bytes_b64)
         .map(|p| p.to_string_lossy().into_owned())
@@ -235,6 +291,76 @@ fn save_feedback_attachment(name: String, bytes_b64: String) -> Result<String, S
 #[tauri::command]
 fn read_feedback_attachment_data_url(path: String) -> Result<String, String> {
     relay_mcp::read_feedback_attachment_data_url(&path).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct DraggedImagePreview {
+    data_base64: String,
+    name: String,
+    mime: String,
+}
+
+/// Read a local image path (drag-drop) so the webview can show a thumbnail instead of pasting paths.
+#[tauri::command]
+fn read_dragged_image_preview(path: String) -> Result<DraggedImagePreview, String> {
+    let p = Path::new(path.trim());
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => return Err("unsupported image type".to_string()),
+    };
+    let meta = fs::metadata(p).map_err(|e| e.to_string())?;
+    const MAX_BYTES: u64 = 25 * 1024 * 1024;
+    if meta.len() > MAX_BYTES {
+        return Err("image too large (max 25MB)".to_string());
+    }
+    let bytes = fs::read(p).map_err(|e| e.to_string())?;
+    let name = p
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "image.png".to_string());
+    Ok(DraggedImagePreview {
+        data_base64: STANDARD.encode(&bytes),
+        name,
+        mime: mime.to_string(),
+    })
+}
+
+const MAX_ATTACH_BYTES: u64 = 50 * 1024 * 1024;
+
+/// Path must be a regular file and within size limit (before reading bytes).
+#[tauri::command]
+fn validate_feedback_attachment_path(path: String) -> Result<(), String> {
+    let p = Path::new(path.trim());
+    let meta = fs::metadata(p).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("not a file".to_string());
+    }
+    if meta.len() > MAX_ATTACH_BYTES {
+        return Err("file too large (max 50MB)".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn read_local_file_bytes_b64(path: String) -> Result<String, String> {
+    let p = Path::new(path.trim());
+    let meta = fs::metadata(p).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("not a file".to_string());
+    }
+    if meta.len() > MAX_ATTACH_BYTES {
+        return Err("file too large (max 50MB)".to_string());
+    }
+    let bytes = fs::read(p).map_err(|e| e.to_string())?;
+    Ok(STANDARD.encode(&bytes))
 }
 
 fn run_tauri(initial: LaunchState) {
@@ -259,6 +385,8 @@ fn run_tauri(initial: LaunchState) {
         active_tab_id,
         qa_rounds,
         persist_hub,
+        client_tab_id_to_seq: std::collections::HashMap::new(),
+        chat_seq_counter: 0,
     };
 
     let mut builder = tauri::Builder::default();
@@ -322,8 +450,19 @@ fn run_tauri(initial: LaunchState) {
             uninstall_mcp_from_windsurf,
             relay_full_install,
             relay_full_uninstall,
+            open_relay_data_folder,
+            get_relay_cache_stats,
+            clear_relay_cache_attachments,
+            clear_relay_cache_logs,
+            clear_relay_cache_all,
+            get_attachment_retention_days,
+            set_attachment_retention_days,
+            run_attachment_retention_purge,
             save_feedback_attachment,
-            read_feedback_attachment_data_url
+            read_feedback_attachment_data_url,
+            read_dragged_image_preview,
+            validate_feedback_attachment_path,
+            read_local_file_bytes_b64
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Relay")
@@ -362,7 +501,7 @@ fn main() {
             let st = session_title.as_deref().unwrap_or("");
             let ctid = client_tab_id.as_deref().unwrap_or("");
             if let Err(e) = run_feedback_cli(retell, timeout, st, ctid) {
-                eprintln!("{e}");
+                eprintln!("relay feedback: {e}");
                 std::process::exit(1);
             }
         }

@@ -6,6 +6,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { locale, t } from "../i18n";
 import type { PathEnvStatus } from "../types/relay-app";
 
+export type RefreshHubResult = {
+  ok: boolean;
+  mcpConfigReadFailed: boolean;
+  fatalError?: string;
+};
+
 export function useMcpAndPathSettings() {
   const mcpJson = ref("");
   const mcpCursorInstalled = ref(false);
@@ -46,27 +52,40 @@ export function useMcpAndPathSettings() {
     }
   }
 
-  async function refreshMcpHub() {
+  async function refreshMcpHub(): Promise<RefreshHubResult> {
+    let mcpConfigReadFailed = false;
     try {
       mcpJson.value = await invoke<string>("get_mcp_config_json");
     } catch (e) {
+      mcpConfigReadFailed = true;
       mcpJson.value = "// " + (e instanceof Error ? e.message : String(e));
     }
-    mcpCursorInstalled.value = await invoke<boolean>("get_mcp_cursor_installed");
-    mcpWindsurfInstalled.value = await invoke<boolean>(
-      "get_mcp_windsurf_installed",
-    );
     try {
-      cursorMcpPath.value = await invoke<string>("get_cursor_mcp_json_path");
-    } catch {
-      cursorMcpPath.value = "~/.cursor/mcp.json";
+      mcpCursorInstalled.value = await invoke<boolean>("get_mcp_cursor_installed");
+      mcpWindsurfInstalled.value = await invoke<boolean>(
+        "get_mcp_windsurf_installed",
+      );
+      try {
+        cursorMcpPath.value = await invoke<string>("get_cursor_mcp_json_path");
+      } catch {
+        cursorMcpPath.value = "~/.cursor/mcp.json";
+      }
+      try {
+        windsurfMcpPath.value = await invoke<string>(
+          "get_windsurf_mcp_json_path",
+        );
+      } catch {
+        windsurfMcpPath.value = "~/.codeium/windsurf/mcp_config.json";
+      }
+      await refreshPathEnv();
+      return { ok: true, mcpConfigReadFailed };
+    } catch (e) {
+      return {
+        ok: false,
+        mcpConfigReadFailed,
+        fatalError: e instanceof Error ? e.message : String(e),
+      };
     }
-    try {
-      windsurfMcpPath.value = await invoke<string>("get_windsurf_mcp_json_path");
-    } catch {
-      windsurfMcpPath.value = "~/.codeium/windsurf/mcp_config.json";
-    }
-    await refreshPathEnv();
   }
 
   async function copyMcpJson() {

@@ -35,10 +35,7 @@ pub fn read_gui_endpoint() -> Result<Option<GuiEndpoint>> {
 fn health_ok(ep: &GuiEndpoint) -> bool {
     let url = format!("http://127.0.0.1:{}/v1/health", ep.port);
     ureq::get(&url)
-        .set(
-            "Authorization",
-            &format!("Bearer {}", ep.token),
-        )
+        .set("Authorization", &format!("Bearer {}", ep.token))
         .timeout(Duration::from_secs(2))
         .call()
         .map(|r| r.status() == 200)
@@ -83,15 +80,13 @@ pub fn ensure_gui_endpoint(max_wait: Duration) -> Result<GuiEndpoint> {
 }
 
 /// POST feedback + block on wait until user answers (or empty on dismiss/timeout).
+/// Forwards `session_title` for API compatibility; GUI ignores it for window label.
 pub fn feedback_round(retell: &str, session_title: &str, client_tab_id: &str) -> Result<String> {
     let ep = ensure_gui_endpoint(Duration::from_secs(45))?;
 
     let post_url = format!("http://127.0.0.1:{}/v1/feedback", ep.port);
     let resp = ureq::post(&post_url)
-        .set(
-            "Authorization",
-            &format!("Bearer {}", ep.token),
-        )
+        .set("Authorization", &format!("Bearer {}", ep.token))
         .send_json(serde_json::json!({
             "retell": retell,
             "session_title": session_title,
@@ -109,15 +104,9 @@ pub fn feedback_round(retell: &str, session_title: &str, client_tab_id: &str) ->
         .and_then(|x| x.as_str())
         .context("request_id")?;
 
-    let wait_url = format!(
-        "http://127.0.0.1:{}/v1/feedback/wait/{}",
-        ep.port, rid
-    );
+    let wait_url = format!("http://127.0.0.1:{}/v1/feedback/wait/{}", ep.port, rid);
     let ans = ureq::get(&wait_url)
-        .set(
-            "Authorization",
-            &format!("Bearer {}", ep.token),
-        )
+        .set("Authorization", &format!("Bearer {}", ep.token))
         .timeout(Duration::from_secs(700))
         .call()
         .map_err(|e| anyhow!("GET wait: {}", e))?

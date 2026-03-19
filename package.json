@@ -18,7 +18,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint \"src/**/*.vue\" --max-warnings 0",
+    "lint": "eslint \"src/**/*.vue\" \"src/**/*.ts\" --max-warnings 0",
     "typecheck": "vue-tsc --noEmit",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

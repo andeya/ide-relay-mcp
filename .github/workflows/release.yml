@@ -1,0 +1,96 @@
+# Build and upload GitHub Release assets only when a semver-style release tag is pushed.
+# Does not run on everyday pushes or PRs.
+#
+# Prereq: Repo Settings → Actions → General → Workflow permissions → Read and write.
+# ARM-hosted runners (Linux/Windows ARM): often free for public repos; private repos — see GitHub billing.
+
+name: Release
+
+on:
+  push:
+    tags:
+      # Semver-style tag, e.g. v1.0.0 (glob; not on every push)
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+          # macOS Intel
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+          # Linux x64
+          - platform: ubuntu-22.04
+            args: ""
+          # Linux ARM64 (public repos; use self-hosted runner or drop this row if unavailable)
+          - platform: ubuntu-24.04-arm
+            args: ""
+          # Windows x64
+          - platform: windows-latest
+            args: ""
+          # Windows ARM64 (e.g. Surface; remove this matrix row if it fails)
+          - platform: windows-11-arm
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.platform }}-${{ matrix.args }}
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and upload to GitHub Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Relay ${{ github.ref_name }}
+          releaseBody: |
+            Prebuilt installers are in **Assets** below.
+
+            **Targets:** macOS (Apple Silicon / Intel), Linux (x64 / arm64), Windows (x64 / arm64).
+
+            Align `tauri.conf.json` / `Cargo.toml` version with the tag (e.g. `v1.0.0`).
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

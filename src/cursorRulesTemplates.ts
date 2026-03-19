@@ -22,18 +22,26 @@ const RETELL_SPEC_ZH = `#### \`retell\`（必填、非空）
 
 /** Human-side composer behavior only — does not repeat `retell`. */
 const RELAY_WORKFLOW_EN = `**Human gate (your Answer):** Plain text; images may use the \`<<<RELAY_FEEDBACK_JSON>>>\` attachment convention when applicable.
-**Composer keys:** **Enter** → submit · **⌘/Ctrl+Enter** → submit and close tab · **Shift+Enter** → newline.
+**Composer keys:** **Enter** → submit (never newline) · **Shift+Enter** → newline · **⌘/Ctrl+Enter** → submit and close tab.
 **Pause:** If the tool result contains \`<<<RELAY_MCP_PAUSED>>>\`, the user paused Relay in Settings — **do not call** \`relay_interactive_feedback\` again until they resume.`;
 
 const RELAY_WORKFLOW_ZH = `**人侧（Answer）：** 纯文本；附图时按约定可含 \`<<<RELAY_FEEDBACK_JSON>>>\` 等。
-**快捷键：** **Enter** → 提交 · **⌘/Ctrl+Enter** → 提交并关标签页 · **Shift+Enter** → 换行。
+**快捷键：** **Enter** → 提交（不换行）· **Shift+Enter** → 换行 · **⌘/Ctrl+Enter** → 提交并关标签页。
 **暂停：** 若工具返回含 \`<<<RELAY_MCP_PAUSED>>>\`，表示用户在 Relay 设置中已暂停 MCP — **不得再调用** \`relay_interactive_feedback\`，直至用户恢复。`;
 
-const SESSION_FIELDS_EN = `**\`session_title\`:** Optional fixed window/tab label. If omitted, each new tab gets **\`Chat N\`** with **N** from a **global counter** (1, 2, 3… per Relay process, no reuse after a tab closes). Merging via the same \`client_tab_id\` **keeps** the title when \`session_title\` is still omitted.
-**\`client_tab_id\`:** Strongly recommended — **stable** id per IDE chat tab so Relay merges into one tab and **newest round stays at the bottom**.`;
+const SESSION_FIELDS_EN = `**\`client_tab_id\` (required):** Stable merge key for **this** Composer/chat thread — **reuse verbatim every call** in the same thread:
+1. **Workspace root path** (from user_info / workspace), normalized (trim, no trailing slash).
+2. **First user message** in this thread (earliest user turn).
+3. Concatenate: \`{workspace_root}\\n{first_user_message}\` (newline). If the first message is very long, use only the **first 500 characters** (same cut every time in that thread).
 
-const SESSION_FIELDS_ZH = `**\`session_title\`：** 可选固定窗口/标签名。省略时新标签为 **\`Chat N\`**，**N** 为**进程内全局递增序号**（从 1 起，关标签也不回收）；同一 \`client_tab_id\` 且仍省略时**保留**原标题。
-**\`client_tab_id\`：** 强烈建议 — **每个 IDE 会话标签固定** id，合并为单标签且**最新一轮在列表底部**。`;
+**Relay window title:** The GUI assigns **Chat 1**, **Chat 2**, … — **global incrementing** per Relay process. The **first time** a \`client_tab_id\` appears it gets the next number; **same id** later (or after closing that tab) **reuses** the same **Chat N**. **Omit \`session_title\`** (ignored for labels). **Caveat:** Same workspace + identical first message → same id → one Relay tab; vary the opening line to split. **docs/CLIENT_TAB_ID.md**.`;
+
+const SESSION_FIELDS_ZH = `**\`client_tab_id\`（必填）：** 本聊天线程的**稳定合并键**，**每轮原样传入**：
+1. **工作区根路径**（用户信息里的 workspace），规范化。
+2. **本线程首条用户消息**。
+3. 拼接：\`{根路径}\\n{首条消息}\`；首条过长则固定取**前 500 字符**。
+
+**Relay 窗口标题：** 由 GUI **全局自增**分配 **Chat 1**、**Chat 2**…… 某个 \`client_tab_id\` **首次出现**时占用下一个序号；**同一 id** 再次请求（含关标签后再来）仍显示**同一 Chat N**。**不必传 \`session_title\`**（界面不用长标题）。**注意：** 同仓库且首条完全相同会共用一个 Relay 标签。详见 **docs/CLIENT_TAB_ID.md**。`;
 
 const PROMPTS_EN: Record<RulePromptMode, string> = {
   mild: `### Relay human-in-the-loop (recommended)

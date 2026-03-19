@@ -2,20 +2,20 @@
 
 <br/>
 
-<img src="src-tauri/icons/source/relay-icon.svg" alt="Relay" width="132" height="132"/>
+<img src="src-tauri/icons/source/relay-icon.svg" alt="Relay" width="120" height="120"/>
 
 # Relay
 
-### 面向 AI IDE 的人工反馈层
+**面向 MCP 的原生人机回路 — 单二进制、本机 HTTP、同一轮工具返回。**
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6366f1?style=flat-square" alt="License"/></a>
-  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Tauri-2-24adc8?style=flat-square&logo=tauri&logoColor=white" alt="Tauri"/></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-backend-000000?style=flat-square&logo=rust&logoColor=white" alt="Rust"/></a>
-  <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3-42b883?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue"/></a>
+  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Tauri-2-24adc8?style=flat-square&logo=tauri&logoColor=white" alt="Tauri 2"/></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-MCP%20%2B%20HTTP-000000?style=flat-square&logo=rust&logoColor=white" alt="Rust"/></a>
+  <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3-42b883?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue 3"/></a>
 </p>
 
-**[English](README.md)** · **[领域用语](docs/TERMINOLOGY.md)** · **[HTTP IPC 架构](docs/HTTP_IPC.md)**
+**[English](README.md)** · **[领域用语](docs/TERMINOLOGY.md)** · **[HTTP IPC](docs/HTTP_IPC.md)** · **[Client tab ID](docs/CLIENT_TAB_ID.md)** · **[前端](docs/FRONTEND.md)** · **[发布与 CI](docs/RELEASING.md)**
 
 **作者：** andeya · [andeyalee@outlook.com](mailto:andeyalee@outlook.com)
 
@@ -25,135 +25,69 @@
 
 ---
 
-Relay MCP 在代理请求中**暂停**，打开**原生桌面**界面收集 **Answer（你的回复）**，并在**同一次工具调用**里返回给模型。用语见 **[docs/TERMINOLOGY.md](docs/TERMINOLOGY.md)**。
+Relay 是一个 **MCP 服务**：把 **`relay_interactive_feedback`** 变成**阻塞式工具调用**——智能体暂停，**Tauri + Vue** 窗口收集你的 **Answer**，**同一次** JSON-RPC 往返即返回结果；不经云端中转，也不把超长助手正文塞进 shell argv。
 
-思路参考 [interactive-feedback-mcp](https://github.com/junanchn/interactive-feedback-mcp)。
+思路参考 [interactive-feedback-mcp](https://github.com/junanchn/interactive-feedback-mcp)；Relay 用**独立 GUI 进程**和精简的**回环 HTTP API**（Axum、Bearer、`gui_endpoint.json` 发现）替代按次拉起子进程的做法。
 
-|              |                                                                           |
-| :----------- | :------------------------------------------------------------------------ |
-| **图标含义** | 人类端 → **暂停/反馈门** → AI 端；青紫通路 + 中央琥珀色「等待你」双竖条。 |
-
----
-
-## 价值与原理
-
-**能做什么**
-
-- 智能体调用 **`relay_interactive_feedback`**，必须传 **`retell`**（本轮助手对用户可见回复原文），经 **127.0.0.1 HTTP** 传到 Relay 窗口。可选 **`session_title`**、**`client_tab_id`**。你提交 **Answer**。
-- **`relay mcp`** 在需要时拉起或与 Relay 窗口通信收集 **Answer**，也可按 **自动回复规则**直接返回（不弹窗）。
-- **Answer** 作为工具输出回到智能体，**同一轮对话继续**。
-
-**工作原理**
-
-1. IDE 运行 **`relay mcp`**（stdio）。智能体发起 **`relay_interactive_feedback`**。
-2. **即时自动回复**（`0|回复`）命中则直接返回。
-3. 否则确保 **Relay GUI**（`relay` / `relay gui`）已起，经 **`POST /v1/feedback`** + **`GET .../wait`** 完成一轮交互（详见 **[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**）。
-4. **Answer** 作为工具返回值交给 IDE。
-
-**多标签：** 建议保持 Relay 常开。新请求新增或按 **`client_tab_id`** 合并标签；非当前标签会**闪动**提示。
+<p align="center">
+  <img src="docs/ScreenShot_1.png" alt="Relay MCP 与 Cursor 并排" width="920" style="max-width:100%; height:auto;" />
+</p>
+<p align="center"><sub><strong>Relay 中心窗口</strong> 与 IDE 并排 — 在智能体阻塞于同一次 <code>tools/call</code> 时撰写 <strong>Answer</strong>（文字 + 贴图）。</sub></p>
 
 ---
 
-## 功能特性
+## 为何采用这种结构
 
-- **技术栈** — `Tauri + Rust + Vue`，支持 Windows / macOS / Linux
-- **体验** — `relay mcp` ↔ 本机 HTTP ↔ 桌面多标签（见 [HTTP_IPC.md](docs/HTTP_IPC.md)）
-- **使用** — **复述 / Answer** 对话流；**Enter** 发送（窗口保留）；**Shift+Enter** 换行；**⌘/Ctrl+Enter** 发送并关闭当前标签页；支持贴图
-- **运维** — 可选即时自动回复（配置行形如 `0|你的回复`）；`feedback_log.txt`
+| 常见痛点                                               | Relay 的做法                                                                                                                       |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Retell**（完整助手回复）撞上 **ARG_MAX** / argv 限制 | **`retell` 走 HTTP POST JSON** — 大小受请求体上限约束（16 MiB），而非 shell。                                                      |
+| 每次工具调用都拉起 UI                                  | **单一 GUI 进程**（`relay` / `relay gui`）；MCP 仅在 stdio 上跑 **`relay mcp`**。                                                  |
+| 多 IDE 线程 → 标签混乱                                 | **`client_tab_id`** = 工作区根 + `\n` + 首条用户消息 → 稳定的 **Chat N** 合并键（[**CLIENT_TAB_ID.md**](docs/CLIENT_TAB_ID.md)）。 |
 
 ---
 
-## 仓库结构
+## 架构（与仓库实现一致）
 
-| 路径         | 说明                                               |
-| ------------ | -------------------------------------------------- |
-| `src-tauri/` | Rust 后端、MCP、CLI、Tauri 窗口                    |
-| `src/`       | Vue 前端（`App.vue` + `src/composables/`）         |
-| `docs/`      | **[TERMINOLOGY.md](docs/TERMINOLOGY.md)** 领域用语 |
-| `mcp.json`   | MCP 配置示例                                       |
+- **`relay mcp`** — stdio MCP（`clap` 子命令）。处理 `initialize`、`tools/list`、`tools/call`。可选**即时自动回复**（用户数据目录下规则文件的 **`0|…`** 行）可在不打开界面的情况下直接返回。
+- **`relay` / `relay gui`** — Tauri 应用 + **`127.0.0.1:0` 上的 HTTP**。写入 **`{user_data}/gui_endpoint.json`** `{ port, token, pid }`；退出时删除。
+- **桥接** — 每次交互前 MCP 读取端点文件；若缺失或不健康，**以参数 `gui` 拉起同一可执行文件**，轮询至多 **~45 s**（`ensure_gui_endpoint`）。随后 **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**（长轮询，服务端约 **600 s** / 客户端约 **700 s**）。响应为**纯文本**，即工具返回值。
 
-### 开发
-
-```bash
-npm install
-npm run lint       # 对 `src/**/*.vue` 运行 ESLint
-npm run typecheck  # `vue-tsc --noEmit`
-npm run tauri dev
+```mermaid
+flowchart LR
+  IDE[IDE / 智能体] -->|stdio JSON-RPC| MCP[relay mcp]
+  MCP -->|读或拉起| GUI[relay gui]
+  MCP <-->|127.0.0.1 Bearer| HTTP[Tauri HTTP API]
+  HTTP <--> UI[Vue 多标签]
+  UI --- User((你))
+  MCP -->|Answer 字符串| IDE
 ```
 
-### 重新生成图标
-
-矢量源：[`src-tauri/icons/source/relay-icon.svg`](src-tauri/icons/source/relay-icon.svg)（直接交给 `tauri icon`）。
-
-```bash
-npm run icons:build
-```
-
-需 **Node**（`@tauri-apps/cli`）。会生成桌面及 **iOS、Android、Windows 商店** 等资源（见 `src-tauri/icons/`）。
+完整 API 与安全说明：**[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**。
 
 ---
 
-## 构建
+## MCP 工具：`relay_interactive_feedback`
 
-```bash
-npm install
-npm run build
-```
+| 参数                | 必填     | 含义                                 |
+| ------------------- | -------- | ------------------------------------ |
+| **`retell`**        | ✅ 非空  | 本轮**用户可见的助手回复**（原文）。 |
+| **`client_tab_id`** | 强烈建议 | 合并键 → 每线程 **Chat 1、2、…**。   |
+| **`session_title`** | 可选     | 仅便于日志；**GUI 标题忽略**。       |
 
-在仓库根目录执行（无需 `cd`）：
-
-```bash
-cargo build --manifest-path src-tauri/Cargo.toml --release
-```
-
-**正式打包安装包**（安装程序 / `.app` 等）：
-
-```bash
-npm run tauri build
-```
-
-```bash
-npm run tauri dev
-```
+**暂停 MCP**（设置）：工具返回哨兵 `<<<RELAY_MCP_PAUSED>>>` — 恢复前智能体不应再次调用。
 
 ---
 
-## 隐私与数据
+## 快速开始
 
-**Answer** 与状态**仅在本机**（含运行中的 `gui_endpoint.json` 等，见 [配置存储](#配置存储)）。**无**遥测。**无**云端上报。
-
----
-
-## 可执行文件与子命令
-
-仅一个 **`relay`**（Windows：`relay.exe`），用 **clap** 区分子命令：
-
-| 命令                          | 作用                                                                                         |
-| ----------------------------- | -------------------------------------------------------------------------------------------- |
-| `relay` / `relay gui`         | 打开 Relay 窗口                                                                              |
-| `relay mcp`                   | IDE 的 MCP 服务（stdio）                                                                     |
-| `relay feedback --retell "…"` | **仅终端：** **Answer** 输出到 stdout（`--timeout`、`--session-title`、`--client-tab-id`）。 |
-| _已移除_                      | 原 **`relay window`** 已由 **HTTP IPC** 替代；IDE 只需 **`relay mcp`**。                     |
-
----
-
-## MCP 配置
-
-`command` = **`relay` 绝对路径**，**`args`** = **`["mcp"]`**。
-
-| 环境             | `command` 示例                                 |
-| ---------------- | ---------------------------------------------- |
-| **macOS**        | `/Applications/Relay.app/Contents/MacOS/relay` |
-| **Windows**      | `C:\Program Files\Relay\relay.exe`             |
-| **源码 release** | `…/target/release/relay`                       |
-
-若 `.app` 在用户目录（如 `~/Applications/Relay.app`），请把路径改成对应位置。
+1. 安装或构建 **Relay**（见 [构建](#构建)）。
+2. 将 IDE 的 MCP 指向 **`relay` 可执行文件**，参数 **`["mcp"]`**，**`timeout`** 设大一些（如 **600**）。
 
 ```json
 {
   "mcpServers": {
     "relay-mcp": {
-      "command": "/Applications/Relay.app/Contents/MacOS/relay",
+      "command": "/path/to/relay",
       "args": ["mcp"],
       "timeout": 600,
       "autoApprove": ["relay_interactive_feedback"]
@@ -162,64 +96,90 @@ npm run tauri dev
 }
 ```
 
-- **`timeout`**：等待 **Answer** 可能较久，示例为 `600`。若未提交即被宿主判超时，请在 IDE 的 MCP 设置中提高工具等待上限。
+<p align="center">
+  <img src="docs/ScreenShot_3.png" alt="设置 环境与 MCP" width="440" style="max-width:100%; height:auto;" />
+</p>
+<p align="center"><sub><strong>设置 → 环境与 MCP</strong> — 终端 PATH、<strong>Cursor / Windsurf</strong> 一键写入、复制 MCP JSON、<strong>暂停 MCP</strong>。</sub></p>
 
-仓库里的 [`mcp.json`](mcp.json) 请按本机路径填写。
+应用内 **设置 → 环境与 MCP**：复制 JSON、**Cursor / Windsurf** 一键安装、可选 **PATH** 持久化（Windows 注册表 / shell 配置）。规则提示词：**设置 → 规则提示词**（英文块 + 各 IDE 粘贴说明）；源码：[`src/cursorRulesTemplates.ts`](src/cursorRulesTemplates.ts)。
 
-### 工具参数（给智能体）
-
-| 参数            | 必填       | 作用                               |
-| --------------- | ---------- | ---------------------------------- |
-| `retell`        | 是（非空） | **本轮**助手对用户回复的**原文**。 |
-| `session_title` | 否（建议） | IDE 标签/会话标题。                |
-| `client_tab_id` | 否（建议） | 每标签稳定 ID。                    |
-
-### 窗口行为
-
-- **即时自动回复**或 **IDE 取消**后：空草稿可能关标签；已取消/超时见界面。提交 **Answer** 后回到占位页，应用保持打开。
-
-### 规则提示词（英文）
-
-工具名 **`relay_interactive_feedback`**。正文为**英文**，便于模型严格执行；请在 **⚙ 设置 → 规则提示词** 选择「标准 / 严格循环 / 仅工具说明」并复制，同页附有 Cursor、Windsurf、VS Code、Claude Desktop 等粘贴说明。离线维护见源码 [`src/cursorRulesTemplates.ts`](src/cursorRulesTemplates.ts)（含英文与中文对照版）。
+仓库示例：[`mcp.json`](mcp.json)。
 
 ---
 
-## 配置存储
+## 你能得到什么
 
-首次启动会在用户数据目录自动创建配置（无需手填路径）。
+- **多标签中心** — 新请求打开或刷新标签；非当前标签可闪烁；**`client_tab_id`** 合并同一会话流。
+- **编辑器体验** — Enter 提交、Shift+Enter 换行、⌘/Ctrl+Enter 提交并关闭标签；支持贴图；可选 **`<<<RELAY_FEEDBACK_JSON>>>`** 附件约定。
+- **自动回复** — 用户数据目录下 `auto_reply_oneshot.txt` / `auto_reply_loop.txt`；仅 **`0|回复`** 行（即时）；见 [配置与路径](#配置与路径)。
+- **存储** — `feedback_log.txt`、界面语言、**附件自动清理**（默认 **30 天**，可在 **设置 → 缓存** 中配置或关闭）。
+- **CLI** — `relay feedback --retell "…"` 将 **Answer** 打到 stdout；GUI 失败或 **`--timeout`** 时 **退出码 1**。
 
-| 系统    | 路径                                       |
+<p align="center">
+  <img src="docs/ScreenShot_4.png" alt="设置 规则提示词" width="440" style="max-width:100%; height:auto;" />
+</p>
+<p align="center"><sub><strong>设置 → 规则提示词</strong> — 标准 / 严格循环 / 仅工具说明；<strong>粘贴到 IDE</strong> 做人机回路规则。</sub></p>
+
+<p align="center">
+  <img src="docs/ScreenShot_5.png" alt="设置 缓存" width="440" style="max-width:100%; height:auto;" />
+</p>
+<p align="center"><sub><strong>设置 → 缓存</strong> — 本机附件与日志占用、<strong>打开文件夹</strong>、附件自动清理（默认 <strong>30 天</strong>）。</sub></p>
+
+---
+
+## 可执行文件与子命令
+
+| 命令                          | 作用                                                        |
+| ----------------------------- | ----------------------------------------------------------- |
+| `relay` · `relay gui`         | 中心窗口 + 本机 HTTP 服务                                   |
+| `relay mcp`                   | MCP stdio（IDE 实际运行的命令）                             |
+| `relay feedback --retell "…"` | 终端试用；`--timeout`、`--session-title`、`--client-tab-id` |
+
+**没有** `relay window`；IDE 不会按请求拉起 GUI 子进程。
+
+---
+
+## 配置与路径
+
+| 系统    | 用户数据目录                               |
 | ------- | ------------------------------------------ |
 | macOS   | `~/Library/Application Support/relay-mcp/` |
 | Linux   | `~/.config/relay-mcp/`                     |
 | Windows | `%APPDATA%\relay-mcp\`                     |
 
-常见文件：`feedback_log.txt`、`ui_locale.json`、`gui_endpoint.json`（GUI 运行时）、`relay_gui_alive.marker`、自动回复规则文件等。
-
-**可选即时自动回复**（不弹窗）：在该目录下**自行创建** **`auto_reply_oneshot.txt`** 和/或 **`auto_reply_loop.txt`**（安装时**不会**自动生成）。仅 **`0|`** 行生效（其它 `数字|` 忽略）：
-
-```text
-0|reply_text
-```
+常见文件：`feedback_log.txt`、`ui_locale.json`、`gui_endpoint.json`（GUI 运行时）、`relay_gui_alive.marker`（心跳）、`mcp_paused.json`、`attachment_retention.json`、`auto_reply_*.txt`（可选）。
 
 ---
 
-## 命令行
-
-`relay --help` 查看全部子命令。把含 **`relay`** 的目录加入 PATH（与此前相同）。
-
-点击 **⚙ 设置**：**环境与 MCP**、**规则提示词**。
-
-### 终端试用（stdout = Answer）
+## 构建
 
 ```bash
-relay feedback --retell "工作摘要" --timeout 600
-relay feedback --retell "工作摘要" --session-title "当前会话标题"
-# 与 MCP 相同：同一 client-tab-id 合并到同一 Relay 标签；不同 id 则多标签
-relay feedback --retell "…" --client-tab-id "终端会话甲"
+npm install
+npm run build          # Vite 前端
+cargo build --manifest-path src-tauri/Cargo.toml --release
+npm run tauri build    # 安装包 / .app 等
 ```
 
-stdout 为 **Answer**；超时或空提交为空行。IDE 只跑 **`relay mcp`**，勿用位置参数。
+**开发：**
+
+```bash
+npm run lint && npm run typecheck   # ESLint：src/**/*.vue + src/**/*.ts
+npm run tauri dev
+```
+
+**图标**（源文件 [`src-tauri/icons/source/relay-icon.svg`](src-tauri/icons/source/relay-icon.svg)）：
+
+```bash
+npm run icons:build
+```
+
+CI（PR / `main`）：lint、typecheck、Vite 构建、`cargo fmt`、`clippy -D warnings`、`cargo test` — 见 [docs/RELEASING.md](docs/RELEASING.md)。
+
+---
+
+## 隐私
+
+所有 **Answer**、日志与 GUI 状态均保留在**本机**。无内置遥测。请将 **`feedback_log.txt`** 与 MCP 会话记录视为敏感信息。
 
 ---
 

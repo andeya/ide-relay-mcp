@@ -1,6 +1,6 @@
-# MCP ↔ GUI：本机 HTTP
+# MCP ↔ GUI: localhost HTTP
 
-架构说明：**MCP 进程**（`relay mcp`）与 **GUI 进程**（`relay` / `relay gui`）仅通过 **127.0.0.1** 上的 HTTP + 磁盘上的 **`gui_endpoint.json`** 协作；无二次子进程、无握手 txt、无 `tab_inbox.jsonl`。
+Architecture: the **MCP process** (`relay mcp`) and **GUI process** (`relay` / `relay gui`) coordinate only via HTTP on **127.0.0.1** plus on-disk **`gui_endpoint.json`** — no secondary child processes per request, no handshake txt, no `tab_inbox.jsonl`.
 
 ```mermaid
 sequenceDiagram
@@ -19,47 +19,48 @@ sequenceDiagram
     Mcp-->>IDE: tool result
 ```
 
-## 发现与启动
+## Discovery and startup
 
-- 路径：`{user_data_dir}/gui_endpoint.json`
-- 内容：`{ "port": u16, "token": string, "pid": u32 }`
-- GUI 绑定 **`127.0.0.1:0`**，生成随机 token 后写入；进程退出时删除该文件。
-- **`relay mcp`** 每次工具调用前读该文件；若缺失或 health 失败则 **`spawn` 当前 exe + 参数 `gui`**，轮询直至超时（约 **45s** 内 `ensure_gui_endpoint`）。
-- **安全面**：仅本机回环；token 落在用户数据目录，防误连其他本机进程，**不**防本机恶意进程（与任意本地 IPC 相同）。
+- Path: `{user_data_dir}/gui_endpoint.json`
+- Contents: `{ "port": u16, "token": string, "pid": u32 }`
+- GUI binds **`127.0.0.1:0`**, writes a random token to the file; file is removed on process exit.
+- **`relay mcp`** reads this file before each tool call; if missing or health fails, it **`spawn`s the current exe with arg `gui`**, polls until timeout (~**45s** in `ensure_gui_endpoint`).
+- **Security**: loopback only; token in user data dir reduces accidental connection to the wrong local process; **does not** stop a malicious local process (same as any local IPC).
 
-## 鉴权
+## Auth
 
-- 所有 API：`Authorization: Bearer <token>`（与 `gui_endpoint.json` 中一致）。
+- All APIs: `Authorization: Bearer <token>` (must match `gui_endpoint.json`).
 
 ## API
 
 ### `GET /v1/health`
 
-- 200 = 端点可用。
+- 200 = endpoint is up.
 
 ### `POST /v1/feedback`
 
-- Body JSON：`retell`（必填、trim 后非空）、`session_title`、`client_tab_id`（可选）。
-- 行为：与历史 inbox 一致——非空 `client_tab_id` 时合并到已有 tab 并取消上一 in-flight wait（对 MCP 返回空串）；否则新 tab。
-- 响应：`{ "request_id": "<uuid>" }`
-- 空 `retell` → **400**。
+- Body JSON: `retell` (required, non-empty after trim), `session_title` (optional, **GUI ignores**, legacy clients), `client_tab_id` (optional).
+- Behavior: non-empty `client_tab_id` merges into the tab with that id and cancels the previous in-flight wait (MCP may get empty string); otherwise opens a new tab.
+- **Title:** GUI assigns **Chat 1**, **Chat 2**, … (global increment); each `client_tab_id` binds to a number on first use, then reuses it. Empty `client_tab_id` → new tab gets the next number. See [CLIENT_TAB_ID.md](CLIENT_TAB_ID.md).
+- Response: `{ "request_id": "<uuid>" }`
+- Empty `retell` → **400**.
 
 ### `GET /v1/feedback/wait/:request_id`
 
-- 阻塞直至用户提交 Answer、关闭/dismiss（空串）、**600s** 超时、或同 tab 被新 POST 合并（旧 wait 收到空串）。
-- 响应：`Content-Type: text/plain; charset=utf-8`，body = Answer。
+- Blocks until the user submits an Answer, closes/dismisses (empty string), **600s** timeout, or the tab is superseded by another POST (old wait gets empty string).
+- Response: `Content-Type: text/plain; charset=utf-8`, body = Answer.
 
-## MCP 流程
+## MCP flow
 
-1. 读 `gui_endpoint.json`；若无则 spawn **`relay gui`** 并轮询。
+1. Read `gui_endpoint.json`; if absent, spawn **`relay gui`** and poll.
 2. `POST /v1/feedback` → `request_id`
-3. `GET .../wait/:request_id`（长阻塞，ureq 超时约 700s）
-4. body 作为 `tools/call` 结果返回。
+3. `GET .../wait/:request_id` (long poll, ureq timeout ~700s)
+4. Body returned as `tools/call` result.
 
-## 前端
+## Frontend
 
-- `listen("relay_tabs_changed")` → `get_feedback_tabs`；不再轮询 inbox。
+- `listen("relay_tabs_changed")` → `get_feedback_tabs`; no inbox polling.
 
-## 已移除（旧版）
+## Removed (legacy)
 
-- `relay window`、`result_file` / `control_file`、`tab_inbox.jsonl`、命令行 retell 长度预算、`compute_retell_inline_hint`。
+- `relay window`, `result_file` / `control_file`, `tab_inbox.jsonl`, CLI retell length budget, `compute_retell_inline_hint`.

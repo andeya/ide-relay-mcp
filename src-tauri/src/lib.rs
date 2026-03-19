@@ -5,6 +5,7 @@ use chrono::Local;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -79,9 +80,9 @@ pub struct LaunchState {
     pub retell: String,
     /// Correlates with HTTP wait channel; empty for hub preview.
     pub request_id: String,
-    /// OS window title (`session_title`, or **Chat N** for unnamed tabs).
+    /// OS window title — GUI sets **Chat N** via [`chat_title_for_seq`]; `session_title` usually empty.
     pub title: String,
-    /// Raw session/chat title from the tool call; empty if omitted.
+    /// Legacy; HTTP still accepts `session_title` but GUI clears / ignores for display.
     pub session_title: String,
     pub tab_id: String,
     pub client_tab_id: String,
@@ -111,6 +112,32 @@ pub struct FeedbackTabsState {
     pub qa_rounds: Vec<QaRound>,
     #[serde(skip_serializing)]
     pub persist_hub: bool,
+    /// First-seen `client_tab_id` → permanent display index (Chat N). Survives tab close.
+    #[serde(skip_serializing)]
+    pub client_tab_id_to_seq: HashMap<String, u32>,
+    /// Monotonic counter; each new anonymous tab or new client_tab_id consumes the next number.
+    #[serde(skip_serializing)]
+    pub chat_seq_counter: u32,
+}
+
+/// Next global Chat index for this GUI process. Empty `client_tab_id` always gets a fresh number.
+pub fn allocate_chat_seq(g: &mut FeedbackTabsState, client_tab_id: &str) -> u32 {
+    let tid = client_tab_id.trim();
+    if tid.is_empty() {
+        g.chat_seq_counter = g.chat_seq_counter.saturating_add(1);
+        return g.chat_seq_counter;
+    }
+    if let Some(&n) = g.client_tab_id_to_seq.get(tid) {
+        return n;
+    }
+    g.chat_seq_counter = g.chat_seq_counter.saturating_add(1);
+    let n = g.chat_seq_counter;
+    g.client_tab_id_to_seq.insert(tid.to_string(), n);
+    n
+}
+
+pub fn chat_title_for_seq(n: u32) -> String {
+    format!("Chat {n}")
 }
 
 pub fn trim_qa_rounds(g: &mut FeedbackTabsState) {
@@ -1015,6 +1042,156 @@ pub fn prepare_user_data_dir() -> Result<PathBuf> {
     Ok(config_dir)
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct RelayCacheStats {
+    pub attachments_bytes: u64,
+    pub log_bytes: u64,
+    pub data_dir: String,
+}
+
+fn dir_files_total_bytes(path: &Path) -> std::io::Result<u64> {
+    if !path.is_dir() {
+        return Ok(0);
+    }
+    let mut n = 0u64;
+    for e in fs::read_dir(path)? {
+        let e = e?;
+        if e.file_type()?.is_file() {
+            n += e.metadata()?.len();
+        }
+    }
+    Ok(n)
+}
+
+pub fn relay_cache_stats() -> Result<RelayCacheStats> {
+    let base = prepare_user_data_dir()?;
+    let attach_dir = base.join("feedback_attachments");
+    let attachments_bytes = dir_files_total_bytes(&attach_dir)?;
+    let log_path = base.join(LOG_FILE);
+    let log_bytes = if log_path.is_file() {
+        fs::metadata(&log_path)?.len()
+    } else {
+        0
+    };
+    Ok(RelayCacheStats {
+        attachments_bytes,
+        log_bytes,
+        data_dir: base.display().to_string(),
+    })
+}
+
+pub fn clear_relay_attachments_cache() -> Result<()> {
+    let base = prepare_user_data_dir()?;
+    let d = base.join("feedback_attachments");
+    if d.is_dir() {
+        for e in fs::read_dir(&d)? {
+            let e = e?;
+            if e.file_type()?.is_file() {
+                let _ = fs::remove_file(e.path());
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn clear_relay_log_cache() -> Result<()> {
+    let base = prepare_user_data_dir()?;
+    let p = base.join(LOG_FILE);
+    if p.exists() {
+        fs::write(&p, b"").context("truncate log")?;
+    }
+    Ok(())
+}
+
+const ATTACHMENT_RETENTION_FILE: &str = "attachment_retention.json";
+/// When `attachment_retention.json` is missing, purge attachments older than this many days.
+/// Choosing "Off" in Settings writes the file with `"days": null` (no auto-purge).
+pub const DEFAULT_ATTACHMENT_RETENTION_DAYS: u32 = 30;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct AttachmentRetentionConfig {
+    #[serde(default)]
+    pub days: Option<u32>,
+}
+
+fn attachment_retention_path() -> Result<PathBuf> {
+    Ok(prepare_user_data_dir()?.join(ATTACHMENT_RETENTION_FILE))
+}
+
+fn parse_stored_attachment_retention_json(s: &str) -> Option<u32> {
+    let Ok(c) = serde_json::from_str::<AttachmentRetentionConfig>(s) else {
+        return Some(DEFAULT_ATTACHMENT_RETENTION_DAYS);
+    };
+    match c.days {
+        None => None, // explicit "keep all" after user chose Off
+        Some(d) if (1..=3660).contains(&d) => Some(d),
+        Some(_) => Some(DEFAULT_ATTACHMENT_RETENTION_DAYS),
+    }
+}
+
+pub fn read_attachment_retention_days() -> Option<u32> {
+    let Ok(path) = attachment_retention_path() else {
+        return None;
+    };
+    if !path.exists() {
+        return Some(DEFAULT_ATTACHMENT_RETENTION_DAYS);
+    }
+    let Ok(s) = fs::read_to_string(&path) else {
+        return Some(DEFAULT_ATTACHMENT_RETENTION_DAYS);
+    };
+    parse_stored_attachment_retention_json(&s)
+}
+
+pub fn write_attachment_retention_days(days: Option<u32>) -> Result<()> {
+    let path = attachment_retention_path()?;
+    let c = AttachmentRetentionConfig { days };
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&c).context("serialize retention")?,
+    )
+    .with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+/// Deletes `relay_attach_*` files under `feedback_attachments/` older than `days` (by mtime).
+pub fn purge_attachments_older_than_days(days: u32) -> Result<u64> {
+    if days == 0 {
+        return Ok(0);
+    }
+    let dir = prepare_user_data_dir()?.join("feedback_attachments");
+    if !dir.is_dir() {
+        return Ok(0);
+    }
+    let cutoff = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(u64::from(days).saturating_mul(86400));
+    let mut freed: u64 = 0;
+    for e in fs::read_dir(&dir)? {
+        let e = e?;
+        if !e.file_type()?.is_file() {
+            continue;
+        }
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with("relay_attach_") {
+            continue;
+        }
+        let meta = e.metadata()?;
+        let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        if modified < cutoff {
+            freed = freed.saturating_add(meta.len());
+            let _ = fs::remove_file(e.path());
+        }
+    }
+    Ok(freed)
+}
+
+pub fn run_attachment_retention_purge() -> Result<u64> {
+    let Some(d) = read_attachment_retention_days() else {
+        return Ok(0);
+    };
+    purge_attachments_older_than_days(d)
+}
+
 /// Instant auto-reply only: rules must use `0|reply`. Lines with non-zero timeout are ignored.
 pub fn auto_reply_peek(config_dir: &Path, loop_index: usize) -> Option<(AutoReplyRule, bool)> {
     let oneshot: Vec<AutoReplyRule> = load_auto_reply_rules(&config_dir.join(CONFIG_ONESHOT))
@@ -1264,10 +1441,10 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                     "tools": [
                         {
                             "name": TOOL_NAME,
-                            "description": "Human-in-the-loop: opens Relay for your Answer. Strongly pass session_title and client_tab_id.",
+                            "description": "Human-in-the-loop: opens Relay for your Answer. Pass client_tab_id (merge key); GUI shows Chat N. See Relay rules / docs/CLIENT_TAB_ID.md.",
                             "inputSchema": {
                                 "type": "object",
-                                "description": "retell is required. session_title and client_tab_id strongly recommended.",
+                                "description": "retell required. client_tab_id strongly recommended (workspace root + newline + first user message). session_title optional, ignored by GUI.",
                                 "properties": {
                                     "retell": {
                                         "type": "string",
@@ -1275,11 +1452,11 @@ fn dispatch_message(state: &mut ServerState, msg: &Value) -> Result<()> {
                                     },
                                     "session_title": {
                                         "type": "string",
-                                        "description": "Optional fixed label. If omitted, new tab title is Chat N (global incrementing N from 1 per process). Same client_tab_id merge keeps title when still omitted."
+                                        "description": "Optional; GUI ignores. Window title is Chat 1, Chat 2, … assigned per client_tab_id."
                                     },
                                     "client_tab_id": {
                                         "type": "string",
-                                        "description": "STRONGLY RECOMMENDED (optional): stable id per IDE chat tab; reuse on every call in the same tab."
+                                        "description": "Strongly recommended: '{workspace_root}\\n{first user message}' (500-char cap). Same every turn; merge key → stable Chat N."
                                     }
                                 },
                                 "required": ["retell"]
@@ -1375,20 +1552,26 @@ pub fn run_feedback_cli(
         Ok(Ok(answer)) => {
             let _ = log_write(&config_dir, "CLI_REPLY", &answer);
             println!("{}", answer);
+            Ok(())
         }
-        Ok(Err(e)) => eprintln!("relay feedback: {}", e),
-        Err(_) => {
+        Ok(Err(e)) => {
+            let _ = log_write(&config_dir, "CLI_ERR", &e.to_string());
+            Err(e)
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
             let _ = log_write(&config_dir, "CLI_TIMEOUT", &retell);
-            eprintln!(
-                "relay feedback: timed out after {}s",
+            Err(anyhow::anyhow!(
+                "timed out after {}s",
                 timeout_seconds.max(1)
-            );
+            ))
         }
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(anyhow::anyhow!(
+            "internal error: feedback thread disconnected"
+        )),
     }
-    Ok(())
 }
 
-/// `session_title` non-empty → window label; empty tab titles use [`next_unnamed_chat_title`].
+/// Truncate long text (not used for Relay GUI tab chrome; GUI uses [`chat_title_for_seq`] only).
 pub fn window_title_for_session(session_title: &str) -> String {
     let t = session_title.trim();
     if t.is_empty() {
@@ -1402,7 +1585,8 @@ pub fn window_title_for_session(session_title: &str) -> String {
 
 static UNNAMED_CHAT_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// Next title for a new unnamed tab: **Chat 1**, **Chat 2**, … (global counter, never reused after close).
+/// Unused by GUI since [`allocate_chat_seq`]; kept for external callers / tests.
+#[allow(dead_code)]
 pub fn next_unnamed_chat_title() -> String {
     let n = UNNAMED_CHAT_SEQ.fetch_add(1, Ordering::Relaxed) + 1;
     format!("Chat {n}")
@@ -1426,4 +1610,41 @@ pub fn launch_state_preview() -> LaunchState {
 /// Hub / `tauri dev` — placeholder tab until MCP delivers real requests.
 pub fn dev_preview_launch_state() -> Result<LaunchState> {
     Ok(launch_state_preview())
+}
+
+#[cfg(test)]
+mod attachment_retention_tests {
+    use super::{parse_stored_attachment_retention_json, DEFAULT_ATTACHMENT_RETENTION_DAYS};
+
+    #[test]
+    fn json_days_null_is_off() {
+        assert_eq!(
+            parse_stored_attachment_retention_json(r#"{"days":null}"#),
+            None
+        );
+    }
+
+    #[test]
+    fn json_days_30() {
+        assert_eq!(
+            parse_stored_attachment_retention_json(r#"{"days":30}"#),
+            Some(30)
+        );
+    }
+
+    #[test]
+    fn invalid_json_falls_back_to_default() {
+        assert_eq!(
+            parse_stored_attachment_retention_json("not json"),
+            Some(DEFAULT_ATTACHMENT_RETENTION_DAYS)
+        );
+    }
+
+    #[test]
+    fn json_out_of_range_uses_default() {
+        assert_eq!(
+            parse_stored_attachment_retention_json(r#"{"days":99999}"#),
+            Some(DEFAULT_ATTACHMENT_RETENTION_DAYS)
+        );
+    }
 }

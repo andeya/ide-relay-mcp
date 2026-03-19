@@ -1,9 +1,9 @@
 //! Local HTTP for MCP ↔ GUI (`docs/HTTP_IPC.md`).
 
 use crate::{
-    apply_reply_for_tab, finish_tab_remove_empty_close, mcp_http, new_tab_id,
-    next_unnamed_chat_title, push_qa_round, skip_open_round_for_tab, window_title_for_session,
-    ControlStatus, FeedbackTabsState, LaunchState,
+    allocate_chat_seq, apply_reply_for_tab, chat_title_for_seq, finish_tab_remove_empty_close,
+    mcp_http, new_tab_id, push_qa_round, skip_open_round_for_tab, ControlStatus, FeedbackTabsState,
+    LaunchState,
 };
 use axum::{
     extract::{Path, State},
@@ -183,7 +183,10 @@ impl RelayGuiRuntime {
     }
 
     pub fn tabs_snapshot(&self) -> FeedbackTabsState {
-        self.0.tabs.lock().unwrap().clone()
+        match self.0.tabs.lock() {
+            Ok(g) => g.clone(),
+            Err(e) => e.into_inner().clone(),
+        }
     }
 
     pub fn set_active_tab(&self, tab_id: &str) -> Result<(), String> {
@@ -325,7 +328,9 @@ async fn health(State(st): State<AxumState>, headers: HeaderMap) -> impl IntoRes
 #[derive(Deserialize)]
 struct PostFeedbackBody {
     retell: String,
+    /// Accepted for API compatibility; GUI assigns **Chat N** from `client_tab_id` only.
     #[serde(default)]
+    #[allow(dead_code)]
     session_title: String,
     #[serde(default)]
     client_tab_id: String,
@@ -348,7 +353,6 @@ async fn post_feedback(
     }
     let inner = st.inner.clone();
     let retell = body.retell;
-    let session_title = body.session_title;
     let client_tab_id = body.client_tab_id;
 
     let rid = match tokio::task::spawn_blocking(move || {
@@ -380,12 +384,7 @@ async fn post_feedback(
             let t = &mut g.tabs[idx];
             t.retell = retell.clone();
             t.request_id = rid.clone();
-            t.session_title = session_title.clone();
-            t.title = if session_title.trim().is_empty() {
-                t.title.clone()
-            } else {
-                window_title_for_session(&session_title)
-            };
+            t.session_title.clear();
             t.tab_id = tab_id.clone();
             t.client_tab_id = client_tab_id.clone();
             if merge_was_active {
@@ -394,16 +393,13 @@ async fn post_feedback(
         } else {
             let tid = new_tab_id();
             push_qa_round(&mut g, &retell, &tid, &client_tab_id);
-            let title = if session_title.trim().is_empty() {
-                next_unnamed_chat_title()
-            } else {
-                window_title_for_session(&session_title)
-            };
+            let seq = allocate_chat_seq(&mut g, &client_tab_id);
+            let title = chat_title_for_seq(seq);
             g.tabs.push(LaunchState {
                 retell: retell.clone(),
                 request_id: rid.clone(),
                 title,
-                session_title: session_title.clone(),
+                session_title: String::new(),
                 tab_id: tid.clone(),
                 client_tab_id: client_tab_id.clone(),
                 is_preview: false,
