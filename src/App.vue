@@ -24,6 +24,7 @@ import relayLogoUrl from "./assets/relay-logo.svg?url";
 import QaUserSubmittedBubble from "./components/QaUserSubmittedBubble.vue";
 import RelayComposerInput from "./components/RelayComposerInput.vue";
 import { slashItemDetailPreview } from "./composables/feedbackComposerUtils";
+import { qaRoundHasRenderableUserContent } from "./utils/parseRelayFeedbackReply";
 import { safeMarkdownToHtml } from "./utils/safeMarkdown";
 
 const lightboxSrc = ref<string | null>(null);
@@ -654,7 +655,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <div
-                v-else-if="round.submitted && round.reply?.trim()"
+                v-else-if="round.submitted && qaRoundHasRenderableUserContent(round)"
                 class="qaChatRow qaChatRow--me"
               >
                 <div class="qaChatStack qaChatStack--me">

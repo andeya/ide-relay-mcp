@@ -97,23 +97,60 @@ export function stripLegacyRelayMarkerTail(s: string): string {
   return i >= 0 ? t.slice(0, i).trimEnd() : t;
 }
 
-/** Prefer `reply_attachments` from the hub; fall back to marker-in-`reply` for old rounds. */
-export function parsedUserReplyFromRound(round: QaRound): ParsedRelayFeedback {
-  const att = round.reply_attachments;
-  if (att?.length) {
-    const seenI = new Set<string>();
-    const imagePaths = att
-      .filter((a) => a.kind === "image" && a.path?.trim())
-      .map((a) => String(a.path).trim())
-      .filter((p) => (seenI.has(p) ? false : (seenI.add(p), true)));
-    const seenF = new Set<string>();
-    const filePaths = att
-      .filter((a) => a.kind === "file" && a.path?.trim())
-      .map((a) => String(a.path).trim())
-      .filter((p) => (seenF.has(p) ? false : (seenF.add(p), true)));
-    return { text: (round.reply ?? "").trim(), imagePaths, filePaths };
+/** Dedupe by path; `primary` order wins, then append new paths from `secondary`. */
+function mergeDedupedPaths(primary: string[], secondary: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const list of [primary, secondary]) {
+    for (const p of list) {
+      const t = p.trim();
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+    }
   }
-  return parseRelayFeedbackReply(round.reply ?? "");
+  return out;
+}
+
+/**
+ * Prefer `reply_attachments` from the hub; merge with legacy `<<<RELAY_FEEDBACK_JSON>>>` in `reply`
+ * so invalid/empty structured rows still recover paths from the stored body.
+ */
+export function parsedUserReplyFromRound(round: QaRound): ParsedRelayFeedback {
+  const raw = round.reply ?? "";
+  const legacy = parseRelayFeedbackReply(raw);
+  const att = round.reply_attachments;
+  if (!att?.length) {
+    return legacy;
+  }
+  const seenI = new Set<string>();
+  const fromStructImages = att
+    .filter((a) => a.kind === "image" && a.path?.trim())
+    .map((a) => String(a.path).trim())
+    .filter((p) => (seenI.has(p) ? false : (seenI.add(p), true)));
+  const seenF = new Set<string>();
+  const fromStructFiles = att
+    .filter((a) => a.kind === "file" && a.path?.trim())
+    .map((a) => String(a.path).trim())
+    .filter((p) => (seenF.has(p) ? false : (seenF.add(p), true)));
+  return {
+    text: legacy.text,
+    imagePaths: mergeDedupedPaths(fromStructImages, legacy.imagePaths),
+    filePaths: mergeDedupedPaths(fromStructFiles, legacy.filePaths),
+  };
+}
+
+/**
+ * True if the user submitted bubble should render (markdown and/or attachment strip).
+ * Uses the same parsing as {@link parsedUserReplyFromRound} / QaUserSubmittedBubble (e.g. attachment-only Answers).
+ */
+export function qaRoundHasRenderableUserContent(round: QaRound): boolean {
+  const p = parsedUserReplyFromRound(round);
+  return (
+    p.text.trim().length > 0 ||
+    p.imagePaths.length > 0 ||
+    p.filePaths.length > 0
+  );
 }
 
 export function parseRelayFeedbackReply(raw: string): ParsedRelayFeedback {
