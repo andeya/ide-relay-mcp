@@ -15,7 +15,7 @@ export function slashLineTokenRegex(): RegExp {
   return new RegExp(`(^|[\\n ])(\\/[${SLASH_CMD_CHAR_CLASS}]*)`, "g");
 }
 
-/** Tab strip label: `title` is MM-DD HH:mm from backend; else retell preview. */
+/** Tab strip label: `title` is MM-DD HH:mm:ss from backend; else retell preview. */
 export function feedbackTabLabel(tab: LaunchState): string {
   if (tab.is_preview) {
     return "Hub";
