@@ -35,16 +35,22 @@ export function useRelayCacheSettings(
   const retentionFieldRef = ref<HTMLElement | null>(null);
   const cacheConfirmKind = ref<"all" | "attachments" | "logs" | null>(null);
 
+  const cacheLogRelatedBytes = computed(() => {
+    const s = cacheStats.value;
+    if (!s) return 0;
+    return s.log_bytes + (s.qa_archive_bytes ?? 0);
+  });
+
   const cacheTotalBytes = computed(() => {
     const s = cacheStats.value;
     if (!s) return 0;
-    return s.attachments_bytes + s.log_bytes;
+    return s.attachments_bytes + cacheLogRelatedBytes.value;
   });
 
   const cacheUsageFlexAttach = computed(() => {
     const s = cacheStats.value;
     if (!s) return 1;
-    const tot = s.attachments_bytes + s.log_bytes;
+    const tot = s.attachments_bytes + cacheLogRelatedBytes.value;
     if (tot <= 0) return 1;
     return Math.max(s.attachments_bytes, 0.001 * tot);
   });
@@ -52,9 +58,9 @@ export function useRelayCacheSettings(
   const cacheUsageFlexLog = computed(() => {
     const s = cacheStats.value;
     if (!s) return 1;
-    const tot = s.attachments_bytes + s.log_bytes;
+    const tot = s.attachments_bytes + cacheLogRelatedBytes.value;
     if (tot <= 0) return 1;
-    return Math.max(s.log_bytes, 0.001 * tot);
+    return Math.max(cacheLogRelatedBytes.value, 0.001 * tot);
   });
 
   const retentionOptions = computed(() => {
@@ -257,6 +263,7 @@ export function useRelayCacheSettings(
     cacheStats,
     cacheLoadBusy,
     cacheActionBusy,
+    cacheLogRelatedBytes,
     cacheTotalBytes,
     cacheUsageFlexAttach,
     cacheUsageFlexLog,
