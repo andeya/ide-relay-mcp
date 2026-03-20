@@ -9,18 +9,26 @@ export type CommandItem = {
   description?: string;
 };
 
+/** Image/file refs returned alongside plain `human` in the tool / wait JSON. */
+export type QaAttachmentRef = {
+  kind: string;
+  path: string;
+};
+
 /** MCP / HTTP wait payload for one relay_interactive_feedback round. */
 export type RelayFeedbackToolResult = {
   relay_mcp_session_id: string;
   human: string;
   cmd_skill_count: number;
+  /** Present when the user submitted images/files; omit when empty. */
+  attachments?: QaAttachmentRef[];
 };
 
 export type LaunchState = {
   retell: string;
   /** Correlates with MCP HTTP wait; empty for hub preview. */
   request_id: string;
-  /** Tab strip label: MM-DD HH:mm from session_id. */
+  /** Tab strip label: MM-DD HH:mm:ss from session_id. */
   title: string;
   tab_id: string;
   relay_mcp_session_id: string;
@@ -46,6 +54,8 @@ export type QaRound = {
   submitted?: boolean;
   tab_id: string;
   relay_mcp_session_id?: string;
+  /** Structured attachments for this Answer; prefer over `reply` marker parsing. */
+  reply_attachments?: QaAttachmentRef[];
 };
 
 export type FeedbackTabsState = {
@@ -72,6 +82,8 @@ export type SettingsSegment = "setup" | "rulePrompts" | "cache";
 export type RelayCacheStats = {
   attachments_bytes: number;
   log_bytes: number;
+  /** `qa_archive/*.jsonl`; cleared with "clear logs". */
+  qa_archive_bytes: number;
   data_dir: string;
 };
 
