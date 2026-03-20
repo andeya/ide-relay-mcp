@@ -462,8 +462,8 @@ onBeforeUnmount(() => {
             :title="statusLabel"
           >
             <span
-              v-if="statusPillUi.indeterminate"
-              class="statusPillWaitSpinner"
+              v-if="statusPillUi.indeterminate && statusPillUi.hue !== 'hub'"
+              class="statusPillWaitRing"
               aria-hidden="true"
             />
             <span class="mainTopBarStatusPillText">{{ statusLabel }}</span>
