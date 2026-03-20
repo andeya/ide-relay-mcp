@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Relay · 顶栏状态胶囊预览</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+        background: #07111f;
+        color: #ecf2ff;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        min-height: 100vh;
+      }
+      h1 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 0 8px;
+        color: #94a3b8;
+      }
+      p.lead {
+        margin: 0 0 20px;
+        font-size: 0.85rem;
+        color: #64748b;
+        max-width: 52ch;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+      }
+      .row code {
+        font-size: 0.72rem;
+        color: #64748b;
+        min-width: 9rem;
+      }
+
+      /* —— mirrors src/style.css (status pill) —— */
+      .statusPill {
+        padding: 0.55rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid rgba(45, 212, 191, 0.24);
+        white-space: nowrap;
+      }
+      .mainTopBarStatusPill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0.28rem 0.75rem !important;
+        font-size: 0.68rem !important;
+        font-weight: 500 !important;
+        line-height: 1.35 !important;
+        border-radius: 999px;
+      }
+      .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-hub,
+      .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-loading {
+        border-color: rgba(45, 212, 191, 0.45);
+        box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12);
+        animation: statusPillWaitPulse 2.2s ease-in-out infinite;
+      }
+      .mainTopBarStatusPill--hue-hub {
+        background: rgba(15, 118, 110, 0.18);
+        color: #99f6e4;
+        border-color: rgba(45, 212, 191, 0.24);
+      }
+      .mainTopBarStatusPill--hue-loading {
+        background: rgba(14, 116, 144, 0.22);
+        color: #a5f3fc;
+        border-color: rgba(34, 211, 238, 0.38);
+      }
+      .mainTopBarStatusPill--hue-idle {
+        background: rgba(37, 99, 235, 0.2);
+        color: #93c5fd;
+        border-color: rgba(59, 130, 246, 0.4);
+      }
+      .mainTopBarStatusPill--hue-active {
+        background: rgba(5, 150, 105, 0.24);
+        color: #6ee7b7;
+        border-color: rgba(52, 211, 153, 0.45);
+      }
+      .mainTopBarStatusPill--hue-expired {
+        background: rgba(127, 29, 29, 0.24);
+        color: #fca5a5;
+        border-color: rgba(248, 113, 113, 0.42);
+      }
+      .statusPillWaitSpinner {
+        display: block;
+        width: 11px;
+        height: 11px;
+        flex-shrink: 0;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        opacity: 0.9;
+        animation: relayWaitSpin 0.72s linear infinite;
+      }
+      @keyframes relayWaitSpin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes statusPillWaitPulse {
+        0%,
+        100% {
+          box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.1);
+        }
+        50% {
+          box-shadow:
+            0 0 0 1px rgba(45, 212, 191, 0.22),
+            0 0 12px rgba(45, 212, 191, 0.12);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>顶栏状态胶囊（示意）</h1>
+    <p class="lead">
+      开发时打开本页：<strong>http://127.0.0.1:5173/status-pill-preview.html</strong>（需先
+      <code>npm run dev</code> 或 <code>npm run tauri dev</code>）。与
+      <code>App.vue</code> 中 <code>statusPillUi</code> 的色相一致。
+    </p>
+
+    <div class="row">
+      <code>hue-hub</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-hub"
+        role="status"
+        aria-busy="true"
+      >
+        <span class="statusPillWaitSpinner" aria-hidden="true"></span>
+        待IDE连接
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-loading</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-loading"
+        role="status"
+        aria-busy="true"
+      >
+        <span class="statusPillWaitSpinner" aria-hidden="true"></span>
+        （拉取状态中）
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-idle</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-idle"
+        role="status"
+        aria-busy="true"
+      >
+        <span class="statusPillWaitSpinner" aria-hidden="true"></span>
+        等待下一轮助手请求
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-active</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-active"
+        role="status"
+        aria-busy="true"
+      >
+        <span class="statusPillWaitSpinner" aria-hidden="true"></span>
+        轮到你回复
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-expired</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--hue-expired"
+        role="status"
+        aria-busy="false"
+      >
+        已超时
+      </span>
+    </div>
+  </body>
+</html>
