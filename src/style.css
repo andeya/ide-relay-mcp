@@ -230,7 +230,9 @@ kbd {
 
 /* Header status: compact pill, wins over global .statusPill padding */
 .mainTopBarStatusPill {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   max-width: 100%;
   padding: 0.28rem 0.75rem !important;
   font-size: 0.68rem !important;
@@ -241,6 +243,68 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: middle;
+}
+
+/* Teal “connection” wait: soft glow; other hues rely on spinner + tint only. */
+.mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-hub,
+.mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-loading {
+  border-color: rgba(45, 212, 191, 0.45);
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12);
+  animation: statusPillWaitPulse 2.2s ease-in-out infinite;
+}
+
+.mainTopBarStatusPill--hue-hub {
+  background: rgba(15, 118, 110, 0.18);
+  color: #99f6e4;
+  border-color: rgba(45, 212, 191, 0.24);
+}
+
+.mainTopBarStatusPill--hue-loading {
+  background: rgba(14, 116, 144, 0.22);
+  color: #a5f3fc;
+  border-color: rgba(34, 211, 238, 0.38);
+}
+
+.mainTopBarStatusPill--hue-idle {
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.mainTopBarStatusPill--hue-active {
+  background: rgba(5, 150, 105, 0.24);
+  color: #6ee7b7;
+  border-color: rgba(52, 211, 153, 0.45);
+}
+
+.mainTopBarStatusPill--hue-expired {
+  background: rgba(127, 29, 29, 0.24);
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.42);
+}
+
+.statusPillWaitSpinner {
+  display: block;
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.9;
+  animation: relayWaitSpin 0.72s linear infinite;
+}
+
+@keyframes statusPillWaitPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(45, 212, 191, 0.22),
+      0 0 12px rgba(45, 212, 191, 0.12);
+  }
 }
 
 @media (max-width: 540px) {
@@ -1158,6 +1222,29 @@ kbd {
 .composerIconBtnSend:disabled {
   background: rgba(51, 65, 85, 0.9);
   box-shadow: none;
+}
+
+.composerIconBtnSend--busy {
+  opacity: 1 !important;
+  cursor: progress;
+  pointer-events: none;
+  background: linear-gradient(145deg, #6366f1 0%, #4f46e5 100%) !important;
+}
+
+.composerSendSpinner {
+  display: block;
+  width: 17px;
+  height: 17px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #f8fafc;
+  border-radius: 50%;
+  animation: relayWaitSpin 0.65s linear infinite;
+}
+
+@keyframes relayWaitSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .composerIconSvg {
@@ -3674,6 +3761,26 @@ textarea[readonly] {
   justify-content: flex-end;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* Shared “working” affordance for setup buttons (spinner + label). */
+.btnWithWait {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btnInlineSpinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.88;
+  animation: relayWaitSpin 0.65s linear infinite;
 }
 
 .setupInstallBtnCompact {
