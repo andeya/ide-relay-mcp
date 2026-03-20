@@ -22,6 +22,7 @@ const {
   cacheStats,
   cacheLoadBusy,
   cacheActionBusy,
+  cacheLogRelatedBytes,
   cacheTotalBytes,
   cacheUsageFlexAttach,
   cacheUsageFlexLog,
@@ -97,7 +98,7 @@ const S = computed(() => props.strings);
             <article class="cacheBigCard cacheBigCard--log">
               <span class="cacheBigCardKicker">{{ S.cacheLogs }}</span>
               <p class="cacheBigCardValue">
-                {{ formatBytes(cacheStats.log_bytes) }}
+                {{ formatBytes(cacheLogRelatedBytes) }}
               </p>
             </article>
           </div>
