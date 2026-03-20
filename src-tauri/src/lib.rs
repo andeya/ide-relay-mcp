@@ -16,6 +16,7 @@ pub mod gui_http;
 pub mod mcp_http;
 pub mod mcp_setup;
 pub mod path_persistence;
+pub mod release_check;
 pub mod server;
 pub mod storage;
 
@@ -349,6 +350,8 @@ pub fn skip_open_round_for_tab(g: &mut FeedbackTabsState, tab_id: &str) {
                     {
                         #[cfg(debug_assertions)]
                         eprintln!("relay: qa_archive_append: {e:#}");
+                        #[cfg(not(debug_assertions))]
+                        let _ = e;
                     }
                 }
             }
@@ -385,6 +388,8 @@ pub fn apply_reply_for_tab(
                     {
                         #[cfg(debug_assertions)]
                         eprintln!("relay: qa_archive_append: {e:#}");
+                        #[cfg(not(debug_assertions))]
+                        let _ = e;
                     }
                 }
             }
