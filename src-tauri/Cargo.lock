@@ -3184,6 +3184,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "tower-http 0.5.2",
  "ureq",

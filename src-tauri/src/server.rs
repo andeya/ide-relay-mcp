@@ -1,10 +1,13 @@
-//! MCP JSON-RPC server: ServerState, tools/call handling, run_feedback_server / run_feedback_cli.
+//! MCP JSON-RPC server: concurrent tools/call, single-writer stdout, run_feedback_server / run_feedback_cli.
 
 use anyhow::Result;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -17,35 +20,98 @@ use crate::{CommandItem, MCP_PAUSED_TOOL_REPLY, TOOL_NAME};
 /// MCP / JSON-RPC: client cancelled an in-flight request (LSP-style code used in the wild).
 const JSONRPC_REQUEST_CANCELLED: i64 = -32800;
 
-#[derive(Debug)]
-struct ServerState {
-    config_dir: PathBuf,
-    stdout: io::Stdout,
-    loop_index: usize,
+/// Max concurrent in-flight `relay_interactive_feedback` GUI rounds per MCP stdio connection.
+const MAX_CONCURRENT_HIL: usize = 16;
+
+// --- Per-request state for cancel vs worker completion race ---
+
+#[derive(Debug, Default)]
+struct CallState {
+    /// Set when any party has emitted the JSON-RPC result/error for this id.
+    response_sent: AtomicBool,
+    /// Set when host sends notifications/cancelled for this id (before worker finishes).
+    cancelled: AtomicBool,
 }
 
-impl ServerState {
-    fn new(config_dir: PathBuf) -> Self {
-        Self {
-            config_dir,
-            stdout: io::stdout(),
-            loop_index: 0,
-        }
+impl CallState {
+    fn mark_cancelled(&self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+}
+
+// --- Hil backend (real HTTP vs test mock) ---
+
+pub(crate) trait HilFeedback: Send + Sync {
+    fn feedback_round(
+        &self,
+        retell: &str,
+        relay_mcp_session_id: &str,
+        commands: Option<Vec<CommandItem>>,
+        skills: Option<Vec<CommandItem>>,
+    ) -> Result<String, String>;
+}
+
+#[derive(Debug, Default)]
+struct McpHttpFeedback;
+
+impl HilFeedback for McpHttpFeedback {
+    fn feedback_round(
+        &self,
+        retell: &str,
+        relay_mcp_session_id: &str,
+        commands: Option<Vec<CommandItem>>,
+        skills: Option<Vec<CommandItem>>,
+    ) -> Result<String, String> {
+        mcp_http::feedback_round(
+            retell,
+            relay_mcp_session_id,
+            commands.as_deref(),
+            skills.as_deref(),
+        )
+        .map_err(|e| e.to_string())
+    }
+}
+
+// --- Single-writer stdout (JSON lines must not interleave) ---
+
+#[derive(Clone)]
+struct McpOutbound {
+    tx: Sender<Value>,
+}
+
+impl McpOutbound {
+    fn spawn_stdout_writer() -> Self {
+        let (tx, rx) = mpsc::channel::<Value>();
+        thread::spawn(move || {
+            let stdout = io::stdout();
+            let mut handle = stdout.lock();
+            while let Ok(payload) = rx.recv() {
+                if let Ok(line) = serde_json::to_string(&payload) {
+                    let _ = writeln!(handle, "{}", line);
+                    let _ = handle.flush();
+                }
+            }
+        });
+        Self { tx }
     }
 
-    fn send_json(&mut self, payload: &Value) -> Result<()> {
-        let mut handle = self.stdout.lock();
-        writeln!(handle, "{}", payload)?;
-        handle.flush()?;
-        Ok(())
+    #[cfg(test)]
+    fn new_for_test(tx: Sender<Value>) -> Self {
+        Self { tx }
     }
 
-    fn send_result(&mut self, id: Value, result: Value) -> Result<()> {
-        self.send_json(&json!({"jsonrpc": "2.0", "id": id, "result": result}))
+    fn send_json(&self, v: Value) -> Result<()> {
+        self.tx
+            .send(v)
+            .map_err(|_| anyhow::anyhow!("MCP outbound closed"))
     }
 
-    fn send_error(&mut self, id: Value, code: i64, message: impl Into<String>) -> Result<()> {
-        self.send_json(&json!({
+    fn send_result(&self, id: Value, result: Value) -> Result<()> {
+        self.send_json(json!({"jsonrpc": "2.0", "id": id, "result": result}))
+    }
+
+    fn send_error(&self, id: Value, code: i64, message: impl Into<String>) -> Result<()> {
+        self.send_json(json!({
             "jsonrpc": "2.0",
             "id": id,
             "error": {
@@ -54,6 +120,30 @@ impl ServerState {
             }
         }))
     }
+}
+
+fn respond_tool_result(out: &McpOutbound, id: Value, feedback: String) -> Result<()> {
+    let mut inner = serde_json::Map::new();
+    inner.insert(TOOL_NAME.to_string(), json!(feedback));
+    let payload = json!({
+        "content": [
+            {
+                "type": "text",
+                "text": serde_json::Value::Object(inner).to_string()
+            }
+        ]
+    });
+    out.send_result(id, payload)
+}
+
+// --- Router context (router thread only mutates loop_index mutex indirectly via workers) ---
+
+struct RouterCtx {
+    config_dir: PathBuf,
+    outbound: McpOutbound,
+    pending: Arc<Mutex<HashMap<Value, Arc<CallState>>>>,
+    loop_index: Arc<Mutex<usize>>,
+    hil: Arc<dyn HilFeedback>,
 }
 
 /// Best-effort extract JSON-RPC `id` from a line that failed [`serde_json::from_str`].
@@ -81,153 +171,139 @@ fn scrape_jsonrpc_id(line: &str) -> Option<Value> {
     Some(Value::Number(n.into()))
 }
 
-fn notification_cancel_targets(msg: &Value, pending_tools_call_id: &Value) -> bool {
+fn cancel_notification_request_id(msg: &Value) -> Option<Value> {
     if msg.get("id").is_some() {
-        return false;
+        return None;
     }
     if msg.get("method").and_then(Value::as_str) != Some("notifications/cancelled") {
-        return false;
+        return None;
     }
-    let Some(params) = msg.get("params") else {
-        return false;
-    };
-    let rid = params.get("requestId").or_else(|| params.get("request_id"));
-    match rid {
-        Some(v) => v == pending_tools_call_id,
-        None => false,
-    }
+    let params = msg.get("params")?;
+    params
+        .get("requestId")
+        .or_else(|| params.get("request_id"))
+        .cloned()
 }
 
-fn handle_json_line(
-    state: &mut ServerState,
-    line: &str,
-    stdin_rx: &Receiver<String>,
-) -> Result<()> {
+fn process_cancel_notification(ctx: &RouterCtx, msg: &Value) -> Result<()> {
+    let Some(rid) = cancel_notification_request_id(msg) else {
+        let sample: String = msg.to_string().chars().take(320).collect();
+        let _ = log_write(&ctx.config_dir, "MCP_CANCELLED_ORPHAN", &sample);
+        return Ok(());
+    };
+
+    let pending = ctx.pending.lock().unwrap();
+    let Some(st) = pending.get(&rid) else {
+        drop(pending);
+        let sample: String = msg.to_string().chars().take(320).collect();
+        let _ = log_write(&ctx.config_dir, "MCP_CANCELLED_ORPHAN", &sample);
+        return Ok(());
+    };
+
+    st.mark_cancelled();
+    if st
+        .response_sent
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+        .is_ok()
+    {
+        drop(pending);
+        let _ = log_write(&ctx.config_dir, "MCP_CANCELLED", "");
+        ctx.outbound.send_error(
+            rid,
+            JSONRPC_REQUEST_CANCELLED,
+            "Request cancelled (notifications/cancelled)",
+        )?;
+    }
+    Ok(())
+}
+
+fn handle_json_line(ctx: &mut RouterCtx, line: &str) -> Result<()> {
     match serde_json::from_str::<Value>(line) {
-        Ok(msg) => dispatch_message(state, &msg, stdin_rx)?,
+        Ok(msg) => dispatch_message(ctx, &msg)?,
         Err(err) => {
             let sample: String = line.chars().take(200).collect();
             let _ = log_write(
-                &state.config_dir,
+                &ctx.config_dir,
                 "JSON_PARSE_ERROR",
                 &format!("{} | {}", err, sample),
             );
             if let Some(id) = scrape_jsonrpc_id(line) {
-                state.send_error(id, -32700, format!("Parse error: {}", err))?;
+                ctx.outbound
+                    .send_error(id, -32700, format!("Parse error: {}", err))?;
             }
         }
     }
     Ok(())
 }
 
-fn respond_tool_result(state: &mut ServerState, id: Value, feedback: String) -> Result<()> {
-    let mut inner = serde_json::Map::new();
-    inner.insert(TOOL_NAME.to_string(), json!(feedback));
-    let payload = json!({
-        "content": [
-            {
-                "type": "text",
-                "text": serde_json::Value::Object(inner).to_string()
-            }
-        ]
-    });
-    state.send_result(id, payload)
-}
-
-/// Log when there is no in-flight `tools/call` to attach this notification to.
-fn handle_cancel_notification(state: &mut ServerState, msg: &Value) -> Result<()> {
-    let sample: String = msg.to_string().chars().take(320).collect();
-    let _ = log_write(&state.config_dir, "MCP_CANCELLED_ORPHAN", &sample);
-    Ok(())
-}
-
-fn wait_feedback_round(
-    state: &mut ServerState,
+fn spawn_hil_worker(
+    ctx: &RouterCtx,
     rpc_id: Value,
     retell: String,
     relay_mcp_session_id: String,
     commands: Option<Vec<CommandItem>>,
     skills: Option<Vec<CommandItem>>,
-    stdin_rx: &Receiver<String>,
 ) -> Result<()> {
-    let (tool_tx, tool_rx) = mpsc::channel::<Result<String, String>>();
-    let retell_t = retell.clone();
-    let sid_t = relay_mcp_session_id.clone();
-    thread::spawn(move || {
-        let r = mcp_http::feedback_round(&retell_t, &sid_t, commands.as_deref(), skills.as_deref());
-        let _ = tool_tx.send(r.map_err(|e| e.to_string()));
-    });
+    let state = Arc::new(CallState::default());
+    {
+        let mut pending = ctx.pending.lock().unwrap();
+        if pending.len() >= MAX_CONCURRENT_HIL {
+            drop(pending);
+            return ctx.outbound.send_error(
+                rpc_id,
+                -32603,
+                format!(
+                    "Relay: too many concurrent human feedback requests (max {})",
+                    MAX_CONCURRENT_HIL
+                ),
+            );
+        }
+        pending.insert(rpc_id.clone(), Arc::clone(&state));
+    }
 
-    loop {
-        match tool_rx.recv_timeout(Duration::from_millis(120)) {
-            Ok(Ok(answer)) => {
+    let outbound = ctx.outbound.clone();
+    let pending_map = Arc::clone(&ctx.pending);
+    let loop_index = Arc::clone(&ctx.loop_index);
+    let config_dir = ctx.config_dir.clone();
+    let hil = Arc::clone(&ctx.hil);
+    let st = Arc::clone(&state);
+
+    thread::spawn(move || {
+        let result = hil.feedback_round(&retell, &relay_mcp_session_id, commands, skills);
+
+        {
+            let mut g = pending_map.lock().unwrap();
+            g.remove(&rpc_id);
+        }
+
+        if st
+            .response_sent
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+
+        match result {
+            Ok(answer) => {
                 if !answer.is_empty() {
-                    state.loop_index = 0;
-                }
-                let _ = log_write(&state.config_dir, "USER_REPLY", &answer);
-                respond_tool_result(state, rpc_id, answer)?;
-                return Ok(());
-            }
-            Ok(Err(e)) => {
-                state.send_error(rpc_id, -32603, format!("Relay GUI: {}", e))?;
-                return Ok(());
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                state.send_error(
-                    rpc_id,
-                    -32603,
-                    "Relay GUI: internal error (feedback thread disconnected)",
-                )?;
-                return Ok(());
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                while let Ok(line) = stdin_rx.try_recv() {
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    match serde_json::from_str::<Value>(&line) {
-                        Ok(msg) => {
-                            if notification_cancel_targets(&msg, &rpc_id) {
-                                let _ = log_write(&state.config_dir, "MCP_CANCELLED", "");
-                                state.send_error(
-                                    rpc_id.clone(),
-                                    JSONRPC_REQUEST_CANCELLED,
-                                    "Request cancelled (notifications/cancelled)",
-                                )?;
-                                return Ok(());
-                            }
-                            if msg.get("id").is_some() {
-                                let mid = msg["id"].clone();
-                                state.send_error(
-                                    mid,
-                                    -32603,
-                                    "Relay: a tools/call is already waiting for human feedback; wait for the Answer or cancel that request",
-                                )?;
-                            }
-                        }
-                        Err(err) => {
-                            let sample: String = line.chars().take(200).collect();
-                            let _ = log_write(
-                                &state.config_dir,
-                                "JSON_PARSE_ERROR",
-                                &format!("{} | {}", err, sample),
-                            );
-                            if let Some(id) = scrape_jsonrpc_id(&line) {
-                                state.send_error(id, -32700, format!("Parse error: {}", err))?;
-                            }
-                        }
+                    if let Ok(mut li) = loop_index.lock() {
+                        *li = 0;
                     }
                 }
+                let _ = log_write(&config_dir, "USER_REPLY", &answer);
+                let _ = respond_tool_result(&outbound, rpc_id, answer);
+            }
+            Err(e) => {
+                let _ = outbound.send_error(rpc_id, -32603, format!("Relay GUI: {}", e));
             }
         }
-    }
+    });
+
+    Ok(())
 }
 
-fn handle_tool_call(
-    state: &mut ServerState,
-    msg: &Value,
-    stdin_rx: &Receiver<String>,
-) -> Result<()> {
+fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
     let name = msg
         .get("params")
         .and_then(|params| params.get("name"))
@@ -235,7 +311,7 @@ fn handle_tool_call(
         .unwrap_or("");
 
     if name != TOOL_NAME {
-        state.send_error(
+        ctx.outbound.send_error(
             msg["id"].clone(),
             -32601,
             format!("Unrecognized tool: {}", name),
@@ -255,7 +331,7 @@ fn handle_tool_call(
         .unwrap_or("")
         .to_string();
     if retell.trim().is_empty() {
-        state.send_error(
+        ctx.outbound.send_error(
             msg["id"].clone(),
             -32602,
             "retell is required (non-empty): this turn's assistant reply to the user",
@@ -266,11 +342,11 @@ fn handle_tool_call(
     let rpc_id = msg["id"].clone();
     if read_mcp_paused() {
         let _ = log_write(
-            &state.config_dir,
+            &ctx.config_dir,
             "MCP_PAUSED_BLOCK",
             &retell.chars().take(200).collect::<String>(),
         );
-        respond_tool_result(state, rpc_id, MCP_PAUSED_TOOL_REPLY.to_string())?;
+        respond_tool_result(&ctx.outbound, rpc_id, MCP_PAUSED_TOOL_REPLY.to_string())?;
         return Ok(());
     }
 
@@ -292,55 +368,43 @@ fn handle_tool_call(
     } else {
         format!("[session:{}] {}", relay_mcp_session_id, retell)
     };
-    let _ = log_write(&state.config_dir, "AI_REQUEST", &log_line);
+    let _ = log_write(&ctx.config_dir, "AI_REQUEST", &log_line);
 
-    let Some((rule, is_oneshot)) = auto_reply_peek(&state.config_dir, state.loop_index) else {
-        return wait_feedback_round(
-            state,
-            rpc_id,
-            retell,
-            relay_mcp_session_id,
-            commands,
-            skills,
-            stdin_rx,
-        );
+    let loop_idx = *ctx.loop_index.lock().unwrap();
+    let Some((rule, is_oneshot)) = auto_reply_peek(&ctx.config_dir, loop_idx) else {
+        return spawn_hil_worker(ctx, rpc_id, retell, relay_mcp_session_id, commands, skills);
     };
 
     if is_oneshot {
-        consume_oneshot(&state.config_dir)?;
+        consume_oneshot(&ctx.config_dir)?;
     }
-    let _ = log_write(&state.config_dir, "AUTO_REPLY", &rule.text);
-    // Return same JSON shape as GUI feedback so the agent can parse relay_mcp_session_id and human.
+    let _ = log_write(&ctx.config_dir, "AUTO_REPLY", &rule.text);
     let auto_reply_result = json!({
         "relay_mcp_session_id": "",
         "human": rule.text,
         "cmd_skill_count": 0
     })
     .to_string();
-    respond_tool_result(state, rpc_id, auto_reply_result)?;
-    state.loop_index = state.loop_index.saturating_add(1);
+    respond_tool_result(&ctx.outbound, rpc_id, auto_reply_result)?;
+    *ctx.loop_index.lock().unwrap() = loop_idx.saturating_add(1);
     Ok(())
 }
 
-fn dispatch_message(
-    state: &mut ServerState,
-    msg: &Value,
-    stdin_rx: &Receiver<String>,
-) -> Result<()> {
+fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
     let Some(method) = msg.get("method").and_then(Value::as_str) else {
         return Ok(());
     };
 
     if msg.get("id").is_none() {
         if method == "notifications/cancelled" {
-            handle_cancel_notification(state, msg)?;
+            process_cancel_notification(ctx, msg)?;
         }
         return Ok(());
     }
 
     match method {
         "initialize" => {
-            state.send_result(
+            ctx.outbound.send_result(
                 msg["id"].clone(),
                 json!({
                     "protocolVersion": "2024-11-05",
@@ -350,10 +414,10 @@ fn dispatch_message(
             )?;
         }
         "ping" => {
-            state.send_result(msg["id"].clone(), json!({}))?;
+            ctx.outbound.send_result(msg["id"].clone(), json!({}))?;
         }
         "tools/list" => {
-            state.send_result(
+            ctx.outbound.send_result(
                 msg["id"].clone(),
                 json!({
                     "tools": [
@@ -407,10 +471,10 @@ fn dispatch_message(
             )?;
         }
         "tools/call" => {
-            handle_tool_call(state, msg, stdin_rx)?;
+            handle_tool_call(ctx, msg)?;
         }
         _ => {
-            state.send_error(
+            ctx.outbound.send_error(
                 msg["id"].clone(),
                 -32601,
                 format!("Method not found: {}", method),
@@ -421,11 +485,47 @@ fn dispatch_message(
     Ok(())
 }
 
-pub fn run_feedback_server() -> Result<()> {
-    let config_dir = prepare_user_data_dir()?;
-    let mut state = ServerState::new(config_dir);
-    let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
+fn run_router_loop(mut ctx: RouterCtx, inbound: Receiver<String>) -> Result<()> {
+    let mut disconnected = false;
+    loop {
+        while let Ok(line) = inbound.try_recv() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            handle_json_line(&mut ctx, &line)?;
+        }
 
+        if disconnected {
+            break;
+        }
+
+        match inbound.recv_timeout(Duration::from_millis(120)) {
+            Ok(line) => {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                handle_json_line(&mut ctx, &line)?;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                disconnected = true;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn run_feedback_server_with_hil(config_dir: PathBuf, hil: Arc<dyn HilFeedback>) -> Result<()> {
+    let outbound = McpOutbound::spawn_stdout_writer();
+    let ctx = RouterCtx {
+        config_dir: config_dir.clone(),
+        outbound,
+        pending: Arc::new(Mutex::new(HashMap::new())),
+        loop_index: Arc::new(Mutex::new(0)),
+        hil,
+    };
+
+    let (tx, rx) = mpsc::channel::<String>();
     thread::spawn(move || {
         let stdin = io::stdin();
         let reader = BufReader::new(stdin.lock());
@@ -441,34 +541,29 @@ pub fn run_feedback_server() -> Result<()> {
         }
     });
 
-    let mut disconnected = false;
-    loop {
-        while let Ok(line) = rx.try_recv() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            handle_json_line(&mut state, &line, &rx)?;
-        }
+    run_router_loop(ctx, rx)
+}
 
-        if disconnected {
-            break;
-        }
+#[cfg(test)]
+fn run_feedback_server_testable(
+    config_dir: PathBuf,
+    hil: Arc<dyn HilFeedback>,
+    outbound: McpOutbound,
+    inbound: Receiver<String>,
+) -> Result<()> {
+    let ctx = RouterCtx {
+        config_dir,
+        outbound,
+        pending: Arc::new(Mutex::new(HashMap::new())),
+        loop_index: Arc::new(Mutex::new(0)),
+        hil,
+    };
+    run_router_loop(ctx, inbound)
+}
 
-        match rx.recv_timeout(Duration::from_millis(120)) {
-            Ok(line) => {
-                if line.trim().is_empty() {
-                    continue;
-                }
-                handle_json_line(&mut state, &line, &rx)?;
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                disconnected = true;
-            }
-        }
-    }
-
-    Ok(())
+pub fn run_feedback_server() -> Result<()> {
+    let config_dir = prepare_user_data_dir()?;
+    run_feedback_server_with_hil(config_dir, Arc::new(McpHttpFeedback))
 }
 
 pub fn run_feedback_cli(
@@ -530,33 +625,238 @@ mod tests {
     }
 
     #[test]
-    fn notification_cancel_matches() {
-        let pending = json!(7);
+    fn cancel_notification_request_id_matches() {
         let msg = json!({
             "jsonrpc": "2.0",
             "method": "notifications/cancelled",
             "params": { "requestId": 7 }
         });
-        assert!(notification_cancel_targets(&msg, &pending));
+        assert_eq!(cancel_notification_request_id(&msg), Some(json!(7)));
     }
 
     #[test]
-    fn notification_cancel_request_id_alias() {
-        let pending = json!("x");
+    fn cancel_notification_request_id_alias() {
         let msg = json!({
             "method": "notifications/cancelled",
             "params": { "request_id": "x" }
         });
-        assert!(notification_cancel_targets(&msg, &pending));
+        assert_eq!(
+            cancel_notification_request_id(&msg),
+            Some(Value::String("x".into()))
+        );
+    }
+
+    /// Blocks after signalling `started` until `unblock` receives one message.
+    struct BlockingHil {
+        started: std::sync::mpsc::SyncSender<()>,
+        unblock: Mutex<Option<Receiver<()>>>,
+    }
+
+    impl HilFeedback for BlockingHil {
+        fn feedback_round(
+            &self,
+            _retell: &str,
+            _relay_mcp_session_id: &str,
+            _commands: Option<Vec<CommandItem>>,
+            _skills: Option<Vec<CommandItem>>,
+        ) -> Result<String, String> {
+            let _ = self.started.send(());
+            let rx = self
+                .unblock
+                .lock()
+                .unwrap()
+                .take()
+                .expect("unblock rx setup");
+            rx.recv().map_err(|_| "unblock closed".to_string())?;
+            Ok(r#"{"relay_mcp_session_id":"1","human":"ok","cmd_skill_count":0}"#.to_string())
+        }
     }
 
     #[test]
-    fn notification_cancel_wrong_id() {
-        let pending = json!(1);
-        let msg = json!({
-            "method": "notifications/cancelled",
-            "params": { "requestId": 2 }
+    fn tools_list_succeeds_while_hil_worker_blocked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = dir.path().to_path_buf();
+
+        let (started_tx, started_rx) = mpsc::sync_channel(0);
+        let (unblock_tx, unblock_rx) = mpsc::channel::<()>();
+
+        let hil: Arc<dyn HilFeedback> = Arc::new(BlockingHil {
+            started: started_tx,
+            unblock: Mutex::new(Some(unblock_rx)),
         });
-        assert!(!notification_cancel_targets(&msg, &pending));
+
+        let (in_tx, in_rx) = mpsc::channel::<String>();
+        let (out_tx, out_rx) = mpsc::channel::<Value>();
+        let outbound = McpOutbound::new_for_test(out_tx);
+
+        let _server = thread::spawn(move || {
+            run_feedback_server_testable(cfg, hil, outbound, in_rx).unwrap();
+        });
+
+        let call = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": TOOL_NAME,
+                "arguments": { "retell": "hello" }
+            }
+        });
+        in_tx.send(serde_json::to_string(&call).unwrap()).unwrap();
+
+        started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("hil started");
+
+        let list = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list"
+        });
+        in_tx.send(serde_json::to_string(&list).unwrap()).unwrap();
+
+        let r_list = out_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("tools/list response");
+        assert_eq!(r_list["id"], json!(2));
+        assert!(r_list.get("result").is_some());
+        let tools = r_list["result"]["tools"].as_array().expect("tools array");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], json!(TOOL_NAME));
+
+        unblock_tx.send(()).unwrap();
+
+        let r_call = out_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("tools/call response");
+        assert_eq!(r_call["id"], json!(1));
+        assert!(r_call.get("result").is_some());
+
+        drop(in_tx);
+        let _ = _server.join();
+    }
+
+    #[test]
+    fn cancel_inflight_tools_call_returns_32800() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = dir.path().to_path_buf();
+
+        let (started_tx, started_rx) = mpsc::sync_channel(0);
+        let (unblock_tx, unblock_rx) = mpsc::channel::<()>();
+
+        let hil: Arc<dyn HilFeedback> = Arc::new(BlockingHil {
+            started: started_tx,
+            unblock: Mutex::new(Some(unblock_rx)),
+        });
+
+        let (in_tx, in_rx) = mpsc::channel::<String>();
+        let (out_tx, out_rx) = mpsc::channel::<Value>();
+        let outbound = McpOutbound::new_for_test(out_tx);
+
+        let hil_srv = Arc::clone(&hil);
+        let _server = thread::spawn(move || {
+            run_feedback_server_testable(cfg, hil_srv, outbound, in_rx).unwrap();
+        });
+
+        let call = json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {
+                "name": TOOL_NAME,
+                "arguments": { "retell": "cancel-me" }
+            }
+        });
+        in_tx.send(serde_json::to_string(&call).unwrap()).unwrap();
+
+        started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("hil started");
+
+        let cancel = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": { "requestId": 9 }
+        });
+        in_tx.send(serde_json::to_string(&cancel).unwrap()).unwrap();
+
+        let r = out_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("cancel response");
+        assert_eq!(r["id"], json!(9));
+        assert_eq!(r["error"]["code"], json!(JSONRPC_REQUEST_CANCELLED));
+
+        let _ = unblock_tx.send(());
+        drop(in_tx);
+        let _ = _server.join();
+    }
+
+    struct ImmediateHil {
+        out: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl HilFeedback for ImmediateHil {
+        fn feedback_round(
+            &self,
+            _retell: &str,
+            _relay_mcp_session_id: &str,
+            _commands: Option<Vec<CommandItem>>,
+            _skills: Option<Vec<CommandItem>>,
+        ) -> Result<String, String> {
+            let idx = {
+                let mut g = self.out.lock().unwrap();
+                g.push("a".into());
+                g.len()
+            };
+            Ok(format!(
+                r#"{{"relay_mcp_session_id":"{idx}","human":"h","cmd_skill_count":0}}"#
+            ))
+        }
+    }
+
+    #[test]
+    fn two_concurrent_tools_call_both_complete() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = dir.path().to_path_buf();
+
+        let hil: Arc<dyn HilFeedback> = Arc::new(ImmediateHil {
+            out: std::sync::Mutex::new(vec![]),
+        });
+
+        let (in_tx, in_rx) = mpsc::channel::<String>();
+        let (out_tx, out_rx) = mpsc::channel::<Value>();
+        let outbound = McpOutbound::new_for_test(out_tx);
+
+        let hil_srv = Arc::clone(&hil);
+        let _server = thread::spawn(move || {
+            run_feedback_server_testable(cfg, hil_srv, outbound, in_rx).unwrap();
+        });
+
+        for id in [1_u64, 2_u64] {
+            let call = json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "tools/call",
+                "params": {
+                    "name": TOOL_NAME,
+                    "arguments": { "retell": format!("r{id}") }
+                }
+            });
+            in_tx.send(serde_json::to_string(&call).unwrap()).unwrap();
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..2 {
+            let r = out_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("response");
+            let id = r["id"].as_u64().expect("id u64");
+            assert!(seen.insert(id));
+            assert!(r.get("result").is_some());
+        }
+        assert_eq!(seen, [1, 2].into_iter().collect());
+
+        drop(in_tx);
+        let _ = _server.join();
     }
 }

@@ -62,9 +62,11 @@ sequenceDiagram
 
 - The HTTP **client** in `mcp_http::feedback_round` sets a **24 h** read timeout on the `GET .../wait` call as a transport-level failsafe (avoids a truly infinite block if the GUI misbehaves). **User-visible idle timeout remains ~60 minutes** from the GUI orphan task; the 24 h ceiling should not normally be hit in practice.
 
-## MCP stdio: cancellation and errors
+## MCP stdio: concurrency, cancellation, and errors
 
-- While `tools/call` is blocked on human feedback, the server **drains the stdin queue** for `notifications/cancelled` whose `params.requestId` matches that call’s JSON-RPC `id` (also accepts `request_id`). It responds with error code **-32800** so the host does not hang. The background HTTP wait may still run until the GUI completes; the host should not assume the Relay tab closes automatically.
+- **Concurrent HIL**: The MCP process uses a **JSON-RPC router** plus **background workers** for long `tools/call` rounds. Multiple in-flight `relay_interactive_feedback` calls on the **same stdio connection** are supported (bounded by **`MAX_CONCURRENT_HIL`** in `server.rs`, currently **16**; beyond that, new calls get **-32603**). Each worker talks to the GUI over HTTP independently. **`tools/list`**, **`ping`**, and **`initialize`** are answered immediately on the router thread—hosts can refresh tool metadata while other tabs are waiting on you.
+- **Stdout**: All JSON-RPC lines are written through a **single writer** so responses never interleave.
+- **`notifications/cancelled`**: The router matches `params.requestId` (or `request_id`) to a **pending** `tools/call` by JSON-RPC `id`. It responds with **-32800** for that `id` so the host does not hang. The matching HTTP `GET .../wait` in the worker may still run until the GUI completes; the host should not assume the Relay tab closes automatically.
 - Malformed JSON lines: if an `"id"` can be scraped from the line, a **-32700** parse error is returned instead of silence.
 
 ## Frontend

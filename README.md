@@ -49,7 +49,7 @@ Inspired by [interactive-feedback-mcp](https://github.com/junanchn/interactive-f
 
 ## Architecture (fact-checked against the repo)
 
-- **`relay mcp`** — stdio MCP (`clap` subcommand). Handles `initialize`, `tools/list`, `tools/call`. Optional **instant auto-reply** (`0|…` lines in user-data rules files) short-circuits without opening the UI.
+- **`relay mcp`** — stdio MCP (`clap` subcommand). Handles `initialize`, `tools/list`, `tools/call`. Several **`tools/call`** human rounds may be **in flight at once** on the same connection (see [docs/HTTP_IPC.md](docs/HTTP_IPC.md) — router + workers, capped concurrency). Optional **instant auto-reply** (`0|…` lines in user-data rules files) short-circuits without opening the UI.
 - **`relay` / `relay gui`** — Tauri app + **HTTP on `127.0.0.1:0`**. Writes **`{user_data}/gui_endpoint.json`** `{ port, token, pid }`; deletes it on exit.
 - **Bridge** — Before each interactive call, MCP reads the endpoint file; if missing or unhealthy, **`spawn`s the same executable with `gui`**, polls up to **~45 s** (`ensure_gui_endpoint`). Then **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**. The GUI completes that GET when you submit, dismiss, the request is superseded, or after **~60 minutes** idle (server-side task); the MCP HTTP client also uses a **24 h** read timeout as a failsafe. Response is **JSON** `{relay_mcp_session_id, human, cmd_skill_count}` = tool result. Details: [docs/HTTP_IPC.md](docs/HTTP_IPC.md).
 
