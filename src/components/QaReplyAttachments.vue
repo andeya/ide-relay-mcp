@@ -54,6 +54,8 @@ watch(
 
 onBeforeUnmount(() => {
   cancelled = true;
+  thumbs.value = {};
+  failed.value = new Set();
 });
 
 function onThumbClick(p: string) {
