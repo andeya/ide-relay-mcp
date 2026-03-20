@@ -14,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { locale, t } from "./i18n";
 import { useAppStrings } from "./composables/useAppStrings";
 import { useFeedbackWindow } from "./composables/useFeedbackWindow";
+import { useReleaseBadge } from "./composables/useReleaseBadge";
 import { useMcpAndPathSettings } from "./composables/useMcpAndPathSettings";
 import type { CommandItem, SettingsSegment } from "./types/relay-app";
 import type { SettingsToastPayload } from "./composables/useRelayCacheSettings";
@@ -31,6 +32,27 @@ const mcpPaused = ref(false);
 const mcpPauseBusy = ref(false);
 const mcpPauseErr = ref("");
 const qaScrollEndRef = ref<HTMLElement | null>(null);
+
+const {
+  payload: releasePayload,
+  loading: releaseLoading,
+  openRepo,
+  badgeTitle,
+} = useReleaseBadge();
+
+const releaseLabel = computed(() => {
+  void locale.value;
+  const p = releasePayload.value;
+  if (!p) return "";
+  if (p.update_available && p.latest_version) {
+    return t("releaseBadgeUpdate", { latest: p.latest_version });
+  }
+  return t("releaseBadgeCurrent", { current: p.current_version });
+});
+
+const showReleaseBadge = computed(
+  () => !releaseLoading.value && releasePayload.value !== null,
+);
 
 function openLightbox(src: string) {
   lightboxSrc.value = src;
@@ -437,13 +459,14 @@ onBeforeUnmount(() => {
             ]"
             role="status"
             :aria-busy="statusPillUi.indeterminate"
+            :title="statusLabel"
           >
             <span
               v-if="statusPillUi.indeterminate"
               class="statusPillWaitSpinner"
               aria-hidden="true"
             />
-            {{ statusLabel }}
+            <span class="mainTopBarStatusPillText">{{ statusLabel }}</span>
           </span>
         </div>
         <div class="mainTopBarRight">
@@ -483,6 +506,20 @@ onBeforeUnmount(() => {
               {{ strings.dockBtnRight }}
             </button>
           </div>
+          <button
+            v-if="showReleaseBadge"
+            type="button"
+            class="releaseBadge"
+            :class="{
+              'releaseBadge--update': releasePayload?.update_available,
+            }"
+            :title="badgeTitle"
+            :aria-label="t('releaseBadgeAria')"
+            @click="openRepo"
+          >
+            <span class="releaseBadgeDot" aria-hidden="true" />
+            {{ releaseLabel }}
+          </button>
           <button
             type="button"
             class="iconGear"
