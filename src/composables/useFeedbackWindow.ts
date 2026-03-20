@@ -279,6 +279,27 @@ export function useFeedbackWindow() {
     if (status.value === "idle") return t("statusIdle");
     return t("statusAwaiting");
   });
+  /**
+   * Header status capsule: single source of truth for spinner + color tier (keeps UX rules in sync).
+   */
+  const statusPillUi = computed(() => {
+    if (isHubPage.value) {
+      return { indeterminate: true, hue: "hub" as const };
+    }
+    if (status.value === "timed_out" || status.value === "cancelled") {
+      return { indeterminate: false, hue: "expired" as const };
+    }
+    if (status.value === "idle") {
+      return { indeterminate: true, hue: "idle" as const };
+    }
+    if (status.value === "active") {
+      return { indeterminate: true, hue: "active" as const };
+    }
+    if (status.value === null && activeTabId.value) {
+      return { indeterminate: true, hue: "loading" as const };
+    }
+    return { indeterminate: false, hue: "default" as const };
+  });
   const submitLabel = computed(() => {
     void locale.value;
     return expired.value ? t("submitClose") : t("submit");
@@ -435,7 +456,7 @@ export function useFeedbackWindow() {
 
   async function refreshStatus() {
     const id = activeTabId.value;
-    if (!id || closing || !launch.value) return;
+    if (!id || closing) return;
     try {
       const next = await invoke<ControlStatus | null>("read_tab_status", {
         tabId: id,
@@ -1102,6 +1123,7 @@ export function useFeedbackWindow() {
     composerSwallowPlainEnter,
     hasPendingFileDropErrors,
     statusLabel,
+    statusPillUi,
     submitLabel,
     submitCloseTabLabel,
     setWindowTitle,
