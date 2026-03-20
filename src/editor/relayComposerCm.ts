@@ -18,6 +18,7 @@ import {
 import {
   Decoration,
   DecorationSet,
+  drawSelection,
   EditorView,
   keymap,
   placeholder,
@@ -145,6 +146,9 @@ export function createRelayComposerExtensions(
     EditorView.lineWrapping,
     slashDecorationsField,
     relayComposerBaseTheme(),
+    // Native caret is often invisible on WebKit when the doc is empty with a
+    // placeholder widget; drawSelection paints the caret reliably (Tauri/WKWebView).
+    drawSelection(),
     readOnlyComp.of(EditorState.readOnly.of(opts.readOnly)),
     placeholderComp.of(placeholder(opts.placeholderText)),
     history(),

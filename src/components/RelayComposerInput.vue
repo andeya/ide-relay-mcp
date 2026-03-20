@@ -185,7 +185,14 @@ watch(
 );
 
 defineExpose<RelayComposerEditorExpose>({
-  focus: () => view?.focus(),
+  focus: () => {
+    if (!view) return;
+    view.focus();
+    // After parent async work (e.g. submit + reload), layout may settle one frame late.
+    requestAnimationFrame(() => {
+      view?.requestMeasure();
+    });
+  },
   getCursor: () => view?.state.selection.main.head ?? 0,
   getSelection: () => {
     const m = view?.state.selection.main;
