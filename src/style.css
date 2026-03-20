@@ -98,14 +98,12 @@ kbd {
   overflow: hidden;
 }
 
-/* Top bar: brand | status (center) | window dock + settings. */
+/* Top bar: brand | status (true horizontal center) | window dock + settings. */
 .mainTopBar {
   display: grid;
-  /* Left/right = intrinsic width; center flexes and shrinks so long status text
-     ellipsizes instead of overlapping dock + version + settings. */
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 10px 18px;
+  column-gap: 12px;
   flex-shrink: 0;
   margin-bottom: 10px;
   padding-bottom: 10px;
@@ -114,8 +112,10 @@ kbd {
 }
 
 .mainTopBarLeft {
+  grid-column: 1;
   justify-self: start;
   min-width: 0;
+  max-width: 100%;
 }
 
 .mainBrandCluster {
@@ -127,23 +127,24 @@ kbd {
 }
 
 .mainTopBarMid {
+  grid-column: 2;
   display: flex;
-  /* Align toward dock so status + window controls read as one toolbar cluster;
-     centered + ellipsis often looks visually “off” when text truncates. */
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
-  justify-self: stretch;
+  justify-self: center;
   min-width: 0;
-  max-width: 100%;
-  padding-inline-end: 2px;
+  max-width: min(72vw, 560px);
+  padding-inline: 6px;
 }
 
 .mainTopBarRight {
+  grid-column: 3;
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-self: end;
   gap: 8px;
+  min-width: 0;
   padding-inline-start: 4px;
   border-left: 1px solid rgba(148, 163, 184, 0.12);
 }
@@ -313,7 +314,44 @@ kbd {
   vertical-align: middle;
 }
 
-/* Ellipsis applies to this flex child (spinner stays fixed width). */
+/* Breathing ring: hub uses glow only; other waiting hues show this (opacity, no rotate). */
+.statusPillWaitRing {
+  display: block;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.8;
+  animation: statusPillWaitRingBreath 2s ease-in-out infinite;
+}
+
+@keyframes statusPillWaitRingBreath {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+html.relay-doc-hidden .statusPillWaitRing {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statusPillWaitRing {
+    animation: none;
+    opacity: 0.88;
+    border-right-color: rgba(255, 255, 255, 0.35);
+  }
+}
+
+/* Ellipsis applies to this flex child (long status strings). */
 .mainTopBarStatusPillText {
   min-width: 0;
   overflow: hidden;
@@ -321,12 +359,18 @@ kbd {
   white-space: nowrap;
 }
 
-/* Teal “connection” wait: soft glow; other hues rely on spinner + tint only. */
+/* Teal “connection” wait: soft glow on hub/loading only; other hues use tint only. */
 .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-hub,
 .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-loading {
   border-color: rgba(45, 212, 191, 0.45);
   box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12);
   animation: statusPillWaitPulse 2.2s ease-in-out infinite;
+}
+
+/* No spinner: whole-pill opacity breath for AI/ME turn (cheap vs border rotation). */
+.mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-idle,
+.mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-active {
+  animation: mainTopBarStatusPillOpacityBreath 2.2s ease-in-out infinite;
 }
 
 .mainTopBarStatusPill--hue-hub {
@@ -359,16 +403,33 @@ kbd {
   border-color: rgba(248, 113, 113, 0.42);
 }
 
-.statusPillWaitSpinner {
-  display: block;
-  width: 11px;
-  height: 11px;
-  flex-shrink: 0;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  opacity: 0.9;
-  animation: relayWaitSpin 0.72s linear infinite;
+/* Pause status pill animations when the window is in the background. */
+html.relay-doc-hidden .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-hub,
+html.relay-doc-hidden .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-loading,
+html.relay-doc-hidden .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-idle,
+html.relay-doc-hidden .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-active {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-hub,
+  .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-loading,
+  .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-idle,
+  .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-active {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+@keyframes mainTopBarStatusPillOpacityBreath {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+
+  50% {
+    opacity: 1;
+  }
 }
 
 @keyframes statusPillWaitPulse {
