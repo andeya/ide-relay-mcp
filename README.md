@@ -39,11 +39,11 @@ Inspired by [interactive-feedback-mcp](https://github.com/junanchn/interactive-f
 
 ## Why this shape
 
-| Typical pain                                                     | What Relay does                                                                                                                                                                          |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Retell** (full assistant reply) hits **ARG_MAX** / argv limits | **`retell` travels in HTTP POST JSON** — size bounded by body limit (16 MiB), not the shell.                                                                                             |
-| Spawning a UI per tool call                                      | **One GUI process** (`relay` / `relay gui`); MCP only runs **`relay mcp`** on stdio.                                                                                                     |
-| Multiple IDE threads → tab chaos                                 | **`relay_mcp_session_id`** — tool returns JSON with session id; remember and pass it next call; tab label **MM-DD HH:mm** ([**RELAY_MCP_SESSION_ID.md**](docs/RELAY_MCP_SESSION_ID.md)). |
+| Typical pain                                                     | What Relay does                                                                                                                                                                             |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Retell** (full assistant reply) hits **ARG_MAX** / argv limits | **`retell` travels in HTTP POST JSON** — size bounded by body limit (16 MiB), not the shell.                                                                                                |
+| Spawning a UI per tool call                                      | **One GUI process** (`relay` / `relay gui`); MCP only runs **`relay mcp`** on stdio.                                                                                                        |
+| Multiple IDE threads → tab chaos                                 | **`relay_mcp_session_id`** — tool returns JSON with session id; remember and pass it next call; tab label **MM-DD HH:mm:ss** ([**RELAY_MCP_SESSION_ID.md**](docs/RELAY_MCP_SESSION_ID.md)). |
 
 ---
 
@@ -111,14 +111,18 @@ In-app **Settings → Environment & MCP**: copy JSON, **Cursor / Windsurf** one-
 
 Repo example: [`mcp.json`](mcp.json).
 
+### Tips
+
+- In your IDE chat, ask the agent to **follow the Relay rules** (or paste the rule block from **Settings → Rule prompts**). That reminds it to call **`relay_interactive_feedback` every turn**, pass **`commands` / `skills`** on a new tab, and keep **`relay_mcp_session_id`** — nudging it to **start or continue the same Relay session** (actual behavior still depends on the model following your rules).
+
 ---
 
 ## What you get
 
-- **Multi-tab hub** — New requests open or refresh tabs; non-active tabs can flash; **`relay_mcp_session_id`** merges streams; tab labels **MM-DD HH:mm**.
-- **Composer UX** — Enter submit, Shift+Enter newline, ⌘/Ctrl+Enter submit & close tab; images / paste supported; optional **`<<<RELAY_FEEDBACK_JSON>>>`** attachment convention.
+- **Multi-tab hub** — New requests open or refresh tabs; non-active tabs can flash; **`relay_mcp_session_id`** merges streams; tab labels **MM-DD HH:mm:ss**.
+- **Composer UX** — Enter submit, Shift+Enter newline, ⌘/Ctrl+Enter submit & close tab; images / paste supported; MCP / wait JSON may include **`attachments`** alongside plain **`human`** (legacy marker-in-text still stripped server-side).
 - **Auto-reply** — `auto_reply_oneshot.txt` / `auto_reply_loop.txt` in user data; only **`0|reply`** lines (instant); see [Configuration](#configuration--paths).
-- **Storage** — `feedback_log.txt`, locale, **attachment auto-purge** (default **30 days**, configurable or off in **Settings → Cache**).
+- **Storage** — `feedback_log.txt` (plain `USER_REPLY` / `CLI_REPLY`; hydration **skips** legacy wait-JSON lines), **`qa_archive/<session_id>.jsonl`** (one JSON line per completed GUI round; hydrate uses it when it has **more** rows than log pairing), locale, **attachment auto-purge** (default **30 days**, configurable or off in **Settings → Cache**).
 - **CLI** — `relay feedback --retell "…"` prints JSON **Answer** on stdout; **exit 1** on GUI failure or **`--timeout`**.
 
 <p align="center">
@@ -153,7 +157,7 @@ There is **no** `relay window`; the IDE never spawns per-request GUI children.
 | Linux   | `~/.config/relay-mcp/`                     |
 | Windows | `%APPDATA%\relay-mcp\`                     |
 
-Notable files: `feedback_log.txt`, `ui_locale.json`, `gui_endpoint.json` (while GUI runs), `relay_gui_alive.marker` (heartbeat), `mcp_pause.json`, `attachment_retention.json`, `auto_reply_*.txt` (optional).
+Notable files: `feedback_log.txt`, `qa_archive/*.jsonl` (per-session Q&A lines, optional), `ui_locale.json`, `gui_endpoint.json` (while GUI runs), `relay_gui_alive.marker` (heartbeat), `mcp_pause.json`, `attachment_retention.json`, `auto_reply_*.txt` (optional).
 
 ---
 
