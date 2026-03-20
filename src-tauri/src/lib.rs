@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{Local, TimeZone, Utc};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -39,12 +40,14 @@ pub use path_persistence::{
 };
 pub use server::{run_feedback_cli, run_feedback_server};
 pub use storage::{
-    clear_relay_attachments_cache, clear_relay_log_cache, log_write, make_temp_path, new_tab_id,
-    prepare_user_data_dir, purge_attachments_older_than_days, read_attachment_retention_days,
-    read_control_status, read_feedback_attachment_data_url, read_text_file,
-    refresh_gui_presence_marker, relay_cache_stats, remove_gui_presence_marker,
+    clear_relay_attachments_cache, clear_relay_log_cache, feedback_log_pairs_for_session,
+    log_write, make_temp_path, new_tab_id, normalize_logged_user_reply, parse_feedback_log_mcp,
+    prepare_user_data_dir, purge_attachment_retention_bundled, purge_attachments_older_than_days,
+    read_attachment_retention_days, read_control_status, read_feedback_attachment_data_url,
+    read_text_file, refresh_gui_presence_marker, relay_cache_stats, remove_gui_presence_marker,
     run_attachment_retention_purge, save_feedback_attachment, write_attachment_retention_days,
-    write_control_status, write_text_file, RelayCacheStats, DEFAULT_ATTACHMENT_RETENTION_DAYS,
+    write_control_status, write_text_file, McpFeedbackLogParse, RelayCacheStats,
+    DEFAULT_ATTACHMENT_RETENTION_DAYS,
 };
 
 /// Cursor/IDE command item for slash-completion in Relay input; bound to relay_mcp_session_id.
@@ -80,6 +83,16 @@ pub fn merge_command_items(
         None
     } else {
         Some(out)
+    }
+}
+
+/// `relay_mcp_session_id` from tool/HTTP JSON: accept string or number (some hosts send ms timestamp unquoted).
+pub fn session_id_from_tool_arg(v: Option<&JsonValue>) -> String {
+    match v {
+        None | Some(JsonValue::Null) => String::new(),
+        Some(JsonValue::String(s)) => s.trim().to_string(),
+        Some(JsonValue::Number(n)) => n.to_string(),
+        _ => String::new(),
     }
 }
 
@@ -124,7 +137,7 @@ pub struct LaunchState {
     pub retell: String,
     /// Correlates with HTTP wait channel; empty for hub preview.
     pub request_id: String,
-    /// Tab strip label: MM-DD HH:mm from [`format_session_id_as_title`] on `relay_mcp_session_id`.
+    /// Tab strip label: MM-DD HH:mm:ss from [`format_session_id_as_title`] on `relay_mcp_session_id`.
     pub title: String,
     pub tab_id: String,
     /// Merge key; generated as ms timestamp for new tabs, reused when merging.
@@ -140,9 +153,17 @@ pub struct LaunchState {
 
 pub const QA_ROUNDS_CAP: usize = 250;
 
+/// Image/file paths returned to the MCP host alongside plain `human` (no `<<<RELAY_FEEDBACK_JSON>>>`).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QaAttachmentRef {
+    pub kind: String,
+    pub path: String,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QaRound {
     pub retell: String,
+    /// Plain user text only (attachments live in [`Self::reply_attachments`]).
     pub reply: String,
     #[serde(default)]
     pub skipped: bool,
@@ -151,6 +172,8 @@ pub struct QaRound {
     pub tab_id: String,
     #[serde(default)]
     pub relay_mcp_session_id: String,
+    #[serde(default)]
+    pub reply_attachments: Vec<QaAttachmentRef>,
 }
 
 #[derive(Clone, Serialize)]
@@ -167,7 +190,7 @@ pub fn relay_mcp_session_id_now() -> String {
     Utc::now().timestamp_millis().to_string()
 }
 
-/// Format relay_mcp_session_id (ms timestamp) as tab title MM-DD HH:mm in local timezone.
+/// Format relay_mcp_session_id (ms timestamp) as tab title MM-DD HH:mm:ss in local timezone.
 pub fn format_session_id_as_title(session_id: &str) -> String {
     let Ok(ms) = session_id.trim().parse::<i64>() else {
         return "Chat".to_string();
@@ -179,7 +202,7 @@ pub fn format_session_id_as_title(session_id: &str) -> String {
     };
     dt_utc
         .with_timezone(&Local)
-        .format("%m-%d %H:%M")
+        .format("%m-%d %H:%M:%S")
         .to_string()
 }
 
@@ -187,6 +210,108 @@ pub fn trim_qa_rounds(g: &mut FeedbackTabsState) {
     while g.qa_rounds.len() > QA_ROUNDS_CAP {
         g.qa_rounds.remove(0);
     }
+}
+
+/// Hub had only a preview tab and it was stripped; before attaching a new MCP round, reset stale
+/// `qa_rounds` without discarding history for an IDE session the user is reconnecting.
+pub fn reconcile_qa_rounds_when_tabs_empty_after_preview_strip(
+    g: &mut FeedbackTabsState,
+    relay_mcp_session_id: &str,
+) {
+    if !g.tabs.is_empty() {
+        return;
+    }
+    if relay_mcp_session_id.trim().is_empty() {
+        g.qa_rounds.clear();
+    } else {
+        let sid = relay_mcp_session_id.trim();
+        g.qa_rounds.retain(|r| r.relay_mcp_session_id.trim() == sid);
+    }
+}
+
+/// Merge `qa_rounds` for each tab when the **persisted** source has more completed MCP rounds
+/// than in-memory submitted count. Source = `feedback_log.txt` FIFO pairs **or** `qa_archive`
+/// lines, whichever has **more rows** for that `relay_mcp_session_id` (see `storage.rs`).
+///
+/// Open rounds from memory are re-appended only if the same `retell` does not already appear in
+/// the chosen source (avoids duplicating after the file caught up). Same `retell` twice in
+/// distinct rounds can drop the later in-flight round (rare).
+/// Returns `true` if any session's `qa_rounds` were updated (for UI refresh).
+pub fn hydrate_qa_rounds_from_feedback_log(g: &mut FeedbackTabsState) -> Result<bool> {
+    let tabs: Vec<LaunchState> = g
+        .tabs
+        .iter()
+        .filter(|t| !t.is_preview && !t.relay_mcp_session_id.trim().is_empty())
+        .cloned()
+        .collect();
+    if tabs.is_empty() {
+        return Ok(false);
+    }
+
+    let dir = prepare_user_data_dir()?;
+    let parse = crate::storage::parse_feedback_log_mcp(&dir)?;
+
+    let mut any_changed = false;
+    for tab in tabs {
+        let sid = tab.relay_mcp_session_id.trim();
+        let from_log_pairs = crate::storage::feedback_log_pairs_for_session(&parse, sid);
+        let from_arch = crate::storage::qa_archive_load_session(&dir, sid);
+        let source: Vec<(String, String, bool, Vec<QaAttachmentRef>)> =
+            if from_arch.len() > from_log_pairs.len() {
+                from_arch
+            } else {
+                from_log_pairs
+                    .into_iter()
+                    .map(|(r, p)| (r, p, false, vec![]))
+                    .collect()
+            };
+
+        let mem: Vec<QaRound> = g
+            .qa_rounds
+            .iter()
+            .filter(|r| r.relay_mcp_session_id.trim() == sid)
+            .cloned()
+            .collect();
+
+        let completed_mem = mem.iter().filter(|r| r.submitted).count();
+        if source.is_empty() && mem.is_empty() {
+            continue;
+        }
+        // Re-merge when the persisted source has more completed rounds than submitted in memory.
+        if source.len() <= completed_mem && !mem.is_empty() {
+            continue;
+        }
+
+        any_changed = true;
+        g.qa_rounds.retain(|r| r.relay_mcp_session_id.trim() != sid);
+
+        for (retell, reply, skipped_flag, att) in &source {
+            g.qa_rounds.push(QaRound {
+                retell: retell.clone(),
+                reply: reply.clone(),
+                skipped: *skipped_flag,
+                submitted: true,
+                tab_id: tab.tab_id.clone(),
+                relay_mcp_session_id: sid.to_string(),
+                reply_attachments: att.clone(),
+            });
+        }
+
+        for r in mem.iter() {
+            if !r.submitted {
+                let already_in_source = source.iter().any(|(t, _, _, _)| t == &r.retell);
+                if already_in_source {
+                    continue;
+                }
+                g.qa_rounds.push(QaRound {
+                    tab_id: tab.tab_id.clone(),
+                    ..r.clone()
+                });
+            }
+        }
+    }
+    trim_qa_rounds(g);
+    Ok(any_changed)
 }
 
 pub fn push_qa_round(
@@ -206,6 +331,7 @@ pub fn push_qa_round(
         submitted: false,
         tab_id: tab_id.to_string(),
         relay_mcp_session_id: relay_mcp_session_id.to_string(),
+        reply_attachments: vec![],
     });
     trim_qa_rounds(g);
 }
@@ -215,19 +341,52 @@ pub fn skip_open_round_for_tab(g: &mut FeedbackTabsState, tab_id: &str) {
         if r.tab_id == tab_id && !r.submitted {
             r.skipped = true;
             r.submitted = true;
+            let sid = r.relay_mcp_session_id.trim();
+            if !sid.is_empty() {
+                if let Ok(dir) = prepare_user_data_dir() {
+                    if let Err(e) =
+                        crate::storage::qa_archive_append(&dir, sid, &r.retell, "", true, &[])
+                    {
+                        #[cfg(debug_assertions)]
+                        eprintln!("relay: qa_archive_append: {e:#}");
+                    }
+                }
+            }
             return;
         }
     }
 }
 
-pub fn apply_reply_for_tab(g: &mut FeedbackTabsState, tab_id: &str, reply: &str, skipped: bool) {
+pub fn apply_reply_for_tab(
+    g: &mut FeedbackTabsState,
+    tab_id: &str,
+    reply: &str,
+    attachments: &[QaAttachmentRef],
+    skipped: bool,
+) {
     for r in g.qa_rounds.iter_mut().rev() {
         if r.tab_id == tab_id && !r.submitted {
             r.submitted = true;
             if skipped {
                 r.skipped = true;
+                r.reply.clear();
+                r.reply_attachments.clear();
             } else {
                 r.reply = reply.to_string();
+                r.reply_attachments = attachments.to_vec();
+            }
+            let sid = r.relay_mcp_session_id.trim();
+            if !sid.is_empty() {
+                if let Ok(dir) = prepare_user_data_dir() {
+                    let rep = if skipped { "" } else { reply };
+                    let att = if skipped { &[][..] } else { attachments };
+                    if let Err(e) =
+                        crate::storage::qa_archive_append(&dir, sid, &r.retell, rep, skipped, att)
+                    {
+                        #[cfg(debug_assertions)]
+                        eprintln!("relay: qa_archive_append: {e:#}");
+                    }
+                }
             }
             return;
         }
@@ -241,11 +400,25 @@ pub fn cmd_skill_count(tab: &LaunchState) -> usize {
 }
 
 /// JSON string returned to MCP / `GET .../wait` (stable shape for agents).
-pub fn feedback_tool_result_string(tab: &LaunchState, human: &str) -> String {
+/// When `attachments` is non-empty, an `attachments` array is included (no `<<<RELAY_FEEDBACK_JSON>>>`).
+pub fn feedback_tool_result_string(
+    tab: &LaunchState,
+    human: &str,
+    attachments: &[QaAttachmentRef],
+) -> String {
+    if attachments.is_empty() {
+        return serde_json::json!({
+            "relay_mcp_session_id": tab.relay_mcp_session_id,
+            "human": human,
+            "cmd_skill_count": cmd_skill_count(tab),
+        })
+        .to_string();
+    }
     serde_json::json!({
         "relay_mcp_session_id": tab.relay_mcp_session_id,
         "human": human,
         "cmd_skill_count": cmd_skill_count(tab),
+        "attachments": attachments,
     })
     .to_string()
 }
@@ -382,8 +555,111 @@ mod merge_command_items_tests {
 }
 
 #[cfg(test)]
+mod session_id_from_arg_tests {
+    use super::session_id_from_tool_arg;
+    use serde_json::json;
+
+    #[test]
+    fn string_trimmed() {
+        assert_eq!(session_id_from_tool_arg(Some(&json!(" 177 \n"))), "177");
+    }
+
+    #[test]
+    fn number_to_string() {
+        assert_eq!(
+            session_id_from_tool_arg(Some(&json!(1773986572770_i64))),
+            "1773986572770"
+        );
+    }
+
+    #[test]
+    fn null_and_missing_empty() {
+        assert_eq!(session_id_from_tool_arg(None), "");
+        assert_eq!(session_id_from_tool_arg(Some(&json!(null))), "");
+    }
+}
+
+#[cfg(test)]
+mod reconcile_qa_rounds_tests {
+    use super::{
+        reconcile_qa_rounds_when_tabs_empty_after_preview_strip, FeedbackTabsState, LaunchState,
+        QaRound,
+    };
+
+    fn state_with_rounds(sid: &str) -> FeedbackTabsState {
+        FeedbackTabsState {
+            tabs: vec![],
+            active_tab_id: "".into(),
+            qa_rounds: vec![QaRound {
+                retell: "a".into(),
+                reply: "b".into(),
+                skipped: false,
+                submitted: true,
+                tab_id: "old".into(),
+                relay_mcp_session_id: sid.into(),
+                reply_attachments: vec![],
+            }],
+            persist_hub: false,
+        }
+    }
+
+    #[test]
+    fn empty_tabs_new_session_clears_rounds() {
+        let mut g = state_with_rounds("1");
+        reconcile_qa_rounds_when_tabs_empty_after_preview_strip(&mut g, "");
+        assert!(g.qa_rounds.is_empty());
+    }
+
+    #[test]
+    fn empty_tabs_reconnect_keeps_matching_session_rounds() {
+        let mut g = state_with_rounds("42");
+        reconcile_qa_rounds_when_tabs_empty_after_preview_strip(&mut g, "42");
+        assert_eq!(g.qa_rounds.len(), 1);
+        assert_eq!(g.qa_rounds[0].reply.as_str(), "b");
+    }
+
+    #[test]
+    fn empty_tabs_reconnect_drops_other_sessions() {
+        let mut g = state_with_rounds("1");
+        reconcile_qa_rounds_when_tabs_empty_after_preview_strip(&mut g, "2");
+        assert!(g.qa_rounds.is_empty());
+    }
+
+    #[test]
+    fn non_empty_tabs_noop() {
+        let mut g = FeedbackTabsState {
+            tabs: vec![LaunchState {
+                retell: "".into(),
+                request_id: "".into(),
+                title: "".into(),
+                tab_id: "t".into(),
+                relay_mcp_session_id: "".into(),
+                is_preview: false,
+                commands: None,
+                skills: None,
+            }],
+            active_tab_id: "t".into(),
+            qa_rounds: vec![QaRound {
+                retell: "x".into(),
+                reply: "y".into(),
+                skipped: false,
+                submitted: false,
+                tab_id: "t".into(),
+                relay_mcp_session_id: "".into(),
+                reply_attachments: vec![],
+            }],
+            persist_hub: false,
+        };
+        reconcile_qa_rounds_when_tabs_empty_after_preview_strip(&mut g, "");
+        assert_eq!(g.qa_rounds.len(), 1);
+    }
+}
+
+#[cfg(test)]
 mod feedback_tool_result_tests {
-    use super::{cmd_skill_count, feedback_tool_result_string, CommandItem, LaunchState};
+    use super::{
+        cmd_skill_count, feedback_tool_result_string, CommandItem, LaunchState, QaAttachmentRef,
+    };
     use serde_json::Value;
 
     fn sample_tab() -> LaunchState {
@@ -418,10 +694,26 @@ mod feedback_tool_result_tests {
     #[test]
     fn feedback_tool_result_json_shape() {
         let t = sample_tab();
-        let s = feedback_tool_result_string(&t, "hello");
+        let s = feedback_tool_result_string(&t, "hello", &[]);
         let v: Value = serde_json::from_str(&s).expect("json");
         assert_eq!(v["relay_mcp_session_id"], "1700000000000");
         assert_eq!(v["human"], "hello");
         assert_eq!(v["cmd_skill_count"], 2);
+        assert!(v.get("attachments").is_none());
+    }
+
+    #[test]
+    fn feedback_tool_includes_attachments_array() {
+        let t = sample_tab();
+        let att = vec![QaAttachmentRef {
+            kind: "image".into(),
+            path: "/tmp/x.png".into(),
+        }];
+        let s = feedback_tool_result_string(&t, "hi", &att);
+        let v: Value = serde_json::from_str(&s).expect("json");
+        assert_eq!(v["human"], "hi");
+        let a = v["attachments"].as_array().expect("arr");
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0]["kind"], "image");
     }
 }
