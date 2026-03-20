@@ -149,6 +149,10 @@ export default {
   dockBtnCenter: "●",
   dockBtnRight: "▶",
 
+  releaseBadgeAria: "在 GitHub 打开 Relay 仓库",
+  releaseBadgeUpdate: "v{latest} 新版本",
+  releaseBadgeCurrent: "v{current}",
+
   mainSessionBadge: "Chat",
   appTitle: "Relay MCP",
   brand: "Relay",
@@ -168,10 +172,10 @@ export default {
 
   setupInstallChangesNote:
     "上述安装/卸载会动到：用户 PATH、两 IDE 的 MCP 配置、以及 Relay 数据目录（日志、附件、本机 HTTP）。",
-  statusIdle: "等待下一轮助手请求",
+  statusIdle: "等待下一轮AI请求",
   statusTimedOut: "已超时",
   statusCancelled: "已取消",
-  hint: "上：`retell` = 本轮助手回复；下：**Answer · 你的回复**。",
+  hint: "上：`retell` = 本轮AI回复；下：**Answer · 你的回复**。",
   mainHintPreview:
     "有待回复的标签时在此输入。Enter 发送 · ⌘/Ctrl+Enter 发送并关闭该标签。",
   mainSummaryReadonly: "只读 · 左：AI（retell）· 右：我（Answer）",
@@ -181,11 +185,11 @@ export default {
   tabStripHub: "Hub",
   qaHistoryTitle: "对话",
   qaRetell: "本轮回复",
-  qaRetellHint: "助手本轮对用户可见内容（MCP：`retell`）",
+  qaRetellHint: "本轮AI对用户可见内容（MCP：`retell`）",
   qaAssistantTurn: "AI",
   qaUserTurnMe: "我",
   qaUserFeedback: "Answer（你的回复）",
-  qaNoRetellYet: "本轮尚无助手消息。",
+  qaNoRetellYet: "本轮尚无AI消息。",
   composerMessage: "Answer",
   composerAnswerSub: "你的回复",
   composerAriaRegion: "你的回复输入区",
@@ -208,7 +212,7 @@ export default {
   composerSubmitIconAria: "提交回复",
   composerSubmitting: "正在提交…",
   composerSubmitDisabledPreview: "有 MCP 请求后可点此提交（或按 Enter）。",
-  composerSubmitDisabledIdle: "等待助手请求到达后可提交。",
+  composerSubmitDisabledIdle: "等待AI请求到达后可提交。",
   composerSendShort: "提交",
   composerSendCloseShort: "提交并关标签",
   qaPendingCurrent: "在下方输入后按 Enter 或点右下角发送按钮。",
