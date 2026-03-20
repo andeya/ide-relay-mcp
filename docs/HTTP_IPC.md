@@ -15,7 +15,7 @@ sequenceDiagram
     Http->>UI: emit relay_tabs_changed
     Mcp->>Http: GET /v1/feedback/wait/:id
     UI->>Http: submit_tab_feedback
-    Http-->>Mcp: JSON { relay_mcp_session_id, human, cmd_skill_count }
+    Http-->>Mcp: JSON { relay_mcp_session_id, human, cmd_skill_count [, attachments] }
     Mcp-->>IDE: tool result
 ```
 
@@ -39,8 +39,9 @@ sequenceDiagram
 
 ### `POST /v1/feedback`
 
-- Body JSON: `retell` (required, non-empty after trim), `relay_mcp_session_id` (optional; empty = new session), `commands` / `skills` (JSON arrays of `{name, id, category?, description?}`). **New session:** both properties must be present; each array should list everything the IDE can expose for slash-completion — **`[]` only when the host truly has no items** (wire format still accepts empty arrays). **Existing session:** both optional; if present, **merged** with **dedupe by `id`** (existing wins). If the last tool result had `cmd_skill_count === 0`, the client should send both arrays again repopulated the same way.
-- Behavior: non-empty `relay_mcp_session_id` merges into the tab with that id and cancels the previous in-flight wait; otherwise opens a new tab and assigns a new session id (ms timestamp). Tab label = **MM-DD HH:mm** from that id.
+- Body JSON: `retell` (required, non-empty after trim), `relay_mcp_session_id` (optional; **string or JSON number**, empty/absent/null = new session), `commands` / `skills` (JSON arrays of `{name, id, category?, description?}`). **New session:** both properties must be present; each array should list everything the IDE can expose for slash-completion — **`[]` only when the host truly has no items** (wire format still accepts empty arrays). **Existing session:** both optional; if present, **merged** with **dedupe by `id`** (existing wins). If the last tool result had `cmd_skill_count === 0`, the client should send both arrays again repopulated the same way.
+- Behavior: non-empty `relay_mcp_session_id` merges into the tab with that id and cancels the previous in-flight wait; otherwise opens a new tab and assigns a new session id (ms timestamp). Tab label = **MM-DD HH:mm:ss** from that id.
+- When the GUI had only a **preview** tab and it is stripped before handling the POST: if there are **no real tabs left**, the server clears **`qa_rounds`** only for a **new** session (empty `relay_mcp_session_id`). If the IDE passes an **existing** session id (e.g. user closed the tab and MCP calls again), **only rounds for that session id are kept** so bubble history is not wiped before re-open.
 - Response: `{ "request_id": "<uuid>" }`
 - Empty `retell` → **400**. See [RELAY_MCP_SESSION_ID.md](RELAY_MCP_SESSION_ID.md).
 
@@ -49,7 +50,7 @@ sequenceDiagram
 - **HTTP handler**: the Axum route **does not** apply a per-request socket timeout; it awaits a `oneshot` until the tab completes (submit, dismiss, supersede, or sender dropped).
 - **60-minute idle cut-off**: when `POST /v1/feedback` returns a `request_id`, the server schedules a background task (≈ **60 min + 20 s**) that injects an **empty** `human` JSON result if the wait is still pending — same outcome as dismiss/timeout from the MCP user’s perspective (`human: ""`).
 - Completes when the user submits an Answer, dismisses, that orphan task fires, or the tab is **superseded** by another `POST` for the same merged session (cancels the previous wait).
-- Response: `Content-Type: application/json; charset=utf-8`, body = `{"relay_mcp_session_id":"<ms>","human":"<Answer text>","cmd_skill_count":<n>}` (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss / idle timeout / supersede).
+- Response: `Content-Type: application/json; charset=utf-8`, body = `{"relay_mcp_session_id":"<ms>","human":"<Answer text>","cmd_skill_count":<n>}` and, when the user attached images/files, **`"attachments":[{"kind":"image"|"file","path":"..."}, ...]`** (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss / idle timeout / supersede).
 
 ## MCP flow
 
@@ -72,6 +73,9 @@ sequenceDiagram
 ## Frontend
 
 - `listen("relay_tabs_changed")` → `get_feedback_tabs`; no inbox polling.
+- **`get_feedback_tabs` (Tauri)**: before returning state, the GUI runs `hydrate_qa_rounds_from_feedback_log`: it reads `feedback_log.txt` and, for each non-preview tab with a non-empty `relay_mcp_session_id`, merges completed MCP rounds from the log when the log has **more** completed pairs than in-memory `qa_rounds` for that session (e.g. after a GUI restart while the IDE keeps the same session id). Only `AI_REQUEST` lines that include `[session:<id>]` are attributed; see `parse_feedback_log_mcp` in `storage.rs`. Open in-memory rounds are not duplicated if the same `retell` already appears in the merged log slice. If hydration **changes** `qa_rounds`, the app emits **`relay_tabs_changed`** so the Vue layer reloads tabs and the history strip updates without a manual refresh.
+- **`feedback_log.txt`**: the MCP process writes **`USER_REPLY`** as the user’s **plain Answer** (`normalize_logged_user_reply` on ingest—handles accidental full JSON bodies). **Hydration** builds `(retell, reply)` pairs from the log but **drops** lines that still look like a `feedback/wait` tool-result blob (legacy), so those rounds do not reappear in the UI. The CLI still prints the **full JSON** to stdout.
+- **`qa_archive/<session_id>.jsonl`**: each time the GUI completes a round (`apply_reply_for_tab` / `skip_open_round_for_tab`), one JSON line is appended (`retell`, `reply`, `skipped`, `attachments`). On **`get_feedback_tabs` → hydrate**, if the archive has **more** completed rows than log-derived pairs for that session, the archive wins so history survives weak log pairing / skipped blob lines. **Settings → Storage**: “clear log” / “clear all” **truncates `feedback_log.txt` and deletes `*.jsonl` files under `qa_archive/`** (other filenames are left untouched); usage size for the log card sums **`feedback_log.txt` + `qa_archive` `.jsonl` bytes only**. **Attachment retention** (days) also **deletes old `qa_archive/*.jsonl` by mtime**; `feedback_log.txt` is **not** auto-pruned by age (single append-only file—manual clear or a future rotation policy).
 
 ## Removed (legacy)
 
