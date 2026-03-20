@@ -25,6 +25,7 @@
     "tauri": "tauri",
     "icons:build": "npm run tauri -- icon src-tauri/icons/source/relay-icon.svg",
     "version:bump": "node scripts/bump-version.mjs",
+    "version:check": "node scripts/check-version-sync.mjs",
     "version:patch": "node scripts/bump-version.mjs patch",
     "version:minor": "node scripts/bump-version.mjs minor",
     "version:major": "node scripts/bump-version.mjs major"
