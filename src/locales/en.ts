@@ -160,8 +160,8 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   appTitle: "Relay MCP",
   brand: "Relay",
   subtitle: "Human feedback layer for AI IDEs",
-  statusAwaiting: "Your turn",
-  statusHubWaiting: "Waiting for IDE connection",
+  statusAwaiting: "ME turn",
+  statusHubWaiting: "Hub · no IDE",
   ideBlockingHint:
     "The IDE is waiting for your Answer. After you submit, the agent continues in the same turn.",
   mcpPauseTitle: "Pause Relay MCP",
@@ -175,7 +175,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
 
   setupInstallChangesNote:
     "Install/uninstall touches: user PATH, both IDEs’ MCP config, and Relay app data (logs, attachments, local HTTP).",
-  statusIdle: "Waiting for next AI turn",
+  statusIdle: "AI turn",
   statusTimedOut: "Timed out",
   statusCancelled: "Cancelled",
   hint: "Top: **Retell** (`retell`) = this turn's AI reply. Bottom: **Answer**.",
