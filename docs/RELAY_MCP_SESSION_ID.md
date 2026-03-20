@@ -1,4 +1,4 @@
-# `relay_mcp_session_id` and tab title **MM-DD HH:mm**
+# `relay_mcp_session_id` and tab title **MM-DD HH:mm:ss**
 
 ## Merge key: `relay_mcp_session_id`
 
@@ -6,9 +6,9 @@
 - **You must remember** the returned `relay_mcp_session_id` and **reply to the `human` content**.
 - **Next calls:** You **must** pass that `relay_mcp_session_id` so the request merges into the same Relay tab.
 
-## Tab title: **MM-DD HH:mm**
+## Tab title: **MM-DD HH:mm:ss**
 
-- Relay formats the session id (ms timestamp) as **MM-DD HH:mm** and uses it as the **tab strip label**.
+- Relay formats the session id (ms timestamp) as **MM-DD HH:mm:ss** (local time) and uses it as the **tab strip label**.
 - The **main window title** is fixed as **"Relay"** (does not change with the active tab).
 
 ## `commands` and `skills`
