@@ -247,6 +247,8 @@ impl RelayGuiRuntime {
             Err(e) => {
                 #[cfg(debug_assertions)]
                 eprintln!("relay: hydrate_qa_rounds_from_feedback_log: {e}");
+                #[cfg(not(debug_assertions))]
+                let _ = e;
             }
             Ok(false) => {}
         }
