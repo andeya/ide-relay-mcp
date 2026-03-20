@@ -278,6 +278,21 @@ fn open_relay_data_folder() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn check_github_latest_release() -> relay_mcp::release_check::ReleaseCheckPayload {
+    relay_mcp::release_check::check_latest_release(env!("CARGO_PKG_VERSION"))
+}
+
+#[tauri::command]
+fn open_relay_github_repo(releases_latest: Option<bool>) -> Result<(), String> {
+    let url = if releases_latest == Some(true) {
+        relay_mcp::release_check::RELAY_REPO_RELEASES_LATEST
+    } else {
+        relay_mcp::release_check::RELAY_REPO_HOME
+    };
+    opener::open(url).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_relay_cache_stats() -> Result<relay_mcp::RelayCacheStats, String> {
     relay_mcp::relay_cache_stats().map_err(|e| e.to_string())
 }
@@ -495,6 +510,8 @@ fn run_tauri(initial: LaunchState) {
             relay_full_install,
             relay_full_uninstall,
             open_relay_data_folder,
+            check_github_latest_release,
+            open_relay_github_repo,
             get_relay_cache_stats,
             clear_relay_cache_attachments,
             clear_relay_cache_logs,
