@@ -152,6 +152,10 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   dockBtnCenter: "●",
   dockBtnRight: "▶",
 
+  releaseBadgeAria: "Open Relay repository on GitHub",
+  releaseBadgeUpdate: "v{latest} · New",
+  releaseBadgeCurrent: "v{current}",
+
   mainSessionBadge: "Chat",
   appTitle: "Relay MCP",
   brand: "Relay",
@@ -171,10 +175,10 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
 
   setupInstallChangesNote:
     "Install/uninstall touches: user PATH, both IDEs’ MCP config, and Relay app data (logs, attachments, local HTTP).",
-  statusIdle: "Waiting for next assistant turn",
+  statusIdle: "Waiting for next AI turn",
   statusTimedOut: "Timed out",
   statusCancelled: "Cancelled",
-  hint: "Top: **Retell** (`retell`) = this turn's assistant reply. Bottom: **Answer**.",
+  hint: "Top: **Retell** (`retell`) = this turn's AI reply. Bottom: **Answer**.",
   mainHintPreview:
     "When a tab is waiting for your reply, type here. Enter to send · ⌘/Ctrl+Enter to send and close the tab.",
   mainSummaryReadonly:
@@ -185,12 +189,12 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   tabStripHub: "Hub",
   qaHistoryTitle: "Thread",
   qaRetell: "Retell",
-  qaRetellHint: "This turn's assistant reply (MCP: retell)",
+  qaRetellHint: "This turn's AI reply (MCP: retell)",
   qaAssistantTurn: "AI",
   /** Thread bubble label for the user side (composer still says “Answer”). */
   qaUserTurnMe: "ME",
   qaUserFeedback: "Answer",
-  qaNoRetellYet: "No assistant message for this turn yet.",
+  qaNoRetellYet: "No AI message for this turn yet.",
   composerMessage: "Answer",
   composerAnswerSub: "Your reply",
   /** a11y: composer region after removing visible “Answer” heading */
@@ -218,7 +222,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   composerSubmitDisabledPreview:
     "Open when an MCP request is active — then tap to submit (Enter).",
   composerSubmitDisabledIdle:
-    "Submit is available once an assistant request is active.",
+    "Submit is available once an AI request is active.",
   composerSendShort: "Submit",
   composerSendCloseShort: "Submit & close tab",
   qaPendingCurrent: "Type below, then Enter or the send button.",
