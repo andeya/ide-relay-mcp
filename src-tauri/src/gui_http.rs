@@ -2,9 +2,10 @@
 
 use crate::{
     apply_reply_for_tab, feedback_tool_result_string, finish_tab_remove_empty_close,
-    format_session_id_as_title, mcp_http, merge_command_items, new_tab_id, push_qa_round,
-    relay_mcp_session_id_now, skip_open_round_for_tab, CommandItem, ControlStatus,
-    FeedbackTabsState, LaunchState,
+    format_session_id_as_title, hydrate_qa_rounds_from_feedback_log, mcp_http, merge_command_items,
+    new_tab_id, push_qa_round, reconcile_qa_rounds_when_tabs_empty_after_preview_strip,
+    relay_mcp_session_id_now, session_id_from_tool_arg, skip_open_round_for_tab, CommandItem,
+    ControlStatus, FeedbackTabsState, LaunchState, QaAttachmentRef,
 };
 use axum::{
     extract::{Path, State},
@@ -15,6 +16,7 @@ use axum::{
 };
 use rand::Rng;
 use serde::Deserialize;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::{Arc, Mutex};
@@ -93,7 +95,7 @@ fn cancel_wait(inner: &RelayGuiInner, rid: &str) {
         g.tabs
             .iter()
             .find(|t| t.request_id == rid)
-            .map(|t| feedback_tool_result_string(t, ""))
+            .map(|t| feedback_tool_result_string(t, "", &[]))
             .unwrap_or_else(empty_tool_result_fallback)
     };
     let mut wtx = lock_wait_tx(inner);
@@ -233,6 +235,23 @@ impl RelayGuiRuntime {
         }
     }
 
+    /// Fills `qa_rounds` from `feedback_log.txt` and/or `qa_archive` when the persisted source has
+    /// more completed rounds than in-memory submitted count (see `hydrate_qa_rounds_from_feedback_log`).
+    pub fn hydrate_qa_from_log(&self) {
+        let mut g = match self.0.tabs.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        match hydrate_qa_rounds_from_feedback_log(&mut g) {
+            Ok(true) => emit_tabs(&self.0.app),
+            Err(e) => {
+                #[cfg(debug_assertions)]
+                eprintln!("relay: hydrate_qa_rounds_from_feedback_log: {e}");
+            }
+            Ok(false) => {}
+        }
+    }
+
     pub fn set_active_tab(&self, tab_id: &str) -> Result<(), String> {
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
         if g.tabs.iter().any(|t| t.tab_id == tab_id) {
@@ -282,7 +301,8 @@ impl RelayGuiRuntime {
     pub fn submit_tab_feedback(
         &self,
         tab_id: &str,
-        feedback: String,
+        human: String,
+        attachments: Vec<QaAttachmentRef>,
         app: &tauri::AppHandle,
     ) -> Result<(), String> {
         let t = {
@@ -300,9 +320,10 @@ impl RelayGuiRuntime {
         if rid.is_empty() {
             return Err("no pending request".into());
         }
-        let result_string = feedback_tool_result_string(&t, &feedback);
+        let human_plain = strip_legacy_relay_marker_tail(&human);
+        let result_string = feedback_tool_result_string(&t, &human_plain, &attachments);
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
-        apply_reply_for_tab(&mut g, tab_id, &feedback, false);
+        apply_reply_for_tab(&mut g, tab_id, &human_plain, &attachments, false);
         drop(g);
         self.complete_request(&rid, result_string);
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
@@ -324,11 +345,11 @@ impl RelayGuiRuntime {
             return Ok(());
         };
         if !t.request_id.is_empty() {
-            let empty_result = feedback_tool_result_string(&t, "");
+            let empty_result = feedback_tool_result_string(&t, "", &[]);
             self.complete_request(&t.request_id, empty_result);
         }
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
-        apply_reply_for_tab(&mut g, tab_id, "", true);
+        apply_reply_for_tab(&mut g, tab_id, "", &[], true);
         finish_tab_remove_empty_close(&mut g, tab_id, app);
         emit_tabs(app);
         Ok(())
@@ -349,14 +370,24 @@ impl RelayGuiRuntime {
             return Ok(());
         }
         if !t.request_id.is_empty() {
-            let empty_result = feedback_tool_result_string(&t, "");
+            let empty_result = feedback_tool_result_string(&t, "", &[]);
             self.complete_request(&t.request_id, empty_result);
         }
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
-        apply_reply_for_tab(&mut g, tab_id, "", true);
+        apply_reply_for_tab(&mut g, tab_id, "", &[], true);
         finish_tab_remove_empty_close(&mut g, tab_id, app);
         emit_tabs(app);
         Ok(())
+    }
+}
+
+/// If old clients still send `<<<RELAY_FEEDBACK_JSON>>>` inside `human`, keep only the caption.
+fn strip_legacy_relay_marker_tail(s: &str) -> String {
+    const M: &str = "<<<RELAY_FEEDBACK_JSON>>>";
+    let t = s.trim();
+    match t.find(M) {
+        Some(i) => t[..i].trim_end().to_string(),
+        None => t.to_string(),
     }
 }
 
@@ -375,8 +406,9 @@ async fn health(State(st): State<AxumState>, headers: HeaderMap) -> impl IntoRes
 #[derive(Deserialize)]
 struct PostFeedbackBody {
     retell: String,
+    /// Accept string or number (same as MCP tool args).
     #[serde(default)]
-    relay_mcp_session_id: String,
+    relay_mcp_session_id: JsonValue,
     #[serde(default)]
     commands: Option<Vec<CommandItem>>,
     #[serde(default)]
@@ -400,7 +432,7 @@ async fn post_feedback(
     }
     let inner = st.inner.clone();
     let retell = body.retell;
-    let relay_mcp_session_id = body.relay_mcp_session_id;
+    let relay_mcp_session_id = session_id_from_tool_arg(Some(&body.relay_mcp_session_id));
     let commands = body.commands;
     let skills = body.skills;
 
@@ -408,9 +440,7 @@ async fn post_feedback(
         let rid = uuid::Uuid::new_v4().to_string();
         let mut g = lock_tabs(&inner);
         g.tabs.retain(|t| !t.is_preview);
-        if g.tabs.is_empty() {
-            g.qa_rounds.clear();
-        }
+        reconcile_qa_rounds_when_tabs_empty_after_preview_strip(&mut g, &relay_mcp_session_id);
 
         let merge_idx = if !relay_mcp_session_id.is_empty() {
             g.tabs
@@ -505,14 +535,14 @@ async fn post_feedback(
                 .tabs
                 .iter()
                 .find(|t| t.request_id == rid)
-                .map(|t| feedback_tool_result_string(t, ""))
+                .map(|t| feedback_tool_result_string(t, "", &[]))
                 .unwrap_or_else(empty_tool_result_fallback);
             if let Some(tx) = lock_wait_tx(&inner).remove(&rid) {
                 let _ = tx.send(empty_result);
             }
             if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid).cloned() {
                 if !t.is_preview {
-                    apply_reply_for_tab(&mut g, &t.tab_id, "", true);
+                    apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true);
                     finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner.app);
                 }
             }
@@ -553,7 +583,7 @@ async fn wait_feedback(
                     g.tabs
                         .iter()
                         .find(|t| t.request_id == rid2)
-                        .map(|t| feedback_tool_result_string(t, ""))
+                        .map(|t| feedback_tool_result_string(t, "", &[]))
                         .unwrap_or_else(empty_tool_result_fallback)
                 }
             })
@@ -565,7 +595,7 @@ async fn wait_feedback(
                 let mut g = lock_tabs(&inner_cleanup);
                 if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid_cleanup).cloned() {
                     if !t.is_preview {
-                        apply_reply_for_tab(&mut g, &t.tab_id, "", true);
+                        apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true);
                         finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner_cleanup.app);
                     }
                 }
