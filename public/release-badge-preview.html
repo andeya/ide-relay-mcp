@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Relay · 版本徽标预览</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+        background: #07111f;
+        color: #ecf2ff;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        min-height: 100vh;
+      }
+      h1 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 0 8px;
+        color: #94a3b8;
+      }
+      p.lead {
+        margin: 0 0 20px;
+        font-size: 0.85rem;
+        color: #64748b;
+        max-width: 58ch;
+      }
+      section {
+        margin-bottom: 22px;
+      }
+      section h2 {
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin: 0 0 10px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+      .row code {
+        font-size: 0.72rem;
+        color: #64748b;
+        min-width: 12rem;
+      }
+      .muted {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin: 0;
+      }
+
+      /* —— mirrors src/style.css (.releaseBadge) —— */
+      .releaseBadge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        margin: 0;
+        min-height: 30px;
+        box-sizing: border-box;
+        padding: 0.2rem 0.52rem;
+        border-radius: 999px;
+        font: inherit;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        line-height: 1.25;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(30, 41, 59, 0.72);
+        color: #94a3b8;
+        cursor: default;
+        white-space: nowrap;
+      }
+      .releaseBadge--update {
+        border-color: rgba(251, 191, 36, 0.48);
+        background: rgba(120, 53, 15, 0.28);
+        color: #fcd34d;
+      }
+      .releaseBadgeDot {
+        display: block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.88;
+        flex-shrink: 0;
+      }
+
+      .fakeTopBar {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px 18px;
+        max-width: 720px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        background: rgba(15, 23, 42, 0.45);
+      }
+      .fakeTopBarMid {
+        display: flex;
+        justify-content: flex-end;
+        min-width: 0;
+      }
+      .fakeTopBarRight {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-inline-start: 4px;
+        border-left: 1px solid rgba(148, 163, 184, 0.12);
+      }
+      .fakeDock {
+        display: inline-flex;
+        height: 30px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        background: rgba(15, 23, 42, 0.5);
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #b0c0d4;
+        padding: 0 0.4rem;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Relay · 版本徽标（release badge）网页预览</h1>
+    <p class="lead">
+      样式与 <code>src/style.css</code> 中 <code>.releaseBadge</code> 一致；文案与
+      <code>locales/zh.ts</code> / <code>en.ts</code> 的
+      <code>releaseBadgeCurrent</code>、<code>releaseBadgeUpdate</code> 对应。
+    </p>
+
+    <section>
+      <h2>1 · 已是最新（默认灰蓝）</h2>
+      <div class="row">
+        <code>zh · releaseBadgeCurrent</code>
+        <button type="button" class="releaseBadge" aria-hidden="true">
+          <span class="releaseBadgeDot"></span>
+          v1.2.0
+        </button>
+      </div>
+      <div class="row">
+        <code>en · releaseBadgeCurrent</code>
+        <button type="button" class="releaseBadge" aria-hidden="true">
+          <span class="releaseBadgeDot"></span>
+          v1.2.0
+        </button>
+      </div>
+    </section>
+
+    <section>
+      <h2>2 · 有新版本（琥珀强调）</h2>
+      <div class="row">
+        <code>zh · releaseBadgeUpdate</code>
+        <button type="button" class="releaseBadge releaseBadge--update" aria-hidden="true">
+          <span class="releaseBadgeDot"></span>
+          v1.3.0 新版本
+        </button>
+      </div>
+      <div class="row">
+        <code>en · releaseBadgeUpdate</code>
+        <button type="button" class="releaseBadge releaseBadge--update" aria-hidden="true">
+          <span class="releaseBadgeDot"></span>
+          v1.3.0 · New
+        </button>
+      </div>
+    </section>
+
+    <section>
+      <h2>3 · 顶栏上下文（状态区 + 分隔线 + dock）</h2>
+      <p class="muted">与 App 顶栏右段布局相近：中间为占位，右侧为 dock + 徽标。</p>
+      <div class="fakeTopBar">
+        <span style="font-size: 0.74rem; font-weight: 700; letter-spacing: 0.12em; color: #7dd3fc"
+          >RELAY MCP</span
+        >
+        <div class="fakeTopBarMid">
+          <span style="font-size: 0.68rem; color: #99f6e4; opacity: 0.7">Waiting…</span>
+        </div>
+        <div class="fakeTopBarRight">
+          <span class="fakeDock">◀ · ▶</span>
+          <button type="button" class="releaseBadge releaseBadge--update" aria-hidden="true">
+            <span class="releaseBadgeDot"></span>
+            v1.3.0 新版本
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>4 · 加载中 / 无数据</h2>
+      <p class="muted">
+        实际应用中徽标不渲染（<code>showReleaseBadge === false</code>）。此处无视觉组件。
+      </p>
+    </section>
+  </body>
+</html>
