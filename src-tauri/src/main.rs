@@ -56,6 +56,7 @@ enum Commands {
 
 #[tauri::command]
 fn get_feedback_tabs(state: State<'_, RelayGuiRuntime>) -> Result<FeedbackTabsState, String> {
+    state.hydrate_qa_from_log();
     Ok(state.tabs_snapshot())
 }
 
@@ -75,11 +76,12 @@ fn read_tab_status(
 #[tauri::command]
 fn submit_tab_feedback(
     tab_id: String,
-    feedback: String,
+    human: String,
+    attachments: Vec<relay_mcp::QaAttachmentRef>,
     state: State<'_, RelayGuiRuntime>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    state.submit_tab_feedback(&tab_id, feedback, &app)
+    state.submit_tab_feedback(&tab_id, human, attachments, &app)
 }
 
 #[tauri::command]
@@ -307,7 +309,7 @@ fn set_attachment_retention_days(days: Option<u32>) -> Result<u64, String> {
     let d = days.filter(|x| *x > 0 && *x <= 3660);
     relay_mcp::write_attachment_retention_days(d).map_err(|e| e.to_string())?;
     if let Some(n) = d {
-        relay_mcp::purge_attachments_older_than_days(n).map_err(|e| e.to_string())
+        relay_mcp::purge_attachment_retention_bundled(n).map_err(|e| e.to_string())
     } else {
         Ok(0)
     }
@@ -386,6 +388,10 @@ fn validate_feedback_attachment_path(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Read arbitrary local file bytes as base64 (max [`MAX_ATTACH_BYTES`]).
+///
+/// **Trust**: Intended only for paths the user chose in the native file/drag-drop flow. Not a
+/// sandbox escape hatch — callers must not forward untrusted remote paths into this command.
 #[tauri::command]
 fn read_local_file_bytes_b64(path: String) -> Result<String, String> {
     let p = Path::new(path.trim());
@@ -415,6 +421,7 @@ fn run_tauri(initial: LaunchState) {
             submitted: false,
             tab_id: tid,
             relay_mcp_session_id: String::new(),
+            reply_attachments: vec![],
         }]
     };
     let initial_state = FeedbackTabsState {
