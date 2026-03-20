@@ -2,7 +2,7 @@
 
 ## Continuous integration
 
-On push/PR to `main` or `master`, **`.github/workflows/ci.yml`** runs: ESLint, `vue-tsc`, Vite build, `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`.
+On push/PR to `main` or `master`, **`.github/workflows/ci.yml`** runs: `npm run version:check` (sync of `package.json`, `src-tauri/Cargo.toml`, `tauri.conf.json`), ESLint, `vue-tsc`, Vite build, `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`.
 
 ## When it runs (release builds)
 
