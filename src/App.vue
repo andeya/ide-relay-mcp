@@ -78,6 +78,7 @@ const {
   hasPendingFileDropErrors,
   status,
   statusLabel,
+  statusPillUi,
   submit,
   requestCloseTab,
   onDragOver,
@@ -426,7 +427,24 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="mainTopBarMid">
-          <span class="statusPill mainTopBarStatusPill">{{ statusLabel }}</span>
+          <span
+            class="statusPill mainTopBarStatusPill"
+            :class="[
+              { 'mainTopBarStatusPill--waiting': statusPillUi.indeterminate },
+              statusPillUi.hue !== 'default'
+                ? 'mainTopBarStatusPill--hue-' + statusPillUi.hue
+                : '',
+            ]"
+            role="status"
+            :aria-busy="statusPillUi.indeterminate"
+          >
+            <span
+              v-if="statusPillUi.indeterminate"
+              class="statusPillWaitSpinner"
+              aria-hidden="true"
+            />
+            {{ statusLabel }}
+          </span>
         </div>
         <div class="mainTopBarRight">
           <div
@@ -872,34 +890,44 @@ onBeforeUnmount(() => {
                     <button
                       type="button"
                       class="composerIconBtn composerIconBtnSend"
+                      :class="{ 'composerIconBtnSend--busy': submitting }"
                       :title="
-                        hasPendingFileDropErrors
-                          ? strings.composerSubmitBlockedFileError
-                          : isHubPage
-                            ? strings.composerSubmitDisabledPreview
-                            : composerDrafting
-                              ? strings.composerSubmitDisabledIdle
-                              : strings.composerSubmitIconTitle
+                        submitting
+                          ? strings.composerSubmitting
+                          : hasPendingFileDropErrors
+                            ? strings.composerSubmitBlockedFileError
+                            : isHubPage
+                              ? strings.composerSubmitDisabledPreview
+                              : composerDrafting
+                                ? strings.composerSubmitDisabledIdle
+                                : strings.composerSubmitIconTitle
                       "
                       :aria-label="
-                        hasPendingFileDropErrors
-                          ? strings.composerSubmitBlockedFileError
-                          : isHubPage
-                            ? strings.composerSubmitDisabledPreview
-                            : composerDrafting
-                              ? strings.composerSubmitDisabledIdle
-                              : strings.composerSubmitIconAria
+                        submitting
+                          ? strings.composerSubmitting
+                          : hasPendingFileDropErrors
+                            ? strings.composerSubmitBlockedFileError
+                            : isHubPage
+                              ? strings.composerSubmitDisabledPreview
+                              : composerDrafting
+                                ? strings.composerSubmitDisabledIdle
+                                : strings.composerSubmitIconAria
                       "
                       :disabled="
                         isHubPage ||
-                        submitting ||
                         (!isHubPage && composerDrafting) ||
                         hasPendingFileDropErrors
                       "
                       :aria-busy="submitting"
                       @click="submit(false)"
                     >
+                      <span
+                        v-if="submitting"
+                        class="composerSendSpinner"
+                        aria-hidden="true"
+                      />
                       <svg
+                        v-else
                         class="composerIconSvg composerIconSvg--send"
                         viewBox="0 0 24 24"
                         fill="none"
@@ -1054,27 +1082,43 @@ onBeforeUnmount(() => {
                     v-if="!setupAllConfigured"
                     type="button"
                     class="primary setupInstallBtnCompact"
+                    :class="{ btnWithWait: hubInstallBusy }"
                     :disabled="hubInstallBusy || hubUninstallBusy"
+                    :aria-busy="hubInstallBusy"
                     @click="doFullInstall"
                   >
+                    <span
+                      v-if="hubInstallBusy"
+                      class="btnInlineSpinner"
+                      aria-hidden="true"
+                    />
                     {{
-                      hubInstallBusy ? strings.mcpFullBusy : strings.setupBtnInstall
+                      hubInstallBusy
+                        ? strings.mcpBusyInstallingAll
+                        : strings.setupBtnInstall
                     }}
                   </button>
                   <button
                     v-if="setupAnythingInstalled"
                     type="button"
                     class="setupUninstallBtnCompact"
+                    :class="{ btnWithWait: hubUninstallBusy }"
                     :disabled="
                       hubInstallBusy ||
                       hubUninstallBusy ||
                       showUninstallConfirm
                     "
+                    :aria-busy="hubUninstallBusy"
                     @click="onUninstallClick"
                   >
+                    <span
+                      v-if="hubUninstallBusy"
+                      class="btnInlineSpinner"
+                      aria-hidden="true"
+                    />
                     {{
                       hubUninstallBusy
-                        ? strings.mcpFullBusy
+                        ? strings.mcpBusyUninstallingAll
                         : strings.setupBtnUninstall
                     }}
                   </button>
@@ -1285,12 +1329,19 @@ onBeforeUnmount(() => {
                             v-if="!mcpCursorInstalled"
                             type="button"
                             class="secondary setupConfigFrameBtn"
+                            :class="{ btnWithWait: mcpCursorBusy }"
                             :disabled="mcpCursorBusy || mcpWindsurfBusy"
+                            :aria-busy="mcpCursorBusy"
                             @click="installCursorMcpOnly"
                           >
+                            <span
+                              v-if="mcpCursorBusy"
+                              class="btnInlineSpinner"
+                              aria-hidden="true"
+                            />
                             {{
                               mcpCursorBusy
-                                ? strings.mcpCursorBusy
+                                ? strings.mcpBusyCursorMcp
                                 : strings.mcpInstallCursorOnly
                             }}
                           </button>
@@ -1298,12 +1349,19 @@ onBeforeUnmount(() => {
                             v-if="mcpCursorInstalled"
                             type="button"
                             class="secondary setupConfigFrameBtn"
+                            :class="{ btnWithWait: mcpCursorBusy }"
                             :disabled="mcpCursorBusy || mcpWindsurfBusy"
+                            :aria-busy="mcpCursorBusy"
                             @click="uninstallCursorMcpOnly"
                           >
+                            <span
+                              v-if="mcpCursorBusy"
+                              class="btnInlineSpinner"
+                              aria-hidden="true"
+                            />
                             {{
                               mcpCursorBusy
-                                ? strings.mcpCursorBusy
+                                ? strings.mcpBusyCursorMcp
                                 : strings.mcpUninstallCursorOnly
                             }}
                           </button>
@@ -1337,12 +1395,19 @@ onBeforeUnmount(() => {
                             v-if="!mcpWindsurfInstalled"
                             type="button"
                             class="secondary setupConfigFrameBtn"
+                            :class="{ btnWithWait: mcpWindsurfBusy }"
                             :disabled="mcpWindsurfBusy || mcpCursorBusy"
+                            :aria-busy="mcpWindsurfBusy"
                             @click="installWindsurfMcpOnly"
                           >
+                            <span
+                              v-if="mcpWindsurfBusy"
+                              class="btnInlineSpinner"
+                              aria-hidden="true"
+                            />
                             {{
                               mcpWindsurfBusy
-                                ? strings.mcpCursorBusy
+                                ? strings.mcpBusyWindsurfMcp
                                 : strings.mcpInstallWindsurfOnly
                             }}
                           </button>
@@ -1350,12 +1415,19 @@ onBeforeUnmount(() => {
                             v-if="mcpWindsurfInstalled"
                             type="button"
                             class="secondary setupConfigFrameBtn"
+                            :class="{ btnWithWait: mcpWindsurfBusy }"
                             :disabled="mcpWindsurfBusy || mcpCursorBusy"
+                            :aria-busy="mcpWindsurfBusy"
                             @click="uninstallWindsurfMcpOnly"
                           >
+                            <span
+                              v-if="mcpWindsurfBusy"
+                              class="btnInlineSpinner"
+                              aria-hidden="true"
+                            />
                             {{
                               mcpWindsurfBusy
-                                ? strings.mcpCursorBusy
+                                ? strings.mcpBusyWindsurfMcp
                                 : strings.mcpUninstallWindsurfOnly
                             }}
                           </button>
@@ -1397,9 +1469,16 @@ onBeforeUnmount(() => {
                         v-if="!pathEnv.configured"
                         type="button"
                         class="secondary setupConfigFrameBtn"
+                        :class="{ btnWithWait: pathEnvBusy }"
                         :disabled="pathEnvBusy"
+                        :aria-busy="pathEnvBusy"
                         @click="configureRelayPath"
                       >
+                        <span
+                          v-if="pathEnvBusy"
+                          class="btnInlineSpinner"
+                          aria-hidden="true"
+                        />
                         {{ pathEnvBusy ? strings.pathEnvBusy : strings.pathEnvBtn }}
                       </button>
                     </div>
