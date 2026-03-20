@@ -22,26 +22,40 @@
         margin: 0 0 8px;
         color: #94a3b8;
       }
+      h2 {
+        font-size: 0.82rem;
+        font-weight: 600;
+        margin: 22px 0 10px;
+        color: #64748b;
+      }
       p.lead {
-        margin: 0 0 20px;
+        margin: 0 0 12px;
         font-size: 0.85rem;
         color: #64748b;
-        max-width: 52ch;
+        max-width: 62ch;
+        line-height: 1.45;
+      }
+      p.note {
+        margin: 0 0 18px;
+        font-size: 0.75rem;
+        color: #64748b;
+        max-width: 62ch;
+        line-height: 1.45;
       }
       .row {
         display: flex;
         align-items: center;
         gap: 12px;
-        margin-bottom: 14px;
+        margin-bottom: 12px;
         flex-wrap: wrap;
       }
       .row code {
         font-size: 0.72rem;
         color: #64748b;
-        min-width: 9rem;
+        min-width: 10rem;
       }
 
-      /* —— mirrors src/style.css (status pill) —— */
+      /* Mirrors src/style.css: .mainTopBarStatusPill + .mainTopBarStatusPillText */
       .statusPill {
         padding: 0.55rem 0.8rem;
         border-radius: 999px;
@@ -52,17 +66,43 @@
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        min-width: 0;
+        max-width: min(72vw, 560px);
         padding: 0.28rem 0.75rem !important;
         font-size: 0.68rem !important;
         font-weight: 500 !important;
         line-height: 1.35 !important;
         border-radius: 999px;
+        overflow: hidden;
+        vertical-align: middle;
+      }
+      .statusPillWaitRing {
+        display: block;
+        width: 10px;
+        height: 10px;
+        flex-shrink: 0;
+        box-sizing: border-box;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        opacity: 0.8;
+        animation: statusPillWaitRingBreath 2s ease-in-out infinite;
+      }
+      .mainTopBarStatusPillText {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-hub,
       .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-loading {
         border-color: rgba(45, 212, 191, 0.45);
         box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12);
         animation: statusPillWaitPulse 2.2s ease-in-out infinite;
+      }
+      .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-idle,
+      .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-active {
+        animation: mainTopBarStatusPillOpacityBreath 2.2s ease-in-out infinite;
       }
       .mainTopBarStatusPill--hue-hub {
         background: rgba(15, 118, 110, 0.18);
@@ -89,22 +129,6 @@
         color: #fca5a5;
         border-color: rgba(248, 113, 113, 0.42);
       }
-      .statusPillWaitSpinner {
-        display: block;
-        width: 11px;
-        height: 11px;
-        flex-shrink: 0;
-        border: 2px solid currentColor;
-        border-right-color: transparent;
-        border-radius: 50%;
-        opacity: 0.9;
-        animation: relayWaitSpin 0.72s linear infinite;
-      }
-      @keyframes relayWaitSpin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
       @keyframes statusPillWaitPulse {
         0%,
         100% {
@@ -116,16 +140,44 @@
             0 0 12px rgba(45, 212, 191, 0.12);
         }
       }
+      @keyframes mainTopBarStatusPillOpacityBreath {
+        0%,
+        100% {
+          opacity: 0.78;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      @keyframes statusPillWaitRingBreath {
+        0%,
+        100% {
+          opacity: 0.42;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
     </style>
   </head>
   <body>
     <h1>顶栏状态胶囊（示意）</h1>
     <p class="lead">
-      开发时打开本页：<strong>http://127.0.0.1:5173/status-pill-preview.html</strong>（需先
-      <code>npm run dev</code> 或 <code>npm run tauri dev</code>）。与
-      <code>App.vue</code> 中 <code>statusPillUi</code> 的色相一致。
+      开发时打开：<strong>http://127.0.0.1:5173/status-pill-preview.html</strong>（需先
+      <code>npm run dev</code> 或 <code>npm run tauri dev</code>）。结构与
+      <code>App.vue</code> 顶栏一致：<code>hue-hub</code> 仅光晕脉冲、<strong>无</strong>
+      呼吸圈；<code>hue-loading</code> / <code>hue-idle</code> / <code>hue-active</code> 左侧有
+      <code>statusPillWaitRing</code>（opacity 呼吸）且 idle/active 另加整颗胶囊呼吸。
+    </p>
+    <p class="note">
+      说明：<code>status === null</code>（拉取 <code>read_tab_status</code> 前）时
+      <code>statusLabel</code> 仍用 <code>statusAwaiting</code>，故 loading 行文案与
+      active 相同（ME），仅背景色为 loading。正式 UI 里长文案截断宽度由
+      <code>.mainTopBarMid</code>（<code>max-width: min(72vw, 560px)</code>）约束；本
+      预览为单文件，将同等 cap 写在 <code>.mainTopBarStatusPill</code> 上。
     </p>
 
+    <h2>中文（zh.ts）</h2>
     <div class="row">
       <code>hue-hub</code>
       <span
@@ -133,8 +185,7 @@
         role="status"
         aria-busy="true"
       >
-        <span class="statusPillWaitSpinner" aria-hidden="true"></span>
-        待IDE连接
+        <span class="mainTopBarStatusPillText">Hub · 未连IDE</span>
       </span>
     </div>
     <div class="row">
@@ -144,8 +195,8 @@
         role="status"
         aria-busy="true"
       >
-        <span class="statusPillWaitSpinner" aria-hidden="true"></span>
-        （拉取状态中）
+        <span class="statusPillWaitRing" aria-hidden="true"></span>
+        <span class="mainTopBarStatusPillText">ME 回合</span>
       </span>
     </div>
     <div class="row">
@@ -155,8 +206,8 @@
         role="status"
         aria-busy="true"
       >
-        <span class="statusPillWaitSpinner" aria-hidden="true"></span>
-        等待下一轮AI请求
+        <span class="statusPillWaitRing" aria-hidden="true"></span>
+        <span class="mainTopBarStatusPillText">AI 回合</span>
       </span>
     </div>
     <div class="row">
@@ -166,8 +217,8 @@
         role="status"
         aria-busy="true"
       >
-        <span class="statusPillWaitSpinner" aria-hidden="true"></span>
-        轮到你回复
+        <span class="statusPillWaitRing" aria-hidden="true"></span>
+        <span class="mainTopBarStatusPillText">ME 回合</span>
       </span>
     </div>
     <div class="row">
@@ -177,7 +228,82 @@
         role="status"
         aria-busy="false"
       >
-        已超时
+        <span class="mainTopBarStatusPillText">已超时</span>
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-expired · cancelled</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--hue-expired"
+        role="status"
+        aria-busy="false"
+      >
+        <span class="mainTopBarStatusPillText">已取消</span>
+      </span>
+    </div>
+
+    <h2>English（en.ts）</h2>
+    <div class="row">
+      <code>hue-hub</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-hub"
+        role="status"
+        aria-busy="true"
+      >
+        <span class="mainTopBarStatusPillText">Hub · no IDE</span>
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-loading</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-loading"
+        role="status"
+        aria-busy="true"
+      >
+        <span class="statusPillWaitRing" aria-hidden="true"></span>
+        <span class="mainTopBarStatusPillText">ME turn</span>
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-idle</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-idle"
+        role="status"
+        aria-busy="true"
+      >
+        <span class="statusPillWaitRing" aria-hidden="true"></span>
+        <span class="mainTopBarStatusPillText">AI turn</span>
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-active</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-active"
+        role="status"
+        aria-busy="true"
+      >
+        <span class="statusPillWaitRing" aria-hidden="true"></span>
+        <span class="mainTopBarStatusPillText">ME turn</span>
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-expired</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--hue-expired"
+        role="status"
+        aria-busy="false"
+      >
+        <span class="mainTopBarStatusPillText">Timed out</span>
+      </span>
+    </div>
+    <div class="row">
+      <code>hue-expired · cancelled</code>
+      <span
+        class="statusPill mainTopBarStatusPill mainTopBarStatusPill--hue-expired"
+        role="status"
+        aria-busy="false"
+      >
+        <span class="mainTopBarStatusPillText">Cancelled</span>
       </span>
     </div>
   </body>
