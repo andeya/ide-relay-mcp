@@ -35,9 +35,9 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 
 ### [RETURN] 工具结果
 
-- **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number> }\`。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
+- **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`；无附件时省略 \`attachments\`。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
 - **清单为空时的再传**：若某次返回中 \`cmd_skill_count === 0\`（且非暂停哨兵），下一轮调用**必须**再次带上 \`commands\` 与 \`skills\`，并填入当前 IDE **能够枚举到的全部**项（**仅当确实无法提供任何项时**才为 \`[]\`），以恢复斜杠补全。
-- **其它**：\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = **MM-DD HH:mm**。\`human\` 为用户回答（关闭/超时可为空）。
+- **其它**：\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = **MM-DD HH:mm:ss**。\`human\` 为用户回答（关闭/超时可为空）。
 - **后置条件**：保存 \`relay_mcp_session_id\`，下一次调用时传入；将 \`human\` 当作用户输入并回复。
 - **哨兵**：若**整段**结果包含 \`<<<RELAY_MCP_PAUSED>>>\`，则不得再次调用，直到用户在 Relay 设置中恢复。
 
@@ -55,7 +55,7 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 
 ### [UI] 人工门控（Answer）（仅产品说明，不影响工具调用）
 
-纯文本；图片可用 \`<<<RELAY_FEEDBACK_JSON>>>\`。Enter → 提交；Shift+Enter → 换行；⌘/Ctrl+Enter → 提交并关闭标签。对 AI 而言只需处理返回的 \`human\` 字符串即可。`;
+纯文本 \`human\`；若有贴图/文件，结果 JSON 另有 \`attachments\` 数组（旧版把 JSON 塞进正文的做法服务端仍会剥离）。Enter → 提交；Shift+Enter → 换行；⌘/Ctrl+Enter → 提交并关闭标签。Agent 应同时读取 \`human\` 与 \`attachments\`（若有）。`;
 
 const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / \`relay gui\` (local HTTP). Terminal tryout: \`relay feedback --retell "…"\` (same semantics as MCP \`retell\`).
 
@@ -76,9 +76,9 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 
 ### [RETURN] Tool result
 
-- **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number> }\`. \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
+- **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`; omit \`attachments\` when none. \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
 - **Re-list when zero**: If \`cmd_skill_count === 0\` on a return (and not the pause sentinel), the **next** call **must** again include \`commands\` and \`skills\` filled with every item the IDE **can** enumerate — use \`[]\` **only** when the host truly provides none.
-- **Also**: \`relay_mcp_session_id\`: ms timestamp. Tab label = **MM-DD HH:mm**. \`human\`: Answer (empty on dismiss/timeout).
+- **Also**: \`relay_mcp_session_id\`: ms timestamp. Tab label = **MM-DD HH:mm:ss**. \`human\`: Answer (empty on dismiss/timeout).
 - **Postcondition**: Store \`relay_mcp_session_id\`; pass it on the **next** call. Reply to \`human\` as user input.
 - **Sentinel**: If the **entire** result contains \`<<<RELAY_MCP_PAUSED>>>\`, do not call again until the user resumes in Relay Settings.
 
@@ -96,7 +96,7 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 
 ### [UI] Human gate (Answer) (product context only; does not affect tool usage)
 
-Plain text; images may use \`<<<RELAY_FEEDBACK_JSON>>>\`. Enter → submit; Shift+Enter → newline; ⌘/Ctrl+Enter → submit and close tab. For the AI, only the returned \`human\` string matters.`;
+Plain \`human\` text; images/files appear in the optional \`attachments\` array on the tool result (legacy marker-in-\`human\` is stripped server-side). Enter → submit; Shift+Enter → newline; ⌘/Ctrl+Enter → submit and close tab. Agents should read both \`human\` and \`attachments\` when present.`;
 
 const HEAD_LOOP_ZH = `## 中文版（严格循环）
 
