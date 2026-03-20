@@ -20,10 +20,9 @@ import type { SettingsToastPayload } from "./composables/useRelayCacheSettings";
 import SettingsCachePanel from "./components/settings/SettingsCachePanel.vue";
 import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsPanel.vue";
 import relayLogoUrl from "./assets/relay-logo.svg?url";
-import QaReplyAttachments from "./components/QaReplyAttachments.vue";
+import QaUserSubmittedBubble from "./components/QaUserSubmittedBubble.vue";
 import RelayComposerInput from "./components/RelayComposerInput.vue";
 import { slashItemDetailPreview } from "./composables/feedbackComposerUtils";
-import { parseRelayFeedbackReply } from "./utils/parseRelayFeedbackReply";
 import { safeMarkdownToHtml } from "./utils/safeMarkdown";
 
 const lightboxSrc = ref<string | null>(null);
@@ -38,9 +37,6 @@ function openLightbox(src: string) {
 }
 function closeLightbox() {
   lightboxSrc.value = null;
-}
-function parseUserReply(raw: string) {
-  return parseRelayFeedbackReply(raw);
 }
 function qaMd(html: string) {
   return safeMarkdownToHtml(html);
@@ -611,14 +607,8 @@ onBeforeUnmount(() => {
                     strings.qaUserTurnMe
                   }}</span>
                   <div class="qaChatBubble qaChatBubble--me">
-                    <div
-                      v-if="parseUserReply(round.reply).text"
-                      class="qaRoundMd qaRoundMd--user qaRoundMd--bubble"
-                      v-html="qaMd(parseUserReply(round.reply).text)"
-                    />
-                    <QaReplyAttachments
-                      :paths="parseUserReply(round.reply).imagePaths"
-                      :file-paths="parseUserReply(round.reply).filePaths"
+                    <QaUserSubmittedBubble
+                      :round="round"
                       :zoom-title="strings.composerImageZoomTitle"
                       @preview="openLightbox"
                     />
