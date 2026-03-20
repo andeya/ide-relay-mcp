@@ -157,8 +157,8 @@ export default {
   appTitle: "Relay MCP",
   brand: "Relay",
   subtitle: "面向 AI IDE 的人工反馈层",
-  statusAwaiting: "轮到你回复",
-  statusHubWaiting: "待IDE连接",
+  statusAwaiting: "ME 回合",
+  statusHubWaiting: "Hub · 未连IDE",
   ideBlockingHint:
     "IDE 正在等待你提交 Answer；提交后智能体会在同一轮继续。",
   mcpPauseTitle: "暂停 Relay MCP",
@@ -172,7 +172,7 @@ export default {
 
   setupInstallChangesNote:
     "上述安装/卸载会动到：用户 PATH、两 IDE 的 MCP 配置、以及 Relay 数据目录（日志、附件、本机 HTTP）。",
-  statusIdle: "等待下一轮AI请求",
+  statusIdle: "AI 回合",
   statusTimedOut: "已超时",
   statusCancelled: "已取消",
   hint: "上：`retell` = 本轮AI回复；下：**Answer · 你的回复**。",
