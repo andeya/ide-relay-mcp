@@ -118,12 +118,17 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   mcpNotInWindsurf: "relay-mcp not present",
   mcpInstallWindsurfOnly: "Install Windsurf only",
   mcpUninstallWindsurfOnly: "Remove from Windsurf only",
-  mcpCursorBusy: "…",
+  /** Full install (PATH + both IDEs) in progress */
+  mcpBusyInstallingAll: "Installing…",
+  /** Full uninstall in progress */
+  mcpBusyUninstallingAll: "Uninstalling…",
+  /** Cursor-only MCP install/uninstall in progress */
+  mcpBusyCursorMcp: "Saving Cursor MCP…",
+  /** Windsurf-only MCP install/uninstall in progress */
+  mcpBusyWindsurfMcp: "Saving Windsurf MCP…",
   setupJsonPreview: "Show MCP JSON",
   mcpJsonTitle: "Generated config",
   setupIdeGuide: "IDE config paths",
-
-  mcpFullBusy: "Working…",
   mcpFullInstallOk:
     "Done. Restart Cursor & Windsurf; PATH applies in a new terminal (or new fish session).",
   mcpFullUninstallOk: "Uninstalled: MCP entries and Relay PATH changes removed.",
@@ -209,6 +214,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   composerSubmitIconTitle:
     "Submit (Enter). Submit and close tab: ⌘ or Ctrl + Enter.",
   composerSubmitIconAria: "Submit answer",
+  composerSubmitting: "Submitting…",
   composerSubmitDisabledPreview:
     "Open when an MCP request is active — then tap to submit (Enter).",
   composerSubmitDisabledIdle:
