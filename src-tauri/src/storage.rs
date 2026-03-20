@@ -630,6 +630,8 @@ pub fn purge_attachment_retention_bundled(days: u32) -> Result<u64> {
     if let Err(e) = purge_qa_archive_older_than_days(days) {
         #[cfg(debug_assertions)]
         eprintln!("relay: purge_qa_archive_older_than_days: {e:#}");
+        #[cfg(not(debug_assertions))]
+        let _ = e;
     }
     Ok(freed)
 }
