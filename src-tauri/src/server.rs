@@ -7,14 +7,14 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
 use crate::auto_reply::{auto_reply_peek, consume_oneshot};
 use crate::config::read_mcp_paused;
 use crate::mcp_http;
-use crate::storage::{log_write, prepare_user_data_dir};
+use crate::storage::{log_write, normalize_logged_user_reply, prepare_user_data_dir};
 use crate::{CommandItem, MCP_PAUSED_TOOL_REPLY, TOOL_NAME};
 
 /// MCP / JSON-RPC: client cancelled an in-flight request (LSP-style code used in the wild).
@@ -22,6 +22,11 @@ const JSONRPC_REQUEST_CANCELLED: i64 = -32800;
 
 /// Max concurrent in-flight `relay_interactive_feedback` GUI rounds per MCP stdio connection.
 const MAX_CONCURRENT_HIL: usize = 16;
+
+#[inline]
+fn mutex_lock_or_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 // --- Per-request state for cancel vs worker completion race ---
 
@@ -192,7 +197,7 @@ fn process_cancel_notification(ctx: &RouterCtx, msg: &Value) -> Result<()> {
         return Ok(());
     };
 
-    let pending = ctx.pending.lock().unwrap();
+    let pending = mutex_lock_or_recover(&ctx.pending);
     let Some(st) = pending.get(&rid) else {
         drop(pending);
         let sample: String = msg.to_string().chars().take(320).collect();
@@ -246,7 +251,7 @@ fn spawn_hil_worker(
 ) -> Result<()> {
     let state = Arc::new(CallState::default());
     {
-        let mut pending = ctx.pending.lock().unwrap();
+        let mut pending = mutex_lock_or_recover(&ctx.pending);
         if pending.len() >= MAX_CONCURRENT_HIL {
             drop(pending);
             return ctx.outbound.send_error(
@@ -272,7 +277,7 @@ fn spawn_hil_worker(
         let result = hil.feedback_round(&retell, &relay_mcp_session_id, commands, skills);
 
         {
-            let mut g = pending_map.lock().unwrap();
+            let mut g = mutex_lock_or_recover(&pending_map);
             g.remove(&rpc_id);
         }
 
@@ -287,11 +292,13 @@ fn spawn_hil_worker(
         match result {
             Ok(answer) => {
                 if !answer.is_empty() {
-                    if let Ok(mut li) = loop_index.lock() {
-                        *li = 0;
-                    }
+                    *mutex_lock_or_recover(&loop_index) = 0;
                 }
-                let _ = log_write(&config_dir, "USER_REPLY", &answer);
+                let _ = log_write(
+                    &config_dir,
+                    "USER_REPLY",
+                    &normalize_logged_user_reply(&answer),
+                );
                 let _ = respond_tool_result(&outbound, rpc_id, answer);
             }
             Err(e) => {
@@ -350,11 +357,8 @@ fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
         return Ok(());
     }
 
-    let relay_mcp_session_id = arguments
-        .get("relay_mcp_session_id")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
+    let relay_mcp_session_id =
+        crate::session_id_from_tool_arg(arguments.get("relay_mcp_session_id"));
 
     let commands: Option<Vec<CommandItem>> = arguments
         .get("commands")
@@ -370,7 +374,7 @@ fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
     };
     let _ = log_write(&ctx.config_dir, "AI_REQUEST", &log_line);
 
-    let loop_idx = *ctx.loop_index.lock().unwrap();
+    let loop_idx = *mutex_lock_or_recover(&ctx.loop_index);
     let Some((rule, is_oneshot)) = auto_reply_peek(&ctx.config_dir, loop_idx) else {
         return spawn_hil_worker(ctx, rpc_id, retell, relay_mcp_session_id, commands, skills);
     };
@@ -386,7 +390,7 @@ fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
     })
     .to_string();
     respond_tool_result(&ctx.outbound, rpc_id, auto_reply_result)?;
-    *ctx.loop_index.lock().unwrap() = loop_idx.saturating_add(1);
+    *mutex_lock_or_recover(&ctx.loop_index) = loop_idx.saturating_add(1);
     Ok(())
 }
 
@@ -423,7 +427,7 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
                     "tools": [
                         {
                             "name": TOOL_NAME,
-                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id, human, and cmd_skill_count. New tab (no session): always include commands and skills arrays filled with every item the IDE/host can expose; use [] only if truly none. If cmd_skill_count was 0 on the last reply, next call must repopulate both arrays the same way. With session id: commands/skills optional; when sent, merged (dedupe by id).",
+                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id, human, cmd_skill_count, and optional attachments [{kind, path}] when the user included images/files. New tab (no session): always include commands and skills arrays filled with every item the IDE/host can expose; use [] only if truly none. If cmd_skill_count was 0 on the last reply, next call must repopulate both arrays the same way. With session id: commands/skills optional; when sent, merged (dedupe by id).",
                             "inputSchema": {
                                 "type": "object",
                                 "description": "retell required. New session: include commands and skills with full IDE-provided lists when possible; [] only when host exposes no items. After cmd_skill_count 0, next call must include both arrays repopulated the same way. With relay_mcp_session_id: pass it; commands/skills optional unless repopulating after zero.",
@@ -583,7 +587,11 @@ pub fn run_feedback_cli(
     let wait = Duration::from_secs(timeout_seconds.max(1));
     match rx.recv_timeout(wait) {
         Ok(Ok(answer)) => {
-            let _ = log_write(&config_dir, "CLI_REPLY", &answer);
+            let _ = log_write(
+                &config_dir,
+                "CLI_REPLY",
+                &normalize_logged_user_reply(&answer),
+            );
             println!("{}", answer);
             Ok(())
         }
@@ -804,7 +812,7 @@ mod tests {
             _skills: Option<Vec<CommandItem>>,
         ) -> Result<String, String> {
             let idx = {
-                let mut g = self.out.lock().unwrap();
+                let mut g = mutex_lock_or_recover(&self.out);
                 g.push("a".into());
                 g.len()
             };
