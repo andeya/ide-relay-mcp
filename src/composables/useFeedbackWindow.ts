@@ -91,6 +91,8 @@ export function useFeedbackWindow() {
   /** Prevents double submit (rapid Enter / double-click send). */
   const submitting = ref(false);
   let pollTimer: ReturnType<typeof setInterval> | undefined;
+  /** Clears and re-registers interval when tab visibility changes (lower CPU when backgrounded). */
+  let pollVisibilityHandler: (() => void) | undefined;
   let unlistenDragDrop: DragDropUnlisten;
   let closing = false;
 
@@ -280,7 +282,8 @@ export function useFeedbackWindow() {
     return t("statusAwaiting");
   });
   /**
-   * Header status capsule: single source of truth for spinner + color tier (keeps UX rules in sync).
+   * Header status capsule: busy state + hue tier (CSS: glow pulse on hub/loading;
+   * opacity breath on idle/active pill; breathing ring in App except hub — see statusPillWaitRing).
    */
   const statusPillUi = computed(() => {
     if (isHubPage.value) {
@@ -300,6 +303,7 @@ export function useFeedbackWindow() {
     }
     return { indeterminate: false, hue: "default" as const };
   });
+
   const submitLabel = computed(() => {
     void locale.value;
     return expired.value ? t("submitClose") : t("submit");
@@ -493,6 +497,10 @@ export function useFeedbackWindow() {
     if (pollTimer !== undefined) {
       clearInterval(pollTimer);
       pollTimer = undefined;
+    }
+    if (pollVisibilityHandler) {
+      document.removeEventListener("visibilitychange", pollVisibilityHandler);
+      pollVisibilityHandler = undefined;
     }
     unlistenDragDrop?.();
     await getCurrentWindow().close();
@@ -1040,6 +1048,25 @@ export function useFeedbackWindow() {
     }
   }
 
+  const STATUS_POLL_MS_VISIBLE = 5_000;
+  const STATUS_POLL_MS_HIDDEN = 60_000;
+
+  function scheduleStatusPoll() {
+    if (closing) return;
+    if (pollTimer !== undefined) {
+      clearInterval(pollTimer);
+      pollTimer = undefined;
+    }
+    const ms =
+      typeof document !== "undefined" &&
+      document.visibilityState === "hidden"
+        ? STATUS_POLL_MS_HIDDEN
+        : STATUS_POLL_MS_VISIBLE;
+    pollTimer = window.setInterval(() => {
+      void pollCycle();
+    }, ms);
+  }
+
   let unlistenTabs: (() => void) | undefined;
 
   async function initAfterLocale(): Promise<void> {
@@ -1065,9 +1092,11 @@ export function useFeedbackWindow() {
         void handleDroppedPaths(event.payload.paths);
       }
     });
-    pollTimer = window.setInterval(() => {
-      void pollCycle();
-    }, 2000);
+    pollVisibilityHandler = () => {
+      scheduleStatusPoll();
+    };
+    document.addEventListener("visibilitychange", pollVisibilityHandler);
+    scheduleStatusPoll();
     await pollCycle();
     try {
       await invoke<number>("run_attachment_retention_purge");
@@ -1078,6 +1107,10 @@ export function useFeedbackWindow() {
 
   onBeforeUnmount(() => {
     if (pollTimer !== undefined) clearInterval(pollTimer);
+    if (pollVisibilityHandler) {
+      document.removeEventListener("visibilitychange", pollVisibilityHandler);
+      pollVisibilityHandler = undefined;
+    }
     unlistenTabs?.();
     unlistenDragDrop?.();
     revokeAllPreviews();
