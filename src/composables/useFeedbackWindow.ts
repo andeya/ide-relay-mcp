@@ -24,6 +24,7 @@ import {
   filterAndSortSlashCommands,
   looksLikeSingleFilePath,
 } from "./feedbackComposerUtils";
+import { stripLegacyRelayMarkerTail } from "../utils/parseRelayFeedbackReply";
 
 export type PendingImage = {
   id: string;
@@ -490,8 +491,10 @@ export function useFeedbackWindow() {
     );
   }
 
-  async function buildFeedbackPayload(): Promise<string | null> {
-    let body = feedback.value;
+  async function buildFeedbackPayload(): Promise<{
+    human: string;
+    attachments: { kind: "image" | "file"; path: string }[];
+  } | null> {
     const attachments: { kind: "image" | "file"; path: string }[] = [];
     for (const img of pendingImages.value) {
       const b64 = await fileToBase64(img.file);
@@ -540,15 +543,8 @@ export function useFeedbackWindow() {
         return null;
       }
     }
-    if (attachments.length > 0) {
-      const text = body.trim();
-      const meta = { version: 1, attachments };
-      body =
-        (text ? text + "\n\n" : "") +
-        "<<<RELAY_FEEDBACK_JSON>>>\n" +
-        JSON.stringify(meta);
-    }
-    return body;
+    const human = stripLegacyRelayMarkerTail(feedback.value);
+    return { human, attachments };
   }
 
   async function submit(closeTabAfter = false) {
@@ -618,7 +614,8 @@ export function useFeedbackWindow() {
         const draftKey = draftKeyForTab(tab, id);
         await invoke("submit_tab_feedback", {
           tabId: id,
-          feedback: payload,
+          human: payload.human,
+          attachments: payload.attachments,
         });
         revokeAllPreviews();
         pendingFileDrops.value = [];
