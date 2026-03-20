@@ -12,12 +12,17 @@ const messages: Record<Locale, Messages> = { en, zh };
 
 export const locale: Ref<Locale> = ref("en");
 
+/** Resolve catalog key even if `locale` was ever set to a non-Locale string at runtime. */
+function activeLocale(): Locale {
+  return locale.value === "zh" ? "zh" : "en";
+}
+
 function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
 }
 
 export function t(key: keyof Messages, vars?: Record<string, string>): string {
-  let s = messages[locale.value][key] ?? messages.en[key] ?? String(key);
+  let s = messages[activeLocale()][key] ?? messages.en[key] ?? String(key);
   if (vars) {
     s = interpolate(s, vars);
   }
