@@ -101,9 +101,11 @@ kbd {
 /* Top bar: brand | status (center) | window dock + settings. */
 .mainTopBar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  /* Left/right = intrinsic width; center flexes and shrinks so long status text
+     ellipsizes instead of overlapping dock + version + settings. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px 16px;
+  gap: 10px 18px;
   flex-shrink: 0;
   margin-bottom: 10px;
   padding-bottom: 10px;
@@ -125,9 +127,15 @@ kbd {
 }
 
 .mainTopBarMid {
-  justify-self: center;
+  display: flex;
+  /* Align toward dock so status + window controls read as one toolbar cluster;
+     centered + ellipsis often looks visually “off” when text truncates. */
+  justify-content: flex-end;
+  align-items: center;
+  justify-self: stretch;
   min-width: 0;
-  max-width: min(340px, 42vw);
+  max-width: 100%;
+  padding-inline-end: 2px;
 }
 
 .mainTopBarRight {
@@ -136,6 +144,67 @@ kbd {
   align-items: center;
   justify-self: end;
   gap: 8px;
+  padding-inline-start: 4px;
+  border-left: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.releaseBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 0;
+  min-height: 30px;
+  box-sizing: border-box;
+  padding: 0.2rem 0.52rem;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1.25;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.72);
+  color: #94a3b8;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.releaseBadge:hover {
+  background: rgba(51, 65, 85, 0.88);
+  border-color: rgba(148, 163, 184, 0.48);
+  color: #cbd5e1;
+}
+
+.releaseBadge:focus-visible {
+  outline: 2px solid rgba(129, 140, 248, 0.55);
+  outline-offset: 2px;
+}
+
+.releaseBadge--update {
+  border-color: rgba(251, 191, 36, 0.48);
+  background: rgba(120, 53, 15, 0.28);
+  color: #fcd34d;
+}
+
+.releaseBadge--update:hover {
+  border-color: rgba(252, 211, 77, 0.55);
+  background: rgba(146, 64, 14, 0.35);
+  color: #fde68a;
+}
+
+.releaseBadgeDot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.88;
+  flex-shrink: 0;
 }
 
 .dockSeg {
@@ -233,6 +302,7 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   max-width: 100%;
   padding: 0.28rem 0.75rem !important;
   font-size: 0.68rem !important;
@@ -240,9 +310,15 @@ kbd {
   line-height: 1.35 !important;
   border-radius: 999px;
   overflow: hidden;
+  vertical-align: middle;
+}
+
+/* Ellipsis applies to this flex child (spinner stays fixed width). */
+.mainTopBarStatusPillText {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
 }
 
 /* Teal “connection” wait: soft glow; other hues rely on spinner + tint only. */
@@ -322,6 +398,7 @@ kbd {
     max-width: none;
     display: flex;
     justify-content: center;
+    padding-inline-end: 0;
   }
 }
 
