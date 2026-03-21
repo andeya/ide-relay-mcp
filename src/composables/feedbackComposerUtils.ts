@@ -54,6 +54,18 @@ export function slashItemDetailPreview(desc: string, maxLen = 52): string {
 }
 
 /**
+ * Second line in `/` palette: `description`, or `name` when no description (if not redundant with primary id).
+ */
+export function slashCommandSecondaryLine(cmd: CommandItem): string {
+  const desc = (cmd.description ?? "").trim();
+  if (desc) return desc;
+  const primary = (cmd.id ?? cmd.name ?? "").trim();
+  const name = (cmd.name ?? "").trim();
+  if (!name || name === primary) return "";
+  return name;
+}
+
+/**
  * Query slice after `/` for slash menu + mirror: IDE/skill ids (ASCII), not CJK prose
  * (Chinese has no spaces; `[^\s]+` would swallow the whole line).
  */
@@ -106,9 +118,11 @@ export function filterAndSortSlashCommands(
     .sort(
       (a, b) =>
         b.s - a.s ||
-        (a.c.name ?? a.c.id).localeCompare(b.c.name ?? b.c.id, undefined, {
-          sensitivity: "base",
-        }),
+        (a.c.id ?? a.c.name ?? "").localeCompare(
+          b.c.id ?? b.c.name ?? "",
+          undefined,
+          { sensitivity: "base" },
+        ),
     );
   return scored.map((x) => x.c).filter((c) => {
     if (seen.has(c.id)) return false;
