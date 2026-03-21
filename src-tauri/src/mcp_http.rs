@@ -128,5 +128,5 @@ pub fn feedback_round(
         .into_string()
         .unwrap_or_default();
 
-    Ok(ans)
+    Ok(crate::wsl_path_convert::post_process_feedback_body_for_linux_win_gui(ans))
 }
