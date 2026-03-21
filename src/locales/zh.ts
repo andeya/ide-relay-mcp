@@ -150,7 +150,7 @@ export default {
   dockBtnRight: "▶",
 
   releaseBadgeAria: "在 GitHub 打开 Relay 仓库",
-  releaseBadgeUpdate: "v{latest} 新版本",
+  releaseBadgeUpdate: "v{latest} · New",
   releaseBadgeCurrent: "v{current}",
 
   mainSessionBadge: "Chat",
