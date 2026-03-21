@@ -158,6 +158,159 @@
           opacity: 1;
         }
       }
+
+      /* —— Mirrors src/style.css: full top bar (brand | status | dock + release) —— */
+      .topBarDemo {
+        margin-bottom: 18px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        background: rgba(15, 23, 42, 0.35);
+      }
+      .topBarDemo-caption {
+        margin: 0 0 10px;
+        font-size: 0.72rem;
+        color: #64748b;
+      }
+      .mainTopBar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        align-items: center;
+        column-gap: 12px;
+        min-height: 40px;
+      }
+      .mainTopBarLeft {
+        grid-column: 1;
+        justify-self: start;
+        min-width: 0;
+      }
+      .mainBrandCluster {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .mainBrandLogoWrap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: linear-gradient(
+          165deg,
+          rgba(71, 85, 105, 0.55) 0%,
+          rgba(30, 41, 59, 0.92) 55%,
+          rgba(15, 23, 42, 0.98) 100%
+        );
+        box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.42);
+        font-size: 0.65rem;
+        color: #7dd3fc;
+        font-weight: 700;
+      }
+      .mainTitle {
+        margin: 0;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        line-height: 1.15;
+        color: #7dd3fc;
+      }
+      .mainTopBarMid {
+        grid-column: 2;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        justify-self: center;
+        min-width: 0;
+        max-width: min(72vw, 560px);
+        padding-inline: 6px;
+      }
+      .mainTopBarMid--shiftForUpdateBadge {
+        transform: translateX(-1.5ch);
+      }
+      .mainTopBarRight {
+        grid-column: 3;
+        display: flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-self: end;
+        gap: 8px;
+        min-width: 0;
+        padding-inline-start: 4px;
+        border-left: 1px solid rgba(148, 163, 184, 0.12);
+      }
+      .releaseBadge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        margin: 0;
+        min-height: 30px;
+        box-sizing: border-box;
+        padding: 0.2rem 0.52rem;
+        border-radius: 999px;
+        font: inherit;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        line-height: 1.25;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(30, 41, 59, 0.72);
+        color: #94a3b8;
+        cursor: default;
+        white-space: nowrap;
+      }
+      .releaseBadge--update {
+        border-color: rgba(251, 191, 36, 0.48);
+        background: rgba(120, 53, 15, 0.28);
+        color: #fcd34d;
+      }
+      .releaseBadgeDot {
+        display: block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.88;
+        flex-shrink: 0;
+      }
+      .dockSeg {
+        display: inline-flex;
+        align-items: stretch;
+        height: 30px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        background: rgba(15, 23, 42, 0.5);
+      }
+      .dockSegBtn {
+        margin: 0;
+        padding: 0 0.5rem;
+        min-width: 2rem;
+        border: none;
+        border-right: 1px solid rgba(148, 163, 184, 0.12);
+        background: transparent;
+        color: #b0c0d4;
+        font: inherit;
+        font-size: 0.75rem;
+        font-weight: 600;
+        cursor: default;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .dockSegBtn:last-child {
+        border-right: none;
+      }
+      .dockSegBtn.active {
+        color: #7dd3fc;
+        background: rgba(125, 211, 252, 0.12);
+      }
     </style>
   </head>
   <body>
@@ -168,6 +321,8 @@
       <code>App.vue</code> 顶栏一致：<code>hue-hub</code> 仅光晕脉冲、<strong>无</strong>
       呼吸圈；<code>hue-loading</code> / <code>hue-idle</code> / <code>hue-active</code> 左侧有
       <code>statusPillWaitRing</code>（opacity 呼吸）且 idle/active 另加整颗胶囊呼吸。
+      有可用更新时，中间栏会加 <code>mainTopBarMid--shiftForUpdateBadge</code>（
+      <code>translateX(-1.5ch)</code>）；中文语言下版本条为 <code>v… · New</code>（「New」不翻译）。
     </p>
     <p class="note">
       说明：<code>status === null</code>（拉取 <code>read_tab_status</code> 前）时
@@ -176,6 +331,109 @@
       <code>.mainTopBarMid</code>（<code>max-width: min(72vw, 560px)</code>）约束；本
       预览为单文件，将同等 cap 写在 <code>.mainTopBarStatusPill</code> 上。
     </p>
+
+    <h2>顶栏整行（与 App.vue 一致）</h2>
+    <div class="topBarDemo">
+      <p class="topBarDemo-caption">
+        无更新：<code>.mainTopBarMid</code> 无位移；版本胶囊为默认样式（<code>releaseBadgeCurrent</code>）。
+      </p>
+      <header class="mainTopBar">
+        <div class="mainTopBarLeft">
+          <div class="mainBrandCluster">
+            <span class="mainBrandLogoWrap" aria-hidden="true">R</span>
+            <h1 class="mainTitle">Relay MCP</h1>
+          </div>
+        </div>
+        <div class="mainTopBarMid">
+          <span
+            class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-hub"
+            role="status"
+            aria-busy="true"
+          >
+            <span class="mainTopBarStatusPillText">Hub · 未连IDE</span>
+          </span>
+        </div>
+        <div class="mainTopBarRight">
+          <div class="dockSeg" role="group" aria-label="Dock">
+            <span class="dockSegBtn active">←</span>
+            <span class="dockSegBtn">·</span>
+            <span class="dockSegBtn">→</span>
+          </div>
+          <span class="releaseBadge" role="img" aria-label="version">
+            <span class="releaseBadgeDot" aria-hidden="true"></span>
+            v1.2.2
+          </span>
+        </div>
+      </header>
+    </div>
+    <div class="topBarDemo">
+      <p class="topBarDemo-caption">
+        有更新：<code>.mainTopBarMid.mainTopBarMid--shiftForUpdateBadge</code>（左移
+        <code>1.5ch</code>）；<code>releaseBadge--update</code>；中文文案仍为
+        <strong>v1.2.3 · New</strong>（与 <code>zh.ts</code> 的 <code>releaseBadgeUpdate</code> 一致）。
+      </p>
+      <header class="mainTopBar">
+        <div class="mainTopBarLeft">
+          <div class="mainBrandCluster">
+            <span class="mainBrandLogoWrap" aria-hidden="true">R</span>
+            <h1 class="mainTitle">Relay MCP</h1>
+          </div>
+        </div>
+        <div class="mainTopBarMid mainTopBarMid--shiftForUpdateBadge">
+          <span
+            class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-hub"
+            role="status"
+            aria-busy="true"
+          >
+            <span class="mainTopBarStatusPillText">Hub · 未连IDE</span>
+          </span>
+        </div>
+        <div class="mainTopBarRight">
+          <div class="dockSeg" role="group" aria-label="Dock">
+            <span class="dockSegBtn active">←</span>
+            <span class="dockSegBtn">·</span>
+            <span class="dockSegBtn">→</span>
+          </div>
+          <span class="releaseBadge releaseBadge--update" role="img" aria-label="new version">
+            <span class="releaseBadgeDot" aria-hidden="true"></span>
+            v1.2.3 · New
+          </span>
+        </div>
+      </header>
+    </div>
+    <div class="topBarDemo">
+      <p class="topBarDemo-caption">
+        English：有更新时同样左移中间栏；文案 <code>v1.2.3 · New</code>（<code>en.ts</code>）。
+      </p>
+      <header class="mainTopBar">
+        <div class="mainTopBarLeft">
+          <div class="mainBrandCluster">
+            <span class="mainBrandLogoWrap" aria-hidden="true">R</span>
+            <h1 class="mainTitle">Relay MCP</h1>
+          </div>
+        </div>
+        <div class="mainTopBarMid mainTopBarMid--shiftForUpdateBadge">
+          <span
+            class="statusPill mainTopBarStatusPill mainTopBarStatusPill--waiting mainTopBarStatusPill--hue-hub"
+            role="status"
+            aria-busy="true"
+          >
+            <span class="mainTopBarStatusPillText">Hub · no IDE</span>
+          </span>
+        </div>
+        <div class="mainTopBarRight">
+          <div class="dockSeg" role="group" aria-label="Dock">
+            <span class="dockSegBtn active">←</span>
+            <span class="dockSegBtn">·</span>
+            <span class="dockSegBtn">→</span>
+          </div>
+          <span class="releaseBadge releaseBadge--update" role="img" aria-label="new version">
+            <span class="releaseBadgeDot" aria-hidden="true"></span>
+            v1.2.3 · New
+          </span>
+        </div>
+      </header>
+    </div>
 
     <h2>中文（zh.ts）</h2>
     <div class="row">
