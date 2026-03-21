@@ -38,7 +38,8 @@ tokio = { version = "1", features = [
     "time",
 ] }
 tower-http = { version = "0.5", features = ["limit"] }
-ureq = { version = "2", features = ["json"] }
+# native-certs: use OS trust store (Windows/macOS/Linux) — better than webpki-roots alone for enterprise MITM roots.
+ureq = { version = "2", features = ["json", "native-certs"] }
 uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
