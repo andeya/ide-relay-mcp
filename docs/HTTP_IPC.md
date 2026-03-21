@@ -15,7 +15,7 @@ sequenceDiagram
     Http->>UI: emit relay_tabs_changed
     Mcp->>Http: GET /v1/feedback/wait/:id
     UI->>Http: submit_tab_feedback
-    Http-->>Mcp: JSON { relay_mcp_session_id, human, cmd_skill_count [, attachments] }
+    Http-->>Mcp: JSON { relay_mcp_session_id, human, cmd_skill_count, relay_gui_platform [, attachments] }
     Mcp-->>IDE: tool result
 ```
 
@@ -50,7 +50,7 @@ sequenceDiagram
 - **HTTP handler**: the Axum route **does not** apply a per-request socket timeout; it awaits a `oneshot` until the tab completes (submit, dismiss, supersede, or sender dropped).
 - **60-minute idle cut-off**: when `POST /v1/feedback` returns a `request_id`, the server schedules a background task (≈ **60 min + 20 s**) that injects an **empty** `human` JSON result if the wait is still pending — same outcome as dismiss/timeout from the MCP user’s perspective (`human: ""`).
 - Completes when the user submits an Answer, dismisses, that orphan task fires, or the tab is **superseded** by another `POST` for the same merged session (cancels the previous wait).
-- Response: `Content-Type: application/json; charset=utf-8`, body = `{"relay_mcp_session_id":"<ms>","human":"<Answer text>","cmd_skill_count":<n>}` and, when the user attached images/files, **`"attachments":[{"kind":"image"|"file","path":"..."}, ...]`** (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss / idle timeout / supersede).
+- Response: `Content-Type: application/json; charset=utf-8`, body includes **`relay_mcp_session_id`**, **`human`**, **`cmd_skill_count`**, **`relay_gui_platform`** (`"windows"` \| `"macos"` \| `"linux"` \| `"unknown"` — OS of the **Relay GUI** process), and when the user attached images/files **`"attachments":[{"kind":"image"|"file","path":"..."}, ...]`** (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss / idle timeout / supersede). The GUI does not rewrite paths. **`relay mcp` on Linux** (e.g. **WSL**): after receiving this JSON, if **`relay_gui_platform` is `"windows"`**, the MCP process **replaces** each convertible Windows `path` in `attachments` with `/mnt/…` only (non-convertible paths unchanged); other platforms pass the body through unchanged.
 
 ## MCP flow
 
