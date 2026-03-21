@@ -42,5 +42,5 @@ There is **no** `relay window` subcommand; the IDE never spawns per-request GUI 
 
 - [ ] **`retell`** = current-turn assistant reply (content itself), non-empty
 - [ ] **PATH block** = BEGIN/END in rc (Unix), RelayMCPPath in HKCU\Environment (Windows); legacy single-line marker still supported on Unix
-- [ ] **`relay_mcp_session_id`** = session merge key; tool returns JSON `{relay_mcp_session_id, human, cmd_skill_count}`; pass id on next call; if **`cmd_skill_count` is 0**, next call must repass commands+skills; tab label **MM-DD HH:mm:ss** (**RELAY_MCP_SESSION_ID.md**)
+- [ ] **`relay_mcp_session_id`** = session merge key; tool returns JSON `{relay_mcp_session_id, human, cmd_skill_count, relay_gui_platform}` (optional `attachments`); pass id on next call; if **`cmd_skill_count` is 0**, next call must repass commands+skills; tab label **MM-DD HH:mm:ss** (**RELAY_MCP_SESSION_ID.md**)
 - [ ] Code comments in **English** where they explain implementation
