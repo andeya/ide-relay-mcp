@@ -168,9 +168,10 @@ export function useFeedbackWindow() {
     if (!surface || !slashOpen.value) return;
     const start = slashAnchorStart.value;
     const end = surface.getSelection().to;
-    const name = cmd.name ?? cmd.id ?? "";
+    const token = (cmd.id ?? cmd.name ?? "").trim();
+    if (!token) return;
     const v = surface.getDoc();
-    const replacement = `/${name} `;
+    const replacement = token.startsWith("/") ? `${token} ` : `/${token} `;
     feedback.value = v.slice(0, start) + replacement + v.slice(end);
     closeSlash();
     void nextTick(() => {
