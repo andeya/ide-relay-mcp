@@ -32,6 +32,7 @@ fn empty_tool_result_fallback() -> String {
         "relay_mcp_session_id": "",
         "human": "",
         "cmd_skill_count": 0,
+        "relay_gui_platform": crate::relay_gui_platform_label(),
     })
     .to_string()
 }
