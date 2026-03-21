@@ -35,7 +35,7 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 
 ### [RETURN] 工具结果
 
-- **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`；无附件时省略 \`attachments\`。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
+- **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number>, "relay_gui_platform": "windows"|"macos"|"linux"|"unknown" [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`；无附件时省略 \`attachments\`。\`relay_gui_platform\` = Relay **GUI** 所在系统。**Linux 上的 relay mcp**（含 WSL）在 \`relay_gui_platform === "windows"\` 时会将 \`attachments\` 中每条可转换的 Windows 路径**替换**为 \`/mnt/…\`（不再保留原 Windows 路径；无法转换的条目不变）。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
 - **清单为空时的再传**：若某次返回中 \`cmd_skill_count === 0\`（且非暂停哨兵），下一轮调用**必须**再次带上 \`commands\` 与 \`skills\`，并填入当前 IDE **能够枚举到的全部**项（**仅当确实无法提供任何项时**才为 \`[]\`），以恢复斜杠补全。
 - **其它**：\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = **MM-DD HH:mm:ss**。\`human\` 为用户回答（关闭/超时可为空）。
 - **后置条件**：保存 \`relay_mcp_session_id\`，下一次调用时传入；将 \`human\` 当作用户输入并回复。
@@ -76,7 +76,7 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 
 ### [RETURN] Tool result
 
-- **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`; omit \`attachments\` when none. \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
+- **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number>, "relay_gui_platform": "windows"|"macos"|"linux"|"unknown" [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`; omit \`attachments\` when none. \`relay_gui_platform\` = OS of the Relay **GUI**. **relay mcp on Linux** (e.g. WSL) replaces convertible Windows \`path\` values in \`attachments\` with \`/mnt/…\` when \`relay_gui_platform\` is \`windows\` (non-convertible paths unchanged). \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
 - **Re-list when zero**: If \`cmd_skill_count === 0\` on a return (and not the pause sentinel), the **next** call **must** again include \`commands\` and \`skills\` filled with every item the IDE **can** enumerate — use \`[]\` **only** when the host truly provides none.
 - **Also**: \`relay_mcp_session_id\`: ms timestamp. Tab label = **MM-DD HH:mm:ss**. \`human\`: Answer (empty on dismiss/timeout).
 - **Postcondition**: Store \`relay_mcp_session_id\`; pass it on the **next** call. Reply to \`human\` as user input.
