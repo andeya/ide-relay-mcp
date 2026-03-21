@@ -58,6 +58,13 @@ const showReleaseBadge = computed(
   () => !releaseLoading.value && releasePayload.value !== null,
 );
 
+/** Room for wider "update" release pill: nudge status pill left by 1.5ch. */
+const shiftStatusPillForUpdateBadge = computed(
+  () =>
+    showReleaseBadge.value &&
+    Boolean(releasePayload.value?.update_available),
+);
+
 function openLightbox(src: string) {
   lightboxSrc.value = src;
 }
@@ -461,7 +468,10 @@ onBeforeUnmount(() => {
             <h1 class="mainTitle">{{ strings.appTitle }}</h1>
           </div>
         </div>
-        <div class="mainTopBarMid">
+        <div
+          class="mainTopBarMid"
+          :class="{ 'mainTopBarMid--shiftForUpdateBadge': shiftStatusPillForUpdateBadge }"
+        >
           <span
             class="statusPill mainTopBarStatusPill"
             :class="[
