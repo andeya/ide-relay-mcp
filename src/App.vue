@@ -23,7 +23,10 @@ import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsP
 import relayLogoUrl from "./assets/relay-logo.svg?url";
 import QaUserSubmittedBubble from "./components/QaUserSubmittedBubble.vue";
 import RelayComposerInput from "./components/RelayComposerInput.vue";
-import { slashItemDetailPreview } from "./composables/feedbackComposerUtils";
+import {
+  slashCommandSecondaryLine,
+  slashItemDetailPreview,
+} from "./composables/feedbackComposerUtils";
 import { qaRoundHasRenderableUserContent } from "./utils/parseRelayFeedbackReply";
 import { safeMarkdownToHtml } from "./utils/safeMarkdown";
 
@@ -65,9 +68,9 @@ function qaMd(html: string) {
   return safeMarkdownToHtml(html);
 }
 
-/** Show `/Name` in slash menu (Cursor-style) without duplicating a leading slash. */
+/** Show `/id` in slash menu; `name` is for IDE display elsewhere, not the palette primary line. */
 function slashMenuLabel(cmd: CommandItem) {
-  const n = (cmd.name ?? cmd.id ?? "").trim();
+  const n = (cmd.id ?? cmd.name ?? "").trim();
   if (!n) return "/";
   return n.startsWith("/") ? n : `/${n}`;
 }
@@ -126,6 +129,15 @@ const {
   removePendingImage,
   removePendingFileDrop,
 } = useFeedbackWindow();
+
+/** One `slashCommandSecondaryLine` eval per row (description, or non-redundant name). */
+const slashPaletteRows = computed(() =>
+  filteredCommands.value.map((cmd, index) => ({
+    cmd,
+    index,
+    secondary: slashCommandSecondaryLine(cmd),
+  })),
+);
 
 const slashA11yPopupId = computed(() =>
   slashOpen.value && !expired.value && !isHubPage.value
@@ -829,31 +841,36 @@ onBeforeUnmount(() => {
                   >
                     <div ref="slashDropdownRef" class="slashDropdownList">
                       <div
-                        v-for="(cmd, i) in filteredCommands"
-                        :id="'slash-cmd-' + i"
-                        :key="cmd.id"
+                        v-for="row in slashPaletteRows"
+                        :id="'slash-cmd-' + row.index"
+                        :key="row.cmd.id || 'slash-' + row.index"
                         role="option"
-                        :aria-selected="i === slashSelectedIndex"
+                        :aria-selected="row.index === slashSelectedIndex"
                         class="slashDropdownItem"
-                        :class="{ slashDropdownItemActive: i === slashSelectedIndex }"
+                        :class="{
+                          slashDropdownItemActive:
+                            row.index === slashSelectedIndex,
+                        }"
                         @mousedown.prevent
-                        @click="insertSlashCommand(cmd)"
+                        @click="insertSlashCommand(row.cmd)"
                       >
                         <div class="slashDropdownItemHead">
                           <span
-                            v-if="slashMenuCategoryLabel(cmd.category)"
+                            v-if="slashMenuCategoryLabel(row.cmd.category)"
                             class="slashDropdownItemCategory"
-                          >{{ slashMenuCategoryLabel(cmd.category) }}</span>
+                          >{{
+                            slashMenuCategoryLabel(row.cmd.category)
+                          }}</span>
                           <span class="slashDropdownItemName">{{
-                            slashMenuLabel(cmd)
+                            slashMenuLabel(row.cmd)
                           }}</span>
                         </div>
                         <span
-                          v-if="cmd.description"
+                          v-if="row.secondary"
                           class="slashDropdownItemDesc"
-                          :title="cmd.description"
+                          :title="row.secondary"
                         >
-                          {{ slashItemDetailPreview(cmd.description) }}
+                          {{ slashItemDetailPreview(row.secondary) }}
                         </span>
                       </div>
                       <div
