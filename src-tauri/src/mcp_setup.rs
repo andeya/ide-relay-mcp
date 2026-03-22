@@ -31,19 +31,68 @@ pub fn relay_mcp_command_and_args() -> Result<(String, Vec<String>)> {
     Ok((exe.to_string_lossy().into_owned(), vec!["mcp".to_string()]))
 }
 
+/// `command`, `args`, `env`, and `autoApprove` for `relay-mcp` (Cursor / Windsurf one-click install).
+/// `RELAY_EXE_IN_WSL`: `"1"` / `"true"` rewrites attachment paths for WSL-hosted agents when `relay.exe` runs on Windows; `"0"` keeps default (no rewrite).
 fn relay_mcp_entry() -> Result<Value> {
     let (command, args) = relay_mcp_command_and_args()?;
     Ok(json!({
         "command": command,
         "args": args,
+        "env": {
+            "RELAY_EXE_IN_WSL": "0"
+        },
         "autoApprove": ["relay_interactive_feedback"]
     }))
 }
 
+fn merge_env_missing_keys(user_env: Value, default_env: &Value) -> Value {
+    let mut m = user_env.as_object().cloned().unwrap_or_default();
+    if let Some(dm) = default_env.as_object() {
+        for (k, v) in dm {
+            m.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+    }
+    Value::Object(m)
+}
+
+/// Merge `mcpServers.relay-mcp`: keep values from the user file, fill only missing keys from [`relay_mcp_entry`].
+fn merge_relay_mcp_entry(user: Option<&Value>) -> Result<Value> {
+    let defaults = relay_mcp_entry()?;
+    let def_obj = defaults
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("relay defaults not object"))?;
+    let mut map: serde_json::Map<String, Value> = user
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    for (k, v) in def_obj {
+        if k == "env" {
+            let u_env = map.get("env").cloned().unwrap_or(json!({}));
+            let merged_env = merge_env_missing_keys(u_env, v);
+            map.insert("env".to_string(), merged_env);
+        } else {
+            map.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+    }
+    Ok(Value::Object(map))
+}
+
+/// Pretty JSON for Settings → Copy MCP: reads `mcpServers.relay-mcp` from real `~/.cursor/mcp.json` when present,
+/// merges missing keys from [`relay_mcp_entry`], and returns **only** `{ "mcpServers": { "relay-mcp": … } }` (no other servers).
 pub fn mcp_config_json_pretty() -> Result<String> {
+    let path = cursor_mcp_json_path()?;
+    let user_relay = if path.exists() {
+        let text = fs::read_to_string(&path).unwrap_or_default();
+        let root: Value = serde_json::from_str(&text).unwrap_or_else(|_| json!({}));
+        root.get("mcpServers")
+            .and_then(|s| s.get("relay-mcp"))
+            .cloned()
+    } else {
+        None
+    };
+    let merged = merge_relay_mcp_entry(user_relay.as_ref())?;
     let root = json!({
         "mcpServers": {
-            "relay-mcp": relay_mcp_entry()?
+            "relay-mcp": merged
         }
     });
     Ok(serde_json::to_string_pretty(&root)?)
