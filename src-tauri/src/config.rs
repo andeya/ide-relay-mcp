@@ -244,19 +244,11 @@ pub fn mouse_in_dock_edge_peek_zone(
     let ww = sz.width as i32;
     let wh = sz.height as i32;
 
-    let sf = win.scale_factor().unwrap_or(1.0);
-    let mx_alt = (mx as f64 / sf).round() as i32;
-    let my_alt = (my as f64 / sf).round() as i32;
-    let mx_mul = (mx as f64 * sf).round() as i32;
-    let my_mul = (my as f64 * sf).round() as i32;
-
     let y_ok = |cy: i32| cy >= wy.saturating_sub(4) && cy < wy + wh + 4;
 
-    // 1) Pointer inside outer window rect (raw / ÷scale / ×scale for cross-display DPI quirks).
-    for (cx, cy) in [(mx, my), (mx_alt, my_alt), (mx_mul, my_mul)] {
-        if cx >= wx0 && cx < wx0 + ww && y_ok(cy) {
-            return Ok(true);
-        }
+    // 1) Pointer inside outer window rect (physical pixels only — see `mouse_in_dock_edge_peek_zone_window_only`).
+    if mx >= wx0 && mx < wx0 + ww && y_ok(my) {
+        return Ok(true);
     }
 
     let mon = win
@@ -269,33 +261,37 @@ pub fn mouse_in_dock_edge_peek_zone(
     const EDGE_SLOP: i32 = 36;
 
     // 2) Wide band on the docked screen edge (same vertical span as the window).
-    for (cx, cy) in [(mx, my), (mx_alt, my_alt), (mx_mul, my_mul)] {
-        if !y_ok(cy) {
-            continue;
+    if !y_ok(my) {
+        return Ok(false);
+    }
+    if dock == "right" {
+        let strip_x0 = p.x + mw - peek - EDGE_SLOP;
+        let strip_x1 = p.x + mw + EDGE_SLOP;
+        if mx >= strip_x0 && mx < strip_x1 {
+            return Ok(true);
         }
-        if dock == "right" {
-            let strip_x0 = p.x + mw - peek - EDGE_SLOP;
-            let strip_x1 = p.x + mw + EDGE_SLOP;
-            if cx >= strip_x0 && cx < strip_x1 {
-                return Ok(true);
-            }
-        } else {
-            let strip_x0 = p.x - EDGE_SLOP;
-            let strip_x1 = p.x + peek + EDGE_SLOP;
-            if cx >= strip_x0 && cx < strip_x1 {
-                return Ok(true);
-            }
+    } else {
+        let strip_x0 = p.x - EDGE_SLOP;
+        let strip_x1 = p.x + peek + EDGE_SLOP;
+        if mx >= strip_x0 && mx < strip_x1 {
+            return Ok(true);
         }
     }
 
     Ok(false)
 }
 
-/// Hover-to-expand when collapsed: **window outer rect only** (with scale variants).
+/// Hover-to-expand when collapsed: **window outer rect only** (physical desktop pixels).
 ///
 /// Unlike [`mouse_in_dock_edge_peek_zone`], does **not** use the full monitor-edge band — that band
 /// is wide enough that a cursor on the right/left side of the screen (but not on the peek strip
 /// window) still matched, causing spurious expand/collapse.
+///
+/// **Coordinate space:** [`WebviewWindow::cursor_position`], [`WebviewWindow::outer_position`], and
+/// [`WebviewWindow::outer_size`] are all physical pixels in the same desktop space (Tauri on
+/// macOS/Windows). Older builds tried `mx/sf` and `mx*sf` “variants”; those produced false positives
+/// when the real cursor was hundreds of px away (e.g. over another window) because one variant could
+/// accidentally align with the outer rect.
 pub fn mouse_in_dock_edge_peek_zone_window_only(
     win: &WebviewWindow,
     dock: &str,
@@ -312,18 +308,10 @@ pub fn mouse_in_dock_edge_peek_zone_window_only(
     let ww = sz.width as i32;
     let wh = sz.height as i32;
 
-    let sf = win.scale_factor().unwrap_or(1.0);
-    let mx_alt = (mx as f64 / sf).round() as i32;
-    let my_alt = (my as f64 / sf).round() as i32;
-    let mx_mul = (mx as f64 * sf).round() as i32;
-    let my_mul = (my as f64 * sf).round() as i32;
-
     let y_ok = |cy: i32| cy >= wy.saturating_sub(4) && cy < wy + wh + 4;
 
-    for (cx, cy) in [(mx, my), (mx_alt, my_alt), (mx_mul, my_mul)] {
-        if cx >= wx0 && cx < wx0 + ww && y_ok(cy) {
-            return Ok(true);
-        }
+    if mx >= wx0 && mx < wx0 + ww && y_ok(my) {
+        return Ok(true);
     }
 
     Ok(false)
