@@ -29,7 +29,7 @@
 - **Windows**: release binary is linked as a GUI subsystem app to avoid an extra console when launching the hub.
 - **Windows**: spawning `relay gui` from `relay mcp` uses `CREATE_NO_WINDOW` to reduce blank terminal flashes.
 - **Windows**: `relay mcp` / `relay feedback` try to attach to the parent console when stdout is **not** a pipe (cmd/PowerShell); **pipe stdout (typical IDE MCP) skips attach** so stdio JSON-RPC stays intact.
-- **Tool result JSON**: removed `relay_gui_platform`; dropped Linux-side Windows→`/mnt/…` path rewriting. `relay mcp` may add optional `data_url` next to `path` for small attachments (**`RELAY_MCP_INLINE_ATTACHMENTS`**, **`RELAY_MCP_INLINE_MAX_BYTES`** — see [docs/HTTP_IPC.md](docs/HTTP_IPC.md)).
+- **Tool result JSON**: removed `relay_gui_platform`; dropped Linux-side Windows→`/mnt/…` path rewriting. `relay mcp` may add optional `data_url` next to `path` — **`RELAY_MCP_INLINE_MAX_KB`** only: unset/empty → default **512** KiB; ≤0 or invalid → off; >0 → cap ([docs/HTTP_IPC.md](docs/HTTP_IPC.md)).
 
 ---
 
@@ -58,7 +58,7 @@ Inspired by [interactive-feedback-mcp](https://github.com/junanchn/interactive-f
 
 - **`relay mcp`** — stdio MCP (`clap` subcommand). Handles `initialize`, `tools/list`, `tools/call`. Several **`tools/call`** human rounds may be **in flight at once** on the same connection (see [docs/HTTP_IPC.md](docs/HTTP_IPC.md) — router + workers, capped concurrency). Optional **instant auto-reply** (`0|…` lines in user-data rules files) short-circuits without opening the UI.
 - **`relay` / `relay gui`** — Tauri app + **HTTP on `127.0.0.1:0`**. Writes **`{user_data}/gui_endpoint.json`** `{ port, token, pid }`; deletes it on exit.
-- **Bridge** — Before each interactive call, MCP reads the endpoint file; if missing or unhealthy, **`spawn`s the same executable with `gui`**, polls up to **~45 s** (`ensure_gui_endpoint`). Then **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**. The GUI completes that GET when you submit, dismiss, the request is superseded, or after **~60 minutes** idle (server-side task); the MCP HTTP client also uses a **24 h** read timeout as a failsafe. Tool result JSON is **`{relay_mcp_session_id, human, cmd_skill_count}`** plus optional **`attachments`** (`path`, and optionally **`data_url`** for small files — set **`RELAY_MCP_INLINE_ATTACHMENTS`** / **`RELAY_MCP_INLINE_MAX_BYTES`** on `relay mcp`). Details: [docs/HTTP_IPC.md](docs/HTTP_IPC.md).
+- **Bridge** — Before each interactive call, MCP reads the endpoint file; if missing or unhealthy, **`spawn`s the same executable with `gui`**, polls up to **~45 s** (`ensure_gui_endpoint`). Then **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**. The GUI completes that GET when you submit, dismiss, the request is superseded, or after **~60 minutes** idle (server-side task); the MCP HTTP client also uses a **24 h** read timeout as a failsafe. Tool result JSON is **`{relay_mcp_session_id, human, cmd_skill_count}`** plus optional **`attachments`** (`path`, and optionally **`data_url`** for small files — **`RELAY_MCP_INLINE_MAX_KB`** on `relay mcp`, see [docs/HTTP_IPC.md](docs/HTTP_IPC.md)).
 
 ```mermaid
 flowchart LR
@@ -109,6 +109,25 @@ Full API and security notes: **[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**.
 }
 ```
 
+**Cursor:** use **`.cursor/mcp.json`** in the repo for project-level MCP (in addition to global **`~/.cursor/mcp.json`**). Inlining is controlled **only** by **`RELAY_MCP_INLINE_MAX_KB`**: omit or empty → default **512** KiB; `0` or negative → off; positive → per-file cap (kibibytes). Example — off:
+
+```json
+{
+  "mcpServers": {
+    "relay-mcp": {
+      "command": "/path/to/relay",
+      "args": ["mcp"],
+      "env": {
+        "RELAY_MCP_INLINE_MAX_KB": "0"
+      },
+      "autoApprove": ["relay_interactive_feedback"]
+    }
+  }
+}
+```
+
+Semantics and examples: **[docs/HTTP_IPC.md](docs/HTTP_IPC.md)** (*MCP-only: inline `data_url`*). Official reference: [Cursor MCP — Configuration locations](https://cursor.com/docs/context/mcp).
+
 <p align="center">
   <img src="docs/ScreenShot_3.png" alt="Relay Settings Environment and MCP" width="440" style="max-width:100%; height:auto;" />
 </p>
@@ -116,7 +135,7 @@ Full API and security notes: **[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**.
 
 In-app **Settings → Environment & MCP**: copy JSON, **Cursor / Windsurf** one-click install, optional **PATH** persistence (Windows registry / shell rc). Rule prompts: **Settings → Rule prompts** (bilingual rule + IDE paste guide); source: [`src/ideRulesTemplates.ts`](src/ideRulesTemplates.ts).
 
-Repo example: [`mcp.json`](mcp.json).
+Repo example: [`mcp.json`](mcp.json) (optional `env.RELAY_MCP_INLINE_MAX_KB`; omit `env` entirely → same as default **512** KiB in code — [docs/HTTP_IPC.md](docs/HTTP_IPC.md)).
 
 ### Tips
 
