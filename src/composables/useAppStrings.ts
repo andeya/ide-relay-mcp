@@ -22,6 +22,8 @@ export function useAppStrings() {
       dockBtnLeft: t("dockBtnLeft"),
       dockBtnCenter: t("dockBtnCenter"),
       dockBtnRight: t("dockBtnRight"),
+      dockEdgeHideAria: t("dockEdgeHideAria"),
+      dockEdgeHideTitle: t("dockEdgeHideTitle"),
       qaHistoryTitle: t("qaHistoryTitle"),
       qaAssistantTurn: t("qaAssistantTurn"),
       qaUserTurnMe: t("qaUserTurnMe"),
