@@ -16,6 +16,8 @@
 //! - **Peek hit test** uses [`crate::mouse_in_dock_edge_peek_zone_window_only`] only (no monitor-wide band).
 //! - While tucked, the window uses always-on-top so the peek strip stays above other windows;
 //!   restored when expanded.
+//! - **`set_window_dock` (GUI):** apply [`crate::position_main_window_for_dock`] first, then persist
+//!   `window_dock.json` and clear [`EdgeHideState`], so a failed move never leaves stale state.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -232,6 +234,7 @@ pub fn collapse_after_leave(app: &AppHandle) -> Result<(), String> {
     g.suppress_peek_expand_until_ms = now.saturating_add(POST_COLLAPSE_PEEK_SUPPRESS_MS);
     drop(g);
 
+    // Peek strip must stay above other windows or hover-to-expand cannot receive the cursor.
     let _ = win.set_always_on_top(true);
     set_peek_fast_poll(true);
     Ok(())
