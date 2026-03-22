@@ -32,6 +32,10 @@ import { safeMarkdownToHtml } from "./utils/safeMarkdown";
 
 const lightboxSrc = ref<string | null>(null);
 const windowDock = ref<"left" | "center" | "right">("left");
+const dockEdgeHide = ref(false);
+/** Debounce tuck after pointer leaves the webview — ms from Rust `get_dock_edge_hide_ui_timing`. */
+let shellLeaveTimer: ReturnType<typeof setTimeout> | null = null;
+const shellLeaveDebounceMs = ref(120);
 const mcpPaused = ref(false);
 const mcpPauseBusy = ref(false);
 const mcpPauseErr = ref("");
@@ -399,6 +403,37 @@ async function applyWindowDock(d: "left" | "center" | "right") {
   }
 }
 
+async function toggleDockEdgeHide() {
+  const next = !dockEdgeHide.value;
+  try {
+    await invoke("set_dock_edge_hide", { enabled: next });
+    dockEdgeHide.value = next;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+function onShellMouseEnter() {
+  if (shellLeaveTimer !== null) {
+    clearTimeout(shellLeaveTimer);
+    shellLeaveTimer = null;
+  }
+}
+
+function onShellMouseLeave(ev: MouseEvent) {
+  if (!dockEdgeHide.value) return;
+  // Leaving through the top of the webview — pointer is headed to the native title bar / window
+  // controls. Whether to tuck is decided in Rust using Tauri cursor + outer window rect.
+  if (ev.clientY <= 16) return;
+  if (shellLeaveTimer !== null) clearTimeout(shellLeaveTimer);
+  shellLeaveTimer = setTimeout(() => {
+    shellLeaveTimer = null;
+    void invoke("dock_edge_hide_after_leave").catch(() => {
+      /* ignore */
+    });
+  }, shellLeaveDebounceMs.value);
+}
+
 async function setLang(code: "en" | "zh") {
   if (locale.value === code) return;
   locale.value = code;
@@ -424,6 +459,20 @@ onMounted(async () => {
     } catch {
       /* ignore */
     }
+    try {
+      dockEdgeHide.value = await invoke<boolean>("get_dock_edge_hide");
+    } catch {
+      /* ignore */
+    }
+    try {
+      const timing = await invoke<{
+        shellLeaveDebounceMs: number;
+        suppressAfterPeekMs: number;
+      }>("get_dock_edge_hide_ui_timing");
+      shellLeaveDebounceMs.value = timing.shellLeaveDebounceMs;
+    } catch {
+      /* keep default */
+    }
     await refreshMcpPaused();
     window.addEventListener("keydown", onGlobalKeydown);
   } catch (err) {
@@ -435,6 +484,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onGlobalKeydown);
   if (settingsRefreshToastTimer) clearTimeout(settingsRefreshToastTimer);
+  if (shellLeaveTimer !== null) clearTimeout(shellLeaveTimer);
 });
 </script>
 
@@ -449,128 +499,154 @@ onBeforeUnmount(() => {
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"
+    @mouseenter="onShellMouseEnter"
+    @mouseleave="onShellMouseLeave"
   >
     <!-- Main: feedback-first layout -->
     <section v-show="uiView === 'main'" class="panel panelMain mainWork">
       <header class="mainTopBar">
         <div class="mainTopBarLeft">
           <div class="mainBrandCluster">
-            <span class="mainBrandLogoWrap">
-              <img
-                class="mainBrandLogo"
-                :src="relayLogoUrl"
-                width="24"
-                height="24"
-                alt=""
+            <div class="mainBrandCapsule">
+              <span class="mainBrandLogoWrap">
+                <img
+                  class="mainBrandLogo"
+                  :src="relayLogoUrl"
+                  width="24"
+                  height="24"
+                  alt=""
+                  aria-hidden="true"
+                />
+              </span>
+              <h1 class="mainTitle">{{ strings.appTitle }}</h1>
+            </div>
+            <span
+              class="statusPill mainTopBarStatusPill"
+              :class="[
+                { 'mainTopBarStatusPill--waiting': statusPillUi.indeterminate },
+                { 'mainTopBarStatusPill--shiftForUpdateBadge': shiftStatusPillForUpdateBadge },
+                statusPillUi.hue !== 'default'
+                  ? 'mainTopBarStatusPill--hue-' + statusPillUi.hue
+                  : '',
+              ]"
+              role="status"
+              :aria-busy="statusPillUi.indeterminate"
+              :title="statusLabel"
+            >
+              <span
+                v-if="statusPillUi.indeterminate && statusPillUi.hue !== 'hub'"
+                class="statusPillWaitRing"
                 aria-hidden="true"
               />
+              <span class="mainTopBarStatusPillText">{{ statusLabel }}</span>
             </span>
-            <h1 class="mainTitle">{{ strings.appTitle }}</h1>
           </div>
-        </div>
-        <div
-          class="mainTopBarMid"
-          :class="{ 'mainTopBarMid--shiftForUpdateBadge': shiftStatusPillForUpdateBadge }"
-        >
-          <span
-            class="statusPill mainTopBarStatusPill"
-            :class="[
-              { 'mainTopBarStatusPill--waiting': statusPillUi.indeterminate },
-              statusPillUi.hue !== 'default'
-                ? 'mainTopBarStatusPill--hue-' + statusPillUi.hue
-                : '',
-            ]"
-            role="status"
-            :aria-busy="statusPillUi.indeterminate"
-            :title="statusLabel"
-          >
-            <span
-              v-if="statusPillUi.indeterminate && statusPillUi.hue !== 'hub'"
-              class="statusPillWaitRing"
-              aria-hidden="true"
-            />
-            <span class="mainTopBarStatusPillText">{{ statusLabel }}</span>
-          </span>
         </div>
         <div class="mainTopBarRight">
-          <div
-            class="dockSeg"
-            role="group"
-            :aria-label="strings.windowDockAria"
-          >
+          <div class="mainTopBarToolbar">
+            <div class="mainTopBarDockRow">
+              <div
+                class="dockSeg"
+                role="group"
+                :aria-label="strings.windowDockAria"
+              >
+              <button
+                type="button"
+                class="dockSegBtn"
+                :aria-pressed="windowDock === 'left'"
+                :title="strings.windowDockLeft"
+                @click="applyWindowDock('left')"
+              >
+                {{ strings.dockBtnLeft }}
+              </button>
+              <button
+                type="button"
+                class="dockSegBtn"
+                :aria-pressed="windowDock === 'center'"
+                :title="strings.windowDockCenter"
+                @click="applyWindowDock('center')"
+              >
+                {{ strings.dockBtnCenter }}
+              </button>
+              <button
+                type="button"
+                class="dockSegBtn"
+                :aria-pressed="windowDock === 'right'"
+                :title="strings.windowDockRight"
+                @click="applyWindowDock('right')"
+              >
+                {{ strings.dockBtnRight }}
+              </button>
+            </div>
             <button
               type="button"
-              class="dockSegBtn"
-              :class="{ active: windowDock === 'left' }"
-              :aria-pressed="windowDock === 'left'"
-              :title="strings.windowDockLeft"
-              @click="applyWindowDock('left')"
+              class="iconDockEdge"
+              :class="{ 'iconDockEdge--on': dockEdgeHide }"
+              :title="strings.dockEdgeHideTitle"
+              :aria-label="strings.dockEdgeHideAria"
+              :aria-pressed="dockEdgeHide"
+              @click="toggleDockEdgeHide"
             >
-              {{ strings.dockBtnLeft }}
+              <svg
+                class="iconDockEdgeSvg"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M4.5 5.25h4.5v13.5H4.5a.75.75 0 01-.75-.75V6a.75.75 0 01.75-.75zm6 0h9a.75.75 0 01.75.75v10.5a.75.75 0 01-.75.75h-9V5.25z"
+                />
+              </svg>
+            </button>
+            </div>
+            <button
+              v-if="showReleaseBadge"
+              type="button"
+              class="releaseBadge"
+              :class="{
+                'releaseBadge--update': releasePayload?.update_available,
+              }"
+              :title="badgeTitle"
+              :aria-label="t('releaseBadgeAria')"
+              @click="openRepo"
+            >
+              <span class="releaseBadgeDot" aria-hidden="true" />
+              {{ releaseLabel }}
             </button>
             <button
               type="button"
-              class="dockSegBtn"
-              :class="{ active: windowDock === 'center' }"
-              :aria-pressed="windowDock === 'center'"
-              :title="strings.windowDockCenter"
-              @click="applyWindowDock('center')"
+              class="iconGear"
+              :aria-label="strings.ariaOpenSettings"
+              :title="strings.ariaOpenSettings"
+              @click="openSettings"
             >
-              {{ strings.dockBtnCenter }}
-            </button>
-            <button
-              type="button"
-              class="dockSegBtn"
-              :class="{ active: windowDock === 'right' }"
-              :aria-pressed="windowDock === 'right'"
-              :title="strings.windowDockRight"
-              @click="applyWindowDock('right')"
-            >
-              {{ strings.dockBtnRight }}
+              <svg
+                class="iconGearSvg"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.37.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
             </button>
           </div>
-          <button
-            v-if="showReleaseBadge"
-            type="button"
-            class="releaseBadge"
-            :class="{
-              'releaseBadge--update': releasePayload?.update_available,
-            }"
-            :title="badgeTitle"
-            :aria-label="t('releaseBadgeAria')"
-            @click="openRepo"
-          >
-            <span class="releaseBadgeDot" aria-hidden="true" />
-            {{ releaseLabel }}
-          </button>
-          <button
-            type="button"
-            class="iconGear"
-            :aria-label="strings.ariaOpenSettings"
-            :title="strings.ariaOpenSettings"
-            @click="openSettings"
-          >
-            <svg
-              class="iconGearSvg"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.37.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"
-              />
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-          </button>
         </div>
       </header>
 
