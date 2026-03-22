@@ -2,8 +2,16 @@
 /**
  * Answer attachments in composer-style row: image thumbs + file chips (same layout as input preview).
  */
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+
+function mimeFromImagePath(path: string): string {
+  const ext = path.split(/[/\\]/).pop()?.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "gif") return "image/gif";
+  if (ext === "webp") return "image/webp";
+  return "image/png";
+}
 
 const props = defineProps<{
   paths: string[];
@@ -30,17 +38,23 @@ let cancelled = false;
 
 async function loadPath(p: string) {
   if (thumbs.value[p] || failed.value.has(p)) return;
+  const trimmed = p.trim();
+  if (!isTauri()) {
+    if (!cancelled) failed.value = new Set([...failed.value, p]);
+    return;
+  }
   try {
-    const u = await invoke<string>("read_feedback_attachment_data_url", {
-      path: p,
+    const b64 = await invoke<string>("read_local_file_bytes_b64", {
+      path: trimmed,
     });
     if (!cancelled) {
-      thumbs.value = { ...thumbs.value, [p]: u };
+      thumbs.value = {
+        ...thumbs.value,
+        [p]: `data:${mimeFromImagePath(trimmed)};base64,${b64}`,
+      };
     }
   } catch {
-    if (!cancelled) {
-      failed.value = new Set([...failed.value, p]);
-    }
+    if (!cancelled) failed.value = new Set([...failed.value, p]);
   }
 }
 
@@ -153,6 +167,10 @@ function onThumbClick(p: string) {
   border-top-color: #a5b4fc;
   border-radius: 50%;
   animation: qaReplySpin 0.7s linear infinite;
+}
+
+:global(html.relay-window-unfocused) .qaReplyThumbSpinner {
+  animation-play-state: paused;
 }
 
 @keyframes qaReplySpin {
