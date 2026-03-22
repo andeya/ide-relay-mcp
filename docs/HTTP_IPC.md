@@ -63,16 +63,63 @@ sequenceDiagram
 
 ### MCP-only: inline `data_url` for agents
 
-Set on the **`relay mcp`** process:
+Set on the **`relay mcp`** process. **Only** `RELAY_MCP_INLINE_MAX_KB` is read (signed integer, **kibibytes**, trimmed).
 
-| Variable                       | Meaning                                                                                                                                                  |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RELAY_MCP_INLINE_ATTACHMENTS` | Unset / empty: default — inline **`kind: image`** only, under size cap. `0` / `false` / `off`: never add `data_url`. `all` or `2`: any `kind` under cap. |
-| `RELAY_MCP_INLINE_MAX_BYTES`   | Max file size to read for inlining (default **524288**). Capped at 20 MiB.                                                                               |
+| State | Behavior |
+| ----- | -------- |
+| **Unset** or **empty** after trim | **Default 512** KiB: add `data_url` when each attachment file is ≤ min(**512 × 1024** bytes, **20 MiB**). Applies to **any** `kind` (still only Relay-managed `feedback_attachments/` paths). |
+| **Unparseable** (not a valid signed integer) | **Off** — never add `data_url` (fail-safe). |
+| **≤ 0** | **Off** — `path` only. |
+| **> 0** | **On** — per-file cap = min(`value × 1024` bytes, **20 MiB**); any `kind` under that cap. |
 
-Large files or disabled mode: **`path` only** (agent may read the file if its environment can see that path).
+Large files or when off: **`path` only** (agent may read the file if its environment can see that path).
 
-**Per-workspace / per-project policy:** Many IDEs let you set **environment variables only for the MCP server process** (e.g. Cursor **`mcp.json`** / VS Code–style MCP config with an **`env`** object on that server entry). Those vars are inherited by **`relay mcp`** when the IDE spawns it, so you can use **`RELAY_MCP_INLINE_ATTACHMENTS`** / **`RELAY_MCP_INLINE_MAX_BYTES`** to differ by repository (e.g. disable inlining in huge-monorepo, enable **`all`** in a small docs repo) without changing the global shell profile. Exact schema depends on the host; check your IDE’s MCP documentation for **`env`**.
+### Where to set `env` (Cursor)
+
+[Cursor’s MCP docs](https://cursor.com/docs/context/mcp) define two configuration files:
+
+| Location    | Path                                    | Typical use                                                                                                                                        |
+| ----------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project** | **`.cursor/mcp.json`** in the repo root | Same MCP setup for everyone who clones the repo; per-repo **`RELAY_MCP_INLINE_MAX_KB`** in `env`. |
+| **Global**  | **`~/.cursor/mcp.json`**                | Personal defaults for all workspaces.                                                                                                              |
+
+STDIO servers support an **`env`** object on each server entry (and optional **`envFile`**). Values may use [config interpolation](https://cursor.com/docs/context/mcp) (e.g. **`${workspaceFolder}`**, **`${env:VAR}`**). Those variables are visible to **`relay mcp`** when Cursor spawns the process—**not** necessarily the same as variables you `export` in an interactive terminal.
+
+### Example: `mcp.json` with `env` (Cursor)
+
+Disable inlining (`path` only in tool results):
+
+```json
+{
+  "mcpServers": {
+    "relay-mcp": {
+      "command": "/absolute/path/to/relay",
+      "args": ["mcp"],
+      "env": {
+        "RELAY_MCP_INLINE_MAX_KB": "0"
+      }
+    }
+  }
+}
+```
+
+Allow inlining up to **1 MiB** per file (any `kind`, still Relay-managed paths only):
+
+```json
+{
+  "mcpServers": {
+    "relay-mcp": {
+      "command": "/absolute/path/to/relay",
+      "args": ["mcp"],
+      "env": {
+        "RELAY_MCP_INLINE_MAX_KB": "1024"
+      }
+    }
+  }
+}
+```
+
+**Other IDEs / older setups:** Some hosts expose only a **single** global MCP configuration. If there is no per-project file, use one global `env`, or define **two server names** (e.g. `relay` vs `relay-noinline`) with different `env`, or a small **wrapper** script that exports variables then `exec`s `relay mcp`. Relay does not read IDE config files itself—it only reads the **process environment** of `relay mcp`.
 
 ### MCP client (`relay mcp` → ureq)
 
