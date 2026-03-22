@@ -283,8 +283,8 @@ export function useFeedbackWindow() {
     return t("statusAwaiting");
   });
   /**
-   * Header status capsule: busy state + hue tier (CSS: glow pulse on hub/loading;
-   * opacity breath on idle/active pill; breathing ring in App except hub — see statusPillWaitRing).
+   * Header status capsule: busy state + hue tier (CSS: Hub = static glow only, no spinner
+   * ring; other waiting hues use transform-only spinner — see statusPillWaitRing in style.css).
    */
   const statusPillUi = computed(() => {
     if (isHubPage.value) {
