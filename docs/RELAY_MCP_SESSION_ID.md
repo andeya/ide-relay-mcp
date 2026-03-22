@@ -2,7 +2,7 @@
 
 ## Merge key: `relay_mcp_session_id`
 
-- **First call:** Omit `relay_mcp_session_id` (or pass empty). Relay creates a new tab and generates a session id (millisecond timestamp). The tool returns JSON including `relay_mcp_session_id`, `human`, `cmd_skill_count`, and **`relay_gui_platform`** (`windows` \| `macos` \| `linux` \| `unknown` — OS of the Relay GUI; use with `attachments` paths when your agent runs elsewhere, e.g. WSL).
+- **First call:** Omit `relay_mcp_session_id` (or pass empty). Relay creates a new tab and generates a session id (millisecond timestamp). The tool returns JSON including `relay_mcp_session_id`, `human`, and `cmd_skill_count`.
 - **You must remember** the returned `relay_mcp_session_id` and **reply to the `human` content**.
 - **Next calls:** You **must** pass that `relay_mcp_session_id` so the request merges into the same Relay tab.
 
@@ -19,7 +19,7 @@
 
 ## MCP tool result
 
-- Every non-paused, non–auto-reply result is JSON: `{"relay_mcp_session_id":"<string>","human":"<string>","cmd_skill_count":<number>,"relay_gui_platform":"<string>"}` (plus optional `attachments`).
+- Every non-paused, non–auto-reply result is JSON: `{"relay_mcp_session_id":"<string>","human":"<string>","cmd_skill_count":<number>}` (plus optional `attachments`; each item may include optional `data_url` when `relay mcp` inlines small files — see [HTTP_IPC.md](HTTP_IPC.md)).
 - **`cmd_skill_count`** is the number of command + skill items currently stored on that Relay tab (length of slash menu source).
 - `human` is the user’s Answer text (empty on dismiss/timeout).
 - **Pause:** If the result contains `<<<RELAY_MCP_PAUSED>>>`, do not call the tool again until the user resumes in Settings.

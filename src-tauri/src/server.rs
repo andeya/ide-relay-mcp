@@ -387,7 +387,6 @@ fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
         "relay_mcp_session_id": "",
         "human": rule.text,
         "cmd_skill_count": 0,
-        "relay_gui_platform": crate::relay_gui_platform_label(),
     })
     .to_string();
     respond_tool_result(&ctx.outbound, rpc_id, auto_reply_result)?;
@@ -428,7 +427,7 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
                     "tools": [
                         {
                             "name": TOOL_NAME,
-                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id, human, cmd_skill_count, relay_gui_platform (\"windows\"|\"macos\"|\"linux\"|\"unknown\" — OS of the Relay GUI), and optional attachments [{kind, path}] when the user included images/files. When this MCP process runs on Linux (e.g. WSL) and relay_gui_platform is \"windows\", convertible Windows attachment paths are replaced with /mnt/… only. New tab (no session): always include commands and skills arrays filled with every item the IDE/host can expose; use [] only if truly none. If cmd_skill_count was 0 on the last reply, next call must repopulate both arrays the same way. With session id: commands/skills optional; when sent, merged (dedupe by id).",
+                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id, human, cmd_skill_count, and optional attachments [{kind, path, data_url?}]. Paths point at Relay's saved files; when small enough, relay mcp may add data_url (base64) alongside path for the IDE agent — set RELAY_MCP_INLINE_ATTACHMENTS=0 to disable, RELAY_MCP_INLINE_ATTACHMENTS=all (or 2) to inline any kind under the byte cap, RELAY_MCP_INLINE_MAX_BYTES for cap (default 524288). New tab (no session): always include commands and skills arrays filled with every item the IDE/host can expose; use [] only if truly none. If cmd_skill_count was 0 on the last reply, next call must repopulate both arrays the same way. With session id: commands/skills optional; when sent, merged (dedupe by id).",
                             "inputSchema": {
                                 "type": "object",
                                 "description": "retell required. New session: include commands and skills with full IDE-provided lists when possible; [] only when host exposes no items. After cmd_skill_count 0, next call must include both arrays repopulated the same way. With relay_mcp_session_id: pass it; commands/skills optional unless repopulating after zero.",

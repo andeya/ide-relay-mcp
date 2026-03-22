@@ -13,13 +13,13 @@ use tauri::Manager;
 pub mod auto_reply;
 pub mod config;
 pub mod gui_http;
+mod mcp_feedback_enrich;
 pub mod mcp_http;
 pub mod mcp_setup;
 pub mod path_persistence;
 pub mod release_check;
 pub mod server;
 pub mod storage;
-pub mod wsl_path_convert;
 
 pub const APP_NAME: &str = "Relay MCP";
 pub const APP_QUALIFIER: &str = "com";
@@ -405,19 +405,6 @@ pub fn cmd_skill_count(tab: &LaunchState) -> usize {
         + tab.skills.as_ref().map(|v| v.len()).unwrap_or(0)
 }
 
-/// OS family of the Relay **GUI** process (tool result field for path mapping, e.g. WSL agent + Windows GUI).
-pub fn relay_gui_platform_label() -> &'static str {
-    if cfg!(windows) {
-        "windows"
-    } else if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else {
-        "unknown"
-    }
-}
-
 /// JSON string returned to MCP / `GET .../wait` (stable shape for agents).
 /// When `attachments` is non-empty, an `attachments` array is included (no `<<<RELAY_FEEDBACK_JSON>>>`).
 pub fn feedback_tool_result_string(
@@ -425,13 +412,11 @@ pub fn feedback_tool_result_string(
     human: &str,
     attachments: &[QaAttachmentRef],
 ) -> String {
-    let plat = relay_gui_platform_label();
     if attachments.is_empty() {
         return serde_json::json!({
             "relay_mcp_session_id": tab.relay_mcp_session_id,
             "human": human,
             "cmd_skill_count": cmd_skill_count(tab),
-            "relay_gui_platform": plat,
         })
         .to_string();
     }
@@ -439,7 +424,6 @@ pub fn feedback_tool_result_string(
         "relay_mcp_session_id": tab.relay_mcp_session_id,
         "human": human,
         "cmd_skill_count": cmd_skill_count(tab),
-        "relay_gui_platform": plat,
         "attachments": attachments,
     })
     .to_string()
@@ -721,10 +705,6 @@ mod feedback_tool_result_tests {
         assert_eq!(v["relay_mcp_session_id"], "1700000000000");
         assert_eq!(v["human"], "hello");
         assert_eq!(v["cmd_skill_count"], 2);
-        assert_eq!(
-            v["relay_gui_platform"].as_str(),
-            Some(super::relay_gui_platform_label())
-        );
         assert!(v.get("attachments").is_none());
     }
 
@@ -738,7 +718,6 @@ mod feedback_tool_result_tests {
         let s = feedback_tool_result_string(&t, "hi", &att);
         let v: Value = serde_json::from_str(&s).expect("json");
         assert_eq!(v["human"], "hi");
-        assert!(v.get("relay_gui_platform").is_some());
         let a = v["attachments"].as_array().expect("arr");
         assert_eq!(a.len(), 1);
         assert_eq!(a[0]["kind"], "image");

@@ -306,8 +306,8 @@ pub fn save_feedback_attachment(name: &str, bytes_b64: &str) -> Result<PathBuf> 
     Ok(path)
 }
 
-/// Read a saved feedback image as data URL.
-pub fn read_feedback_attachment_data_url(path: &str) -> Result<String> {
+/// Resolve a user-supplied path string to a canonical file under `feedback_attachments/`.
+fn resolve_feedback_attachment_file(path: &str) -> Result<PathBuf> {
     let raw = path
         .trim()
         .trim_matches(|c| c == '"' || c == '\'' || c == '\u{feff}');
@@ -331,11 +331,10 @@ pub fn read_feedback_attachment_data_url(path: &str) -> Result<String> {
     if !canon.starts_with(&base_canon) {
         bail!("path outside feedback_attachments");
     }
-    let len = fs::metadata(&canon)?.len();
-    if len > FEEDBACK_ATTACH_MAX_BYTES {
-        bail!("attachment too large");
-    }
-    let bytes = fs::read(&canon)?;
+    Ok(canon)
+}
+
+fn bytes_to_data_url(canon: &Path, bytes: &[u8]) -> String {
     let ext = canon
         .extension()
         .and_then(|s| s.to_str())
@@ -346,11 +345,40 @@ pub fn read_feedback_attachment_data_url(path: &str) -> Result<String> {
         "gif" => "image/gif",
         "webp" => "image/webp",
         "svg" => "image/svg+xml",
-        _ => "image/png",
+        "txt" | "md" | "json" | "log" => "text/plain; charset=utf-8",
+        "pdf" => "application/pdf",
+        "" => "image/png",
+        _ => "application/octet-stream",
     };
     use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Ok(format!("data:{mime};base64,{b64}"))
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    format!("data:{mime};base64,{b64}")
+}
+
+/// Read a saved feedback image as data URL.
+pub fn read_feedback_attachment_data_url(path: &str) -> Result<String> {
+    let canon = resolve_feedback_attachment_file(path)?;
+    let len = fs::metadata(&canon)?.len();
+    if len > FEEDBACK_ATTACH_MAX_BYTES {
+        bail!("attachment too large");
+    }
+    let bytes = fs::read(&canon)?;
+    Ok(bytes_to_data_url(&canon, &bytes))
+}
+
+/// Same as [`read_feedback_attachment_data_url`] but only if the file is at most `max_bytes`.
+/// Used when embedding small attachments in MCP tool output (`data_url` alongside `path`).
+pub fn read_feedback_attachment_data_url_if_within(path: &str, max_bytes: u64) -> Result<String> {
+    let canon = resolve_feedback_attachment_file(path)?;
+    let len = fs::metadata(&canon)?.len();
+    if len > max_bytes {
+        bail!("attachment too large for inline");
+    }
+    if len > FEEDBACK_ATTACH_MAX_BYTES {
+        bail!("attachment too large");
+    }
+    let bytes = fs::read(&canon)?;
+    Ok(bytes_to_data_url(&canon, &bytes))
 }
 
 pub fn write_text_file(path: &Path, text: &str) -> Result<()> {

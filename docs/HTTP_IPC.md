@@ -15,7 +15,8 @@ sequenceDiagram
     Http->>UI: emit relay_tabs_changed
     Mcp->>Http: GET /v1/feedback/wait/:id
     UI->>Http: submit_tab_feedback
-    Http-->>Mcp: JSON { relay_mcp_session_id, human, cmd_skill_count, relay_gui_platform [, attachments] }
+    Http-->>Mcp: JSON { relay_mcp_session_id, human, cmd_skill_count [, attachments] }
+    Note right of Mcp: may add attachments[].data_url before IDE
     Mcp-->>IDE: tool result
 ```
 
@@ -50,14 +51,26 @@ sequenceDiagram
 - **HTTP handler**: the Axum route **does not** apply a per-request socket timeout; it awaits a `oneshot` until the tab completes (submit, dismiss, supersede, or sender dropped).
 - **60-minute idle cut-off**: when `POST /v1/feedback` returns a `request_id`, the server schedules a background task (≈ **60 min + 20 s**) that injects an **empty** `human` JSON result if the wait is still pending — same outcome as dismiss/timeout from the MCP user’s perspective (`human: ""`).
 - Completes when the user submits an Answer, dismisses, that orphan task fires, or the tab is **superseded** by another `POST` for the same merged session (cancels the previous wait).
-- Response: `Content-Type: application/json; charset=utf-8`, body includes **`relay_mcp_session_id`**, **`human`**, **`cmd_skill_count`**, **`relay_gui_platform`** (`"windows"` \| `"macos"` \| `"linux"` \| `"unknown"` — OS of the **Relay GUI** process), and when the user attached images/files **`"attachments":[{"kind":"image"|"file","path":"..."}, ...]`** (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss / idle timeout / supersede). The GUI does not rewrite paths. **`relay mcp` on Linux** (e.g. **WSL**): after receiving this JSON, if **`relay_gui_platform` is `"windows"`**, the MCP process **replaces** each convertible Windows `path` in `attachments` with `/mnt/…` only (non-convertible paths unchanged); other platforms pass the body through unchanged.
+- Response: `Content-Type: application/json; charset=utf-8`, body includes **`relay_mcp_session_id`**, **`human`**, **`cmd_skill_count`**, and when the user attached images/files **`"attachments":[{"kind":"image"|"file","path":"..."}, ...]`** (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss / idle timeout / supersede). Paths are local to the GUI host. **`relay mcp`** may **add** optional **`data_url`** (base64 data URL) next to each **`path`** before returning the string to the IDE as the `tools/call` result — **`path` is never removed**. See env vars below.
 
 ## MCP flow
 
 1. Read `gui_endpoint.json`; if absent, spawn **`relay gui`** and poll.
 2. `POST /v1/feedback` → `request_id`
 3. `GET .../wait/:request_id` — long-lived response driven by GUI state (see above), not a fixed HTTP “61 minute” client timer.
-4. Body returned as `tools/call` result.
+4. Optionally enrich JSON for the IDE: small **`attachments`** may get a **`data_url`** field (see environment variables). The HTTP response body from step 3 is unchanged on disk/logging semantics except as consumed by MCP.
+5. String returned as `tools/call` result.
+
+### MCP-only: inline `data_url` for agents
+
+Set on the **`relay mcp`** process:
+
+| Variable | Meaning |
+| -------- | ------- |
+| `RELAY_MCP_INLINE_ATTACHMENTS` | Unset / empty: default — inline **`kind: image`** only, under size cap. `0` / `false` / `off`: never add `data_url`. `all` or `2`: any `kind` under cap. |
+| `RELAY_MCP_INLINE_MAX_BYTES` | Max file size to read for inlining (default **524288**). Capped at 20 MiB. |
+
+Large files or disabled mode: **`path` only** (agent may read the file if its environment can see that path).
 
 ### MCP client (`relay mcp` → ureq)
 
