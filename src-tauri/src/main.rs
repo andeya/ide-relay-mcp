@@ -33,10 +33,7 @@ fn try_attach_parent_console_for_cli() {
     };
     unsafe {
         let h = GetStdHandle(STD_OUTPUT_HANDLE);
-        if h != INVALID_HANDLE_VALUE
-            && h != 0
-            && GetFileType(h) == FILE_TYPE_PIPE
-        {
+        if h != INVALID_HANDLE_VALUE && h != 0 && GetFileType(h) == FILE_TYPE_PIPE {
             return;
         }
         let _ = AttachConsole(ATTACH_PARENT_PROCESS);
