@@ -12,6 +12,7 @@ use tauri::Manager;
 
 pub mod auto_reply;
 pub mod config;
+pub mod dock_edge_hide;
 pub mod gui_http;
 mod mcp_feedback_enrich;
 pub mod mcp_http;
@@ -33,8 +34,12 @@ pub const GUI_ALIVE_MARKER: &str = "relay_gui_alive.marker";
 // Re-export config for backward compatibility (read_ui_locale, write_window_dock, etc.).
 pub use auto_reply::{auto_reply_peek, consume_oneshot, load_auto_reply_rules, AutoReplyRule};
 pub use config::{
-    position_main_window_for_dock, read_mcp_paused, read_ui_locale, read_window_dock,
-    write_mcp_paused, write_ui_locale, write_window_dock,
+    collapse_window_for_edge_hide, desktop_cursor_outside_outer_window,
+    mouse_in_dock_edge_peek_zone, mouse_in_dock_edge_peek_zone_window_only,
+    position_main_window_for_dock, read_dock_edge_hide, read_mcp_paused, read_ui_locale,
+    read_window_dock, window_nearest_horizontal_screen_edge_side,
+    window_outer_straddles_screen_edge, write_dock_edge_hide, write_mcp_paused, write_ui_locale,
+    write_window_dock,
 };
 pub use path_persistence::{
     gui_binary_path, persist_relay_cli_path, relay_path_config_reason,
