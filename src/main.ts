@@ -9,7 +9,19 @@ function syncRelayDocHiddenClass() {
     document.visibilityState === "hidden",
   );
 }
+
+/** Pause decorative CSS animations when the webview loses focus (cheap idle CPU). */
+function syncRelayWindowFocusClass() {
+  document.documentElement.classList.toggle(
+    "relay-window-unfocused",
+    typeof document !== "undefined" && !document.hasFocus(),
+  );
+}
+
 syncRelayDocHiddenClass();
+syncRelayWindowFocusClass();
 document.addEventListener("visibilitychange", syncRelayDocHiddenClass);
+window.addEventListener("focus", syncRelayWindowFocusClass);
+window.addEventListener("blur", syncRelayWindowFocusClass);
 
 createApp(App).mount("#app");
