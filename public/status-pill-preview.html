@@ -86,7 +86,7 @@
         border-right-color: transparent;
         border-radius: 50%;
         opacity: 0.8;
-        animation: statusPillWaitRingBreath 2s ease-in-out infinite;
+        animation: statusPillWaitRingBreath 2.45s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
       }
       .mainTopBarStatusPillText {
         min-width: 0;
@@ -98,11 +98,11 @@
       .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-loading {
         border-color: rgba(45, 212, 191, 0.45);
         box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12);
-        animation: statusPillWaitPulse 2.2s ease-in-out infinite;
+        animation: statusPillWaitPulse 2.45s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
       }
       .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-idle,
       .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-active {
-        animation: mainTopBarStatusPillOpacityBreath 2.2s ease-in-out infinite;
+        animation: mainTopBarStatusPillOpacityBreath 2.45s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
       }
       .mainTopBarStatusPill--hue-hub {
         background: rgba(15, 118, 110, 0.18);
@@ -134,17 +134,31 @@
         100% {
           box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.1);
         }
+
+        25%,
+        75% {
+          box-shadow:
+            0 0 0 1px rgba(45, 212, 191, 0.18),
+            0 0 10px rgba(45, 212, 191, 0.1);
+        }
+
         50% {
           box-shadow:
-            0 0 0 1px rgba(45, 212, 191, 0.22),
-            0 0 12px rgba(45, 212, 191, 0.12);
+            0 0 0 1px rgba(45, 212, 191, 0.28),
+            0 0 14px rgba(45, 212, 191, 0.18);
         }
       }
       @keyframes mainTopBarStatusPillOpacityBreath {
         0%,
         100% {
-          opacity: 0.78;
+          opacity: 0.66;
         }
+
+        25%,
+        75% {
+          opacity: 0.84;
+        }
+
         50% {
           opacity: 1;
         }
@@ -152,8 +166,14 @@
       @keyframes statusPillWaitRingBreath {
         0%,
         100% {
-          opacity: 0.42;
+          opacity: 0.32;
         }
+
+        25%,
+        75% {
+          opacity: 0.64;
+        }
+
         50% {
           opacity: 1;
         }
