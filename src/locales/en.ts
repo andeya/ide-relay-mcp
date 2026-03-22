@@ -151,6 +151,9 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   dockBtnLeft: "◀",
   dockBtnCenter: "●",
   dockBtnRight: "▶",
+  dockEdgeHideAria: "Edge tuck",
+  dockEdgeHideTitle:
+    "When docked left or right: after the pointer leaves the window, tuck to the screen edge (a thin strip remains). Move the pointer onto that strip to expand — like classic QQ panels. The window also expands when focused, and when a new MCP message arrives (Relay is raised to the front).",
 
   releaseBadgeAria: "Open Relay repository on GitHub",
   releaseBadgeUpdate: "v{latest} · New",
