@@ -14,9 +14,9 @@ pub mod auto_reply;
 pub mod config;
 pub mod dock_edge_hide;
 pub mod gui_http;
-mod mcp_feedback_enrich;
 pub mod mcp_http;
 pub mod mcp_setup;
+mod mcp_wsl_paths;
 pub mod path_persistence;
 pub mod release_check;
 pub mod server;
@@ -50,8 +50,8 @@ pub use storage::{
     clear_relay_attachments_cache, clear_relay_log_cache, feedback_log_pairs_for_session,
     log_write, make_temp_path, new_tab_id, normalize_logged_user_reply, parse_feedback_log_mcp,
     prepare_user_data_dir, purge_attachment_retention_bundled, purge_attachments_older_than_days,
-    read_attachment_retention_days, read_control_status, read_feedback_attachment_data_url,
-    read_text_file, refresh_gui_presence_marker, relay_cache_stats, remove_gui_presence_marker,
+    read_attachment_retention_days, read_control_status, read_text_file,
+    refresh_gui_presence_marker, relay_cache_stats, remove_gui_presence_marker,
     run_attachment_retention_purge, save_feedback_attachment, write_attachment_retention_days,
     write_control_status, write_text_file, McpFeedbackLogParse, RelayCacheStats,
     DEFAULT_ATTACHMENT_RETENTION_DAYS,
@@ -410,8 +410,9 @@ pub fn cmd_skill_count(tab: &LaunchState) -> usize {
         + tab.skills.as_ref().map(|v| v.len()).unwrap_or(0)
 }
 
-/// JSON string returned to MCP / `GET .../wait` (stable shape for agents).
+/// JSON string for MCP / HTTP wait completion.
 /// When `attachments` is non-empty, an `attachments` array is included (no `<<<RELAY_FEEDBACK_JSON>>>`).
+/// WSL path rewrite for `attachments` runs in `relay mcp` via [`crate::mcp_http::feedback_round`].
 pub fn feedback_tool_result_string(
     tab: &LaunchState,
     human: &str,
