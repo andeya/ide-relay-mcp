@@ -448,7 +448,6 @@ pub fn relay_path_persistently_configured() -> bool {
 }
 
 /// When PATH is not configured, returns a short reason for the user to fix manually.
-#[allow(unreachable_code)]
 pub fn relay_path_config_reason() -> Option<String> {
     if relay_path_persistently_configured() {
         return None;
@@ -488,9 +487,8 @@ pub fn relay_path_config_reason() -> Option<String> {
                 current_display
             ));
         }
-        return Some("No Relay PATH block found in shell rc (.zshrc, .bashrc, .profile, or fish). Use one-click install.".to_string());
+        Some("No Relay PATH block found in shell rc (.zshrc, .bashrc, .profile, or fish). Use one-click install.".to_string())
     }
-    None
 }
 
 /// Add relay bin dir to user PATH permanently (registry on Windows, shell rc on Unix).
