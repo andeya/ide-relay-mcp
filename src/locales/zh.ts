@@ -150,7 +150,7 @@ export default {
   dockBtnRight: "▶",
   dockEdgeHideAria: "贴边隐藏",
   dockEdgeHideTitle:
-    "靠左或靠右时：鼠标离开窗口后向屏边收起，只露一条边；鼠标移到屏边露出的区域时自动展开（类似早年 QQ 贴边）。窗口获得焦点时会展开；IDE 发来新的 MCP 消息时也会先展开并前置窗口。",
+    "靠左或靠右时：鼠标离开窗口后向屏边收起，只露一条边；鼠标移到屏边露出的区域时自动展开（类似早年 QQ 贴边）。窗口获得焦点时会展开；IDE 发来新的 MCP 消息时也会先展开并前置窗口。若卡住：⌘⇧E（Windows/Linux 用 Ctrl+Shift+E）可强制展开。",
 
   releaseBadgeAria: "在 GitHub 打开 Relay 仓库",
   releaseBadgeUpdate: "v{latest} · New",
