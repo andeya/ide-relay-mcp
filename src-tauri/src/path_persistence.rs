@@ -6,19 +6,19 @@ use std::path::{Path, PathBuf};
 
 use crate::{gui_binary_name, relay_cli_directory};
 
+#[cfg(not(windows))]
 const RELAY_PATH_BLOCK_BEGIN: &str = "# ----- BEGIN RELAY_MCP_PATH (managed by Relay app) -----";
+#[cfg(not(windows))]
 const RELAY_PATH_BLOCK_END: &str = "# ----- END RELAY_MCP_PATH -----";
+#[cfg(not(windows))]
 const RELAY_PATH_MARKER: &str = "# Relay MCP PATH (managed by Relay app)";
 
 #[cfg(windows)]
 const RELAY_MCP_PATH_REGISTRY_VALUE: &str = "RelayMCPPath";
 
+#[cfg(not(windows))]
 fn user_home_dir() -> Option<PathBuf> {
-    if cfg!(windows) {
-        std::env::var_os("USERPROFILE").map(PathBuf::from)
-    } else {
-        std::env::var_os("HOME").map(PathBuf::from)
-    }
+    std::env::var_os("HOME").map(PathBuf::from)
 }
 
 #[cfg(windows)]
