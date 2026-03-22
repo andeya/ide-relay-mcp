@@ -16,7 +16,7 @@ sequenceDiagram
     Mcp->>Http: GET /v1/feedback/wait/:id
     UI->>Http: submit_tab_feedback
     Http-->>Mcp: JSON { relay_mcp_session_id, human, cmd_skill_count [, attachments] }
-    Note right of Mcp: may add attachments[].data_url before IDE
+    Note right of Mcp: optional rewrite attachments[].path for WSL (RELAY_EXE_IN_WSL)
     Mcp-->>IDE: tool result
 ```
 
@@ -51,75 +51,55 @@ sequenceDiagram
 - **HTTP handler**: the Axum route **does not** apply a per-request socket timeout; it awaits a `oneshot` until the tab completes (submit, dismiss, supersede, or sender dropped).
 - **60-minute idle cut-off**: when `POST /v1/feedback` returns a `request_id`, the server schedules a background task (≈ **60 min + 20 s**) that injects an **empty** `human` JSON result if the wait is still pending — same outcome as dismiss/timeout from the MCP user’s perspective (`human: ""`).
 - Completes when the user submits an Answer, dismisses, that orphan task fires, or the tab is **superseded** by another `POST` for the same merged session (cancels the previous wait).
-- Response: `Content-Type: application/json; charset=utf-8`, body includes **`relay_mcp_session_id`**, **`human`**, **`cmd_skill_count`**, and when the user attached images/files **`"attachments":[{"kind":"image"|"file","path":"..."}, ...]`** (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss / idle timeout / supersede). Paths are local to the GUI host. **`relay mcp`** may **add** optional **`data_url`** (base64 data URL) next to each **`path`** before returning the string to the IDE as the `tools/call` result — **`path` is never removed**. See env vars below.
+- Response: `Content-Type: application/json; charset=utf-8`, body includes **`relay_mcp_session_id`**, **`human`**, **`cmd_skill_count`**, and when the user attached images/files **`"attachments":[{"kind":"image"|"file","path":"..."}, ...]`** (`cmd_skill_count` = stored commands+skills on that tab; empty `human` on dismiss / idle timeout / supersede). Paths are local to the GUI host (Windows absolute paths). Before the IDE sees the `tools/call` result, **`relay mcp`** may **rewrite** each **`path`** to a WSL form (`/mnt/c/...`) when **`RELAY_EXE_IN_WSL`** is enabled (see below); HTTP payloads and on-disk history stay unchanged.
 
 ## MCP flow
 
 1. Read `gui_endpoint.json`; if absent, spawn **`relay gui`** and poll.
 2. `POST /v1/feedback` → `request_id`
 3. `GET .../wait/:request_id` — long-lived response driven by GUI state (see above), not a fixed HTTP “61 minute” client timer.
-4. Optionally enrich JSON for the IDE: small **`attachments`** may get a **`data_url`** field (see environment variables). The HTTP response body from step 3 is unchanged on disk/logging semantics except as consumed by MCP.
+4. Optionally transform JSON for the IDE: **`attachments[].path`** may be rewritten for **WSL-hosted agents** using Windows `relay.exe` (see **`RELAY_EXE_IN_WSL`**). The HTTP response body from step 3 is unchanged on disk/logging semantics except as consumed by MCP.
 5. String returned as `tools/call` result.
 
-### MCP-only: inline `data_url` for agents
+### MCP-only: WSL path rewrite (`RELAY_EXE_IN_WSL`)
 
-Set on the **`relay mcp`** process. **Only** `RELAY_MCP_INLINE_MAX_KB` is read (signed integer, **kibibytes**, trimmed).
+Set on the **`relay mcp`** process (Windows builds only). When the IDE runs the MCP client **inside WSL** but **`relay.exe` is the Windows binary**, agents need **`path`** strings they can open from Linux (e.g. `/mnt/c/Users/...` instead of `C:\Users\...`).
 
-| State | Behavior |
-| ----- | -------- |
-| **Unset** or **empty** after trim | **Default 512** KiB: add `data_url` when each attachment file is ≤ min(**512 × 1024** bytes, **20 MiB**). Applies to **any** `kind` (still only Relay-managed `feedback_attachments/` paths). |
-| **Unparseable** (not a valid signed integer) | **Off** — never add `data_url` (fail-safe). |
-| **≤ 0** | **Off** — `path` only. |
-| **> 0** | **On** — per-file cap = min(`value × 1024` bytes, **20 MiB**); any `kind` under that cap. |
-
-Large files or when off: **`path` only** (agent may read the file if its environment can see that path).
+| Value (trimmed; ASCII case-insensitive)                      | Behavior                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`1`** or **`true`**                                        | Replace each **`attachments[].path`** with the WSL `/mnt/<drive>/...` form when the value is a Windows drive path; if the string is only a Relay attachment filename or relative fragment, **`relay mcp`** first resolves it to a canonical Windows path (same rules as reading attachments), then maps it. UNC paths are left unchanged. |
+| **Unset**, **empty**, **`0`**, **`false`**, or anything else | **Off** — paths in the tool result match the HTTP body (Windows).                                                                                                                                                                                                                                                                         |
 
 ### Where to set `env` (Cursor)
 
 [Cursor’s MCP docs](https://cursor.com/docs/context/mcp) define two configuration files:
 
-| Location    | Path                                    | Typical use                                                                                                                                        |
-| ----------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Project** | **`.cursor/mcp.json`** in the repo root | Same MCP setup for everyone who clones the repo; per-repo **`RELAY_MCP_INLINE_MAX_KB`** in `env`. |
-| **Global**  | **`~/.cursor/mcp.json`**                | Personal defaults for all workspaces.                                                                                                              |
+| Location    | Path                                    | Typical use                                                                                                                               |
+| ----------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project** | **`.cursor/mcp.json`** in the repo root | Same MCP setup for everyone who clones the repo; per-repo **`RELAY_EXE_IN_WSL`** in `env` when using WSL agents with Windows `relay.exe`. |
+| **Global**  | **`~/.cursor/mcp.json`**                | Personal defaults for all workspaces.                                                                                                     |
 
 STDIO servers support an **`env`** object on each server entry (and optional **`envFile`**). Values may use [config interpolation](https://cursor.com/docs/context/mcp) (e.g. **`${workspaceFolder}`**, **`${env:VAR}`**). Those variables are visible to **`relay mcp`** when Cursor spawns the process—**not** necessarily the same as variables you `export` in an interactive terminal.
 
 ### Example: `mcp.json` with `env` (Cursor)
 
-Disable inlining (`path` only in tool results):
+WSL agent + Windows `relay.exe`: rewrite attachment paths in the MCP tool result to `/mnt/c/...` form:
 
 ```json
 {
   "mcpServers": {
     "relay-mcp": {
-      "command": "/absolute/path/to/relay",
+      "command": "C:/Users/You/AppData/Local/Relay/relay.exe",
       "args": ["mcp"],
       "env": {
-        "RELAY_MCP_INLINE_MAX_KB": "0"
+        "RELAY_EXE_IN_WSL": "1"
       }
     }
   }
 }
 ```
 
-Allow inlining up to **1 MiB** per file (any `kind`, still Relay-managed paths only):
-
-```json
-{
-  "mcpServers": {
-    "relay-mcp": {
-      "command": "/absolute/path/to/relay",
-      "args": ["mcp"],
-      "env": {
-        "RELAY_MCP_INLINE_MAX_KB": "1024"
-      }
-    }
-  }
-}
-```
-
-**Other IDEs / older setups:** Some hosts expose only a **single** global MCP configuration. If there is no per-project file, use one global `env`, or define **two server names** (e.g. `relay` vs `relay-noinline`) with different `env`, or a small **wrapper** script that exports variables then `exec`s `relay mcp`. Relay does not read IDE config files itself—it only reads the **process environment** of `relay mcp`.
+**Other IDEs / older setups:** Some hosts expose only a **single** global MCP configuration. If there is no per-project file, use one global `env`, or define **two server names** (e.g. `relay` vs `relay-wsl`) with different `env` (such as `RELAY_EXE_IN_WSL`), or a small **wrapper** script that exports variables then `exec`s `relay mcp`. Relay does not read IDE config files itself—it only reads the **process environment** of `relay mcp`.
 
 ### MCP client (`relay mcp` → ureq)
 
