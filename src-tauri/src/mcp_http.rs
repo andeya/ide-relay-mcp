@@ -49,13 +49,19 @@ fn health_ok(ep: &GuiEndpoint) -> bool {
 
 fn spawn_gui() -> Result<()> {
     let exe = std::env::current_exe().context("current_exe")?;
-    Command::new(exe)
-        .arg("gui")
+    let mut cmd = Command::new(exe);
+    cmd.arg("gui")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .context("spawn relay gui")?;
+        .stderr(std::process::Stdio::null());
+    // Windows: without this, spawning `relay gui` from `relay mcp` often opens a blank console window.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.spawn().context("spawn relay gui")?;
     Ok(())
 }
 

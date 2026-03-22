@@ -1,4 +1,8 @@
 //! `relay` / `relay gui` (hub), `relay mcp`, `relay feedback` (terminal).
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
 use std::fs;
 use std::path::Path;
@@ -14,6 +18,34 @@ use relay_mcp::{
     gui_http::RelayGuiRuntime, refresh_gui_presence_marker, run_feedback_cli, ControlStatus,
     FeedbackTabsState, LaunchState, QaRound,
 };
+
+/// Release Windows builds use the GUI subsystem; attach to the parent console so CLI subcommands
+/// can print MCP JSON-RPC / `relay feedback` output when launched from cmd or PowerShell.
+///
+/// Skips attaching when stdout is already a pipe so IDE-hosted `relay mcp` (stdio JSON-RPC) is
+/// never redirected to a stray console.
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+fn try_attach_parent_console_for_cli() {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::Storage::FileSystem::{GetFileType, FILE_TYPE_PIPE};
+    use windows_sys::Win32::System::Console::{
+        AttachConsole, GetStdHandle, ATTACH_PARENT_PROCESS, STD_OUTPUT_HANDLE,
+    };
+    unsafe {
+        let h = GetStdHandle(STD_OUTPUT_HANDLE);
+        if h != INVALID_HANDLE_VALUE
+            && h != 0
+            && GetFileType(h) == FILE_TYPE_PIPE
+        {
+            return;
+        }
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+        // Ignore failure: no parent console, already attached, etc.
+    }
+}
+
+#[cfg(not(all(target_os = "windows", not(debug_assertions))))]
+fn try_attach_parent_console_for_cli() {}
 
 #[derive(Parser)]
 #[command(
@@ -548,6 +580,7 @@ fn main() {
             run_tauri(state);
         }
         Some(Commands::Mcp) => {
+            try_attach_parent_console_for_cli();
             if let Err(e) = relay_mcp::run_feedback_server() {
                 eprintln!("{e}");
                 std::process::exit(1);
@@ -558,6 +591,7 @@ fn main() {
             timeout,
             relay_mcp_session_id,
         }) => {
+            try_attach_parent_console_for_cli();
             let sid = relay_mcp_session_id.as_deref().unwrap_or("");
             let timeout_seconds = timeout.saturating_mul(60);
             if let Err(e) = run_feedback_cli(retell, timeout_seconds, sid) {
