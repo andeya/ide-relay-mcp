@@ -19,7 +19,7 @@
 
 ## MCP tool result
 
-- Every non-paused, non–auto-reply result is JSON: `{"relay_mcp_session_id":"<string>","human":"<string>","cmd_skill_count":<number>}` (plus optional `attachments`; each item may include optional `data_url` when `relay mcp` inlines small files — see [HTTP_IPC.md](HTTP_IPC.md)).
+- Every non-paused, non–auto-reply result is JSON: `{"relay_mcp_session_id":"<string>","human":"<string>","cmd_skill_count":<number>}` (plus optional `attachments` with `{kind, path}`; `relay mcp` may rewrite `path` to WSL form when `RELAY_EXE_IN_WSL` is set — see [HTTP_IPC.md](HTTP_IPC.md)).
 - **`cmd_skill_count`** is the number of command + skill items currently stored on that Relay tab (length of slash menu source).
 - `human` is the user’s Answer text (empty on dismiss/timeout).
 - **Pause:** If the result contains `<<<RELAY_MCP_PAUSED>>>`, do not call the tool again until the user resumes in Settings.
