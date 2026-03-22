@@ -358,6 +358,18 @@ function closeSettings() {
 }
 
 function onGlobalKeydown(e: KeyboardEvent) {
+  if (
+    dockEdgeHide.value &&
+    e.shiftKey &&
+    (e.metaKey || e.ctrlKey) &&
+    (e.key === "e" || e.key === "E")
+  ) {
+    e.preventDefault();
+    void invoke("dock_edge_force_expand").catch(() => {
+      /* ignore */
+    });
+    return;
+  }
   if (e.key === "Escape") {
     if (lightboxSrc.value) {
       closeLightbox();
@@ -605,20 +617,6 @@ onBeforeUnmount(() => {
             </button>
             </div>
             <button
-              v-if="showReleaseBadge"
-              type="button"
-              class="releaseBadge"
-              :class="{
-                'releaseBadge--update': releasePayload?.update_available,
-              }"
-              :title="badgeTitle"
-              :aria-label="t('releaseBadgeAria')"
-              @click="openRepo"
-            >
-              <span class="releaseBadgeDot" aria-hidden="true" />
-              {{ releaseLabel }}
-            </button>
-            <button
               type="button"
               class="iconGear"
               :aria-label="strings.ariaOpenSettings"
@@ -645,6 +643,20 @@ onBeforeUnmount(() => {
                   d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                 />
               </svg>
+            </button>
+            <button
+              v-if="showReleaseBadge"
+              type="button"
+              class="releaseBadge"
+              :class="{
+                'releaseBadge--update': releasePayload?.update_available,
+              }"
+              :title="badgeTitle"
+              :aria-label="t('releaseBadgeAria')"
+              @click="openRepo"
+            >
+              <span class="releaseBadgeDot" aria-hidden="true" />
+              {{ releaseLabel }}
             </button>
           </div>
         </div>
