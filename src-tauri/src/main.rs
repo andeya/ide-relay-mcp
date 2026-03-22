@@ -184,6 +184,12 @@ fn set_dock_edge_hide(enabled: bool, app: tauri::AppHandle) -> Result<(), String
     Ok(())
 }
 
+/// Recover from edge tuck when peek hover / focus did not expand (hotkey from the webview).
+#[tauri::command]
+fn dock_edge_force_expand(app: tauri::AppHandle) -> Result<bool, String> {
+    relay_mcp::dock_edge_hide::expand_if_collapsed(&app)
+}
+
 #[tauri::command]
 fn set_window_dock(
     dock: String,
@@ -191,17 +197,19 @@ fn set_window_dock(
     edge_state: State<'_, Mutex<EdgeHideState>>,
 ) -> Result<(), String> {
     let d = dock.trim();
+    let Some(w) = app.get_webview_window("main") else {
+        return Err("main window missing".to_string());
+    };
+    // Apply geometry first so we never clear edge state if positioning fails; then persist dock.
+    relay_mcp::position_main_window_for_dock(&w, d).map_err(|e| e.to_string())?;
     relay_mcp::write_window_dock(d).map_err(|e| e.to_string())?;
+    let _ = w.set_always_on_top(false);
+    relay_mcp::dock_edge_hide::set_peek_fast_poll(false);
     if let Ok(mut g) = edge_state.lock() {
         g.collapsed = false;
         g.tuck_side = None;
         g.suppress_collapse_until_ms = 0;
         g.suppress_peek_expand_until_ms = 0;
-    }
-    relay_mcp::dock_edge_hide::set_peek_fast_poll(false);
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = relay_mcp::position_main_window_for_dock(&w, d);
-        let _ = w.set_always_on_top(false);
     }
     Ok(())
 }
@@ -421,11 +429,6 @@ fn save_feedback_attachment(name: String, bytes_b64: String) -> Result<String, S
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn read_feedback_attachment_data_url(path: String) -> Result<String, String> {
-    relay_mcp::read_feedback_attachment_data_url(&path).map_err(|e| e.to_string())
-}
-
 #[derive(serde::Serialize)]
 struct DraggedImagePreview {
     data_base64: String,
@@ -529,6 +532,7 @@ fn run_tauri(initial: LaunchState) {
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = relay_mcp::dock_edge_hide::expand_if_collapsed(app);
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
                 let _ = w.show();
@@ -594,6 +598,7 @@ fn run_tauri(initial: LaunchState) {
             get_dock_edge_hide_ui_timing,
             set_dock_edge_hide,
             dock_edge_hide_after_leave,
+            dock_edge_force_expand,
             get_mcp_paused,
             set_mcp_paused,
             get_relay_path_env_status,
@@ -622,7 +627,6 @@ fn run_tauri(initial: LaunchState) {
             set_attachment_retention_days,
             run_attachment_retention_purge,
             save_feedback_attachment,
-            read_feedback_attachment_data_url,
             read_dragged_image_preview,
             validate_feedback_attachment_path,
             read_local_file_bytes_b64
