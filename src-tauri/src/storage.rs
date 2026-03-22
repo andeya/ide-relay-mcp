@@ -274,8 +274,6 @@ pub fn make_temp_path(prefix: &str, ext: &str) -> PathBuf {
     path
 }
 
-const FEEDBACK_ATTACH_MAX_BYTES: u64 = 20 * 1024 * 1024;
-
 fn is_safe_relay_attachment_filename(name: &str) -> bool {
     if !name.starts_with("relay_attach_") || name.len() > 256 {
         return false;
@@ -334,51 +332,9 @@ fn resolve_feedback_attachment_file(path: &str) -> Result<PathBuf> {
     Ok(canon)
 }
 
-fn bytes_to_data_url(canon: &Path, bytes: &[u8]) -> String {
-    let ext = canon
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("png")
-        .to_lowercase();
-    let mime = match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "svg" => "image/svg+xml",
-        "txt" | "md" | "json" | "log" => "text/plain; charset=utf-8",
-        "pdf" => "application/pdf",
-        "" => "image/png",
-        _ => "application/octet-stream",
-    };
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-    format!("data:{mime};base64,{b64}")
-}
-
-/// Read a saved feedback image as data URL.
-pub fn read_feedback_attachment_data_url(path: &str) -> Result<String> {
-    let canon = resolve_feedback_attachment_file(path)?;
-    let len = fs::metadata(&canon)?.len();
-    if len > FEEDBACK_ATTACH_MAX_BYTES {
-        bail!("attachment too large");
-    }
-    let bytes = fs::read(&canon)?;
-    Ok(bytes_to_data_url(&canon, &bytes))
-}
-
-/// Same as [`read_feedback_attachment_data_url`] but only if the file is at most `max_bytes`.
-/// Used when embedding small attachments in MCP tool output (`data_url` alongside `path`).
-pub fn read_feedback_attachment_data_url_if_within(path: &str, max_bytes: u64) -> Result<String> {
-    let canon = resolve_feedback_attachment_file(path)?;
-    let len = fs::metadata(&canon)?.len();
-    if len > max_bytes {
-        bail!("attachment too large for inline");
-    }
-    if len > FEEDBACK_ATTACH_MAX_BYTES {
-        bail!("attachment too large");
-    }
-    let bytes = fs::read(&canon)?;
-    Ok(bytes_to_data_url(&canon, &bytes))
+/// Best-effort canonical path for a saved feedback attachment (same resolution as read APIs).
+pub fn canonical_feedback_attachment_path(path: &str) -> Option<PathBuf> {
+    resolve_feedback_attachment_file(path).ok()
 }
 
 pub fn write_text_file(path: &Path, text: &str) -> Result<()> {
