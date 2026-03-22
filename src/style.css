@@ -98,10 +98,10 @@ kbd {
   overflow: hidden;
 }
 
-/* Top bar: brand | status (true horizontal center) | window dock + settings. */
+/* Top bar: brand + status pill (left) | dock + release + settings (right). */
 .mainTopBar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 12px;
   flex-shrink: 0;
@@ -126,32 +126,66 @@ kbd {
   min-width: 0;
 }
 
-.mainTopBarMid {
-  grid-column: 2;
-  display: flex;
-  justify-content: center;
+/* Unified wordmark: icon (leading) + title, width grows with copy — no separate “boxed” logo. */
+.mainBrandCapsule {
+  display: inline-flex;
   align-items: center;
-  justify-self: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
-  max-width: min(72vw, 560px);
-  padding-inline: 6px;
+  padding: 3px 12px 3px 4px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.5);
+  box-sizing: border-box;
 }
 
-/* When release badge shows an update, shift status pill left by 1.5ch. */
-.mainTopBarMid--shiftForUpdateBadge {
+/* When release badge shows an update, nudge status pill slightly (was centered column shift). */
+.mainTopBarStatusPill--shiftForUpdateBadge {
   transform: translateX(-1.5ch);
 }
 
 .mainTopBarRight {
-  grid-column: 3;
+  grid-column: 2;
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-self: end;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   padding-inline-start: 4px;
   border-left: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+/* Dock segment + edge-hide control as one compact strip (saves horizontal space). */
+.mainTopBarDockRow {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Dock + edge + release + settings: loose row only (no outer chrome box). */
+.mainTopBarToolbar {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.mainBrandCluster .mainTopBarStatusPill {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: min(48vw, 360px);
+}
+
+.mainTopBarToolbar .releaseBadge {
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .releaseBadge {
@@ -245,13 +279,8 @@ kbd {
   border-right: none;
 }
 
+/* Hover-only feedback — icons (◀ ● ▶) turn cyan; leave dims. */
 .dockSegBtn:hover {
-  color: #e2e8f0;
-  background: rgba(148, 163, 184, 0.1);
-}
-
-/* Cyan accent — same family as wordmark, not ad-hoc green */
-.dockSegBtn.active {
   color: #7dd3fc;
   background: rgba(125, 211, 252, 0.12);
 }
@@ -262,7 +291,58 @@ kbd {
   z-index: 1;
 }
 
-/* Chip behind logo: SVG uses near-black fill; without this it vanishes on dark chrome. */
+/* Edge tuck toggle — same chrome as .iconGear; on = cyan accent */
+.iconDockEdge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  background: rgba(15, 23, 42, 0.55);
+  color: #94a3b8;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.iconDockEdgeSvg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+/* Fig.2: no hover brightening — only .iconDockEdge--on from click toggles dock-edge-hide. */
+
+.iconDockEdge--on {
+  color: #7dd3fc;
+  border-color: rgba(125, 211, 252, 0.42);
+  background: rgba(125, 211, 252, 0.1);
+}
+
+.iconDockEdge:focus-visible {
+  outline: 2px solid rgba(129, 140, 248, 0.55);
+  outline-offset: 2px;
+}
+
+/* Logo tile inside unified capsule — flat, no double ring (outer pill provides grouping). */
+.mainBrandCapsule .mainBrandLogoWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(30, 41, 59, 0.75);
+  box-shadow: none;
+}
+
+/* Legacy: standalone logo wrap if reused elsewhere */
 .mainBrandLogoWrap {
   display: inline-flex;
   align-items: center;
@@ -303,6 +383,10 @@ kbd {
   color: #7dd3fc;
 }
 
+.mainBrandCapsule .mainTitle {
+  min-width: 0;
+}
+
 /* Header status: compact pill, wins over global .statusPill padding */
 .mainTopBarStatusPill {
   display: inline-flex;
@@ -330,13 +414,18 @@ kbd {
   border-right-color: transparent;
   border-radius: 50%;
   opacity: 0.8;
-  animation: statusPillWaitRingBreath 2s ease-in-out infinite;
+  animation: statusPillWaitRingBreath 2.45s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
 }
 
 @keyframes statusPillWaitRingBreath {
   0%,
   100% {
-    opacity: 0.42;
+    opacity: 0.32;
+  }
+
+  25%,
+  75% {
+    opacity: 0.64;
   }
 
   50% {
@@ -369,13 +458,13 @@ html.relay-doc-hidden .statusPillWaitRing {
 .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-loading {
   border-color: rgba(45, 212, 191, 0.45);
   box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12);
-  animation: statusPillWaitPulse 2.2s ease-in-out infinite;
+  animation: statusPillWaitPulse 2.45s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
 }
 
 /* No spinner: whole-pill opacity breath for AI/ME turn (cheap vs border rotation). */
 .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-idle,
 .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-active {
-  animation: mainTopBarStatusPillOpacityBreath 2.2s ease-in-out infinite;
+  animation: mainTopBarStatusPillOpacityBreath 2.45s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
 }
 
 .mainTopBarStatusPill--hue-hub {
@@ -429,7 +518,12 @@ html.relay-doc-hidden .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-a
 @keyframes mainTopBarStatusPillOpacityBreath {
   0%,
   100% {
-    opacity: 0.78;
+    opacity: 0.66;
+  }
+
+  25%,
+  75% {
+    opacity: 0.84;
   }
 
   50% {
@@ -442,10 +536,18 @@ html.relay-doc-hidden .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-a
   100% {
     box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.1);
   }
+
+  25%,
+  75% {
+    box-shadow:
+      0 0 0 1px rgba(45, 212, 191, 0.18),
+      0 0 10px rgba(45, 212, 191, 0.1);
+  }
+
   50% {
     box-shadow:
-      0 0 0 1px rgba(45, 212, 191, 0.22),
-      0 0 12px rgba(45, 212, 191, 0.12);
+      0 0 0 1px rgba(45, 212, 191, 0.28),
+      0 0 14px rgba(45, 212, 191, 0.18);
   }
 }
 
@@ -458,13 +560,18 @@ html.relay-doc-hidden .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-a
     gap: 8px 10px;
   }
 
-  .mainTopBarMid {
+  .mainTopBarRight {
     order: 3;
     flex: 1 1 100%;
     max-width: none;
-    display: flex;
     justify-content: center;
-    padding-inline-end: 0;
+    padding-inline-start: 0;
+    border-left: none;
+  }
+
+  .mainTopBarToolbar {
+    flex-wrap: wrap;
+    justify-content: center;
   }
 }
 
