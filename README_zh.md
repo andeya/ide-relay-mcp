@@ -6,7 +6,7 @@
 
 # Relay
 
-**面向 MCP 的原生人机回路 — 单二进制、本机 HTTP、同一轮工具返回。**
+**本地人机回路（HITL）客户端，面向模型上下文协议（MCP）— 单轮 `tools/call` 内完成 Answer 往返。**
 
 <p align="center">
   <a href="https://github.com/andeya/ide-relay-mcp/releases/latest"><img src="https://img.shields.io/badge/platform-Win%20%7C%20Mac%20%7C%20Linux-888888?style=flat-square" alt="Platform"/></a>
@@ -24,41 +24,102 @@
 
 </div>
 
-### 1.2.4 更新摘要
-
-- **Windows**：release 使用图形子系统链接，减少直接启动 GUI 时多余控制台窗口。
-- **Windows**：`relay mcp` 拉起 `relay gui` 时使用 `CREATE_NO_WINDOW`，减轻空白终端窗。
-- **Windows**：从 cmd/PowerShell 运行 `relay mcp` / `relay feedback` 时，若 stdout 不是管道则尝试挂接父控制台以便输出；**stdout 为管道（典型 IDE MCP）时跳过**，避免干扰 stdio JSON-RPC。
-- **工具返回 JSON**：移除 `relay_gui_platform`；不再做 Linux MCP 侧的 Windows→`/mnt/…` 路径替换。`relay mcp` 可在小附件上**额外**加入 `data_url`（与 `path` 并存），**仅**由 **`RELAY_MCP_INLINE_MAX_KB`** 控制：未设置或空 → 默认 **512** KiB；≤0 或无法解析 → 关闭；>0 → 上限（见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。
-
 ---
 
-Relay 是一个 **MCP 服务**：把 **`relay_interactive_feedback`** 变成**阻塞式工具调用**——智能体暂停，**Tauri + Vue** 窗口收集你的 **Answer**，**同一次** JSON-RPC 往返即返回结果；不经云端中转，也不把超长助手正文塞进 shell argv。
+**产品是什么。** **Relay** 是面向 **MCP** 工作流的**原生桌面**客户端（Tauri + Vue），在智能体链路中插入**人机回路（HITL）**控制点：仅暴露 MCP 工具 **`relay_interactive_feedback`**，在 **`tools/call` 返回前阻塞**，直至你在本机提交 **Answer**（文字、贴图、文件）。结果仍在**同一轮** JSON-RPC 往返中返回。**`retell`** 与载荷经 **回环 HTTP** 以 JSON 传输，**不**走 shell 传参，故长段助手正文不受 **ARG_MAX** 等限制。
 
-思路参考 [interactive-feedback-mcp](https://github.com/junanchn/interactive-feedback-mcp)；Relay 用**独立 GUI 进程**和精简的**回环 HTTP API**（Axum、Bearer、`gui_endpoint.json` 发现）替代按次拉起子进程的做法。
+**解决什么问题。** 智能体在继续执行前，**必须先经人工确认、修订或补充材料**的情形：如质量门禁、合规审阅，或单靠对话无法交付、需要结构化反馈的流程。
+
+**用户价值。** **数据驻留**（流量限于本机回环；数据落在操作系统**应用数据**目录）、**运维简单**（常驻单一 GUI；IDE 仅启动 **`relay mcp`** 的 stdio 进程）、**会话可延续**（**`relay_mcp_session_id`** 与标签 **MM-DD HH:mm:ss**），以及由 **HTTP 请求体上限**（而非进程参数）界定的**可预期载荷**。
+
+**适用对象。** 使用 **Cursor**、**Windsurf** 或任意 **支持 MCP 的 IDE**，需要在**本机**完成人机协同、**不**依赖云端控制台或额外 SaaS 的团队与个人。
+
+**前身与实现。** 思路来自 [interactive-feedback-mcp](https://github.com/junanchn/interactive-feedback-mcp)。Relay 以**常驻 GUI** 与 **Bearer 鉴权的本地 HTTP**（Axum、**`gui_endpoint.json`** 发现）替代按次拉起子进程的权宜做法。
 
 <p align="center">
   <img src="docs/ScreenShot_1.png" alt="Relay MCP 与 Cursor 并排" width="920" style="max-width:100%; height:auto;" />
 </p>
-<p align="center"><sub><strong>Relay 中心窗口</strong> 与 IDE 并排 — 在智能体阻塞于同一次 <code>tools/call</code> 时撰写 <strong>Answer</strong>（文字 + 贴图）。</sub></p>
+<p align="center"><sub><strong>Relay 中心窗口</strong> 与 IDE 并排 — 在同一未结束的 <code>tools/call</code> 上提交 <strong>Answer</strong>。</sub></p>
+
+---
+
+## 目录
+
+- **为何采用这种结构** — `retell` 经 HTTP（非 argv）、单一 GUI、会话标签
+- **快速开始** — 安装、`mcp.json`、Cursor / WSL
+- **架构** — `relay mcp` ↔ HTTP ↔ GUI
+- **工具 `relay_interactive_feedback`** — 参数与斜杠补全
+- **你能得到什么** — 标签、编辑器、存储、CLI
+- **子命令** — `relay`、`relay mcp`、`relay feedback`
+- **配置与路径** — 数据目录
+- **构建** — 开发与发布
+- **文档索引** — `docs/` 深入阅读
 
 ---
 
 ## 为何采用这种结构
 
-| 常见痛点                                               | Relay 的做法                                                                                                                                                               |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Retell**（完整助手回复）撞上 **ARG_MAX** / argv 限制 | **`retell` 走 HTTP POST JSON** — 大小受请求体上限约束（16 MiB），而非 shell。                                                                                              |
-| 每次工具调用都拉起 UI                                  | **单一 GUI 进程**（`relay` / `relay gui`）；MCP 仅在 stdio 上跑 **`relay mcp`**。                                                                                          |
-| 多 IDE 线程 → 标签混乱                                 | **`relay_mcp_session_id`** — 工具返回带 session id 的 JSON；记住并在下次传入；标签标题 **MM-DD HH:mm:ss**（[**RELAY_MCP_SESSION_ID.md**](docs/RELAY_MCP_SESSION_ID.md)）。 |
+| 常见痛点                                                             | Relay 的做法                                                                                                                        |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 若把长段**助手正文**放在命令行里传递，会撞上 **ARG_MAX** / argv 限制 | **`retell` 放在 HTTP POST JSON 里** — 大小受请求体上限约束（16 MiB），不受 shell 传参长度限制。                                     |
+| 每次工具调用都拉起 UI                                                | **单一 GUI**（`relay` / `relay gui`）；MCP 仅在 stdio 上跑 **`relay mcp`**。                                                        |
+| 多路对话 → 标签混乱                                                  | **`relay_mcp_session_id`** — 下次调用传入；标签 **MM-DD HH:mm:ss**（[**RELAY_MCP_SESSION_ID.md**](docs/RELAY_MCP_SESSION_ID.md)）。 |
+
+---
+
+## 快速开始
+
+1. **安装** — [最新发布页](https://github.com/andeya/ide-relay-mcp/releases/latest)（macOS / Linux / Windows）或 [从源码构建](#构建)。
+2. **接入 MCP** — 将 IDE 指向 **`relay` 可执行文件**，参数 **`["mcp"]`**。
+
+```json
+{
+  "mcpServers": {
+    "relay-mcp": {
+      "command": "/path/to/relay",
+      "args": ["mcp"],
+      "env": {
+        "RELAY_EXE_IN_WSL": "0"
+      },
+      "autoApprove": ["relay_interactive_feedback"]
+    }
+  }
+}
+```
+
+**Cursor：** 可在仓库中放置 **`.cursor/mcp.json`**（与全局 **`~/.cursor/mcp.json`** 合并）。**WSL 内 Agent + Windows `relay.exe`：** 将 **`RELAY_EXE_IN_WSL`** 设为 **`1`** 或 **`true`**，工具结果中的附件路径会变为 `/mnt/c/...`（见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。
+
+```json
+{
+  "mcpServers": {
+    "relay-mcp": {
+      "command": "/path/to/relay.exe",
+      "args": ["mcp"],
+      "env": {
+        "RELAY_EXE_IN_WSL": "1"
+      },
+      "autoApprove": ["relay_interactive_feedback"]
+    }
+  }
+}
+```
+
+仓库模板：[`mcp.json`](mcp.json)。语义与示例：**[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**。官方说明：[Cursor MCP 配置位置](https://cursor.com/docs/context/mcp)。
+
+<p align="center">
+  <img src="docs/ScreenShot_3.png" alt="设置 环境与 MCP" width="440" style="max-width:100%; height:auto;" />
+</p>
+<p align="center"><sub><strong>设置 → 环境与 MCP</strong> — PATH、<strong>Cursor / Windsurf</strong> 一键写入、复制 MCP JSON、<strong>暂停 MCP</strong>。</sub></p>
+
+**规则提示词**（中英合本）：**设置 → 规则提示词** — 粘贴到 IDE 规则，提醒智能体**每回合调用** `relay_interactive_feedback` 并维护 **`relay_mcp_session_id`**（源码 [`src/ideRulesTemplates.ts`](src/ideRulesTemplates.ts)）。
 
 ---
 
 ## 架构（与仓库实现一致）
 
-- **`relay mcp`** — stdio MCP（`clap` 子命令）。处理 `initialize`、`tools/list`、`tools/call`。同一条连接上可并发多路在进行中的人机 `tools/call`（路由器 + 工作线程，有上限；见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。可选**即时自动回复**（用户数据目录下规则文件的 **`0|…`** 行）可在不打开界面的情况下直接返回。
-- **`relay` / `relay gui`** — Tauri 应用 + **`127.0.0.1:0` 上的 HTTP**。写入 **`{user_data}/gui_endpoint.json`** `{ port, token, pid }`；退出时删除。
-- **桥接** — 每次交互前 MCP 读取端点文件；若缺失或不健康，**以参数 `gui` 拉起同一可执行文件**，轮询至多 **~45 s**（`ensure_gui_endpoint`）。随后 **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**。GUI 在用户提交、关闭、被同会话新请求顶替，或 **约 60 分钟**无操作（服务端后台任务）时结束该 GET；MCP 侧 HTTP 客户端对这次 GET 另设 **24 小时**读超时作为兜底。工具返回 JSON 为 **`{relay_mcp_session_id, human, cmd_skill_count}`**，可选 **`attachments`**（含 **`path`**；小文件时 MCP 可额外加 **`data_url`**，见 **`RELAY_MCP_INLINE_MAX_KB`** 与 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。
+- **`relay mcp`** — stdio MCP（`clap`）。处理 `initialize`、`tools/list`、`tools/call`。同一条连接上可并发多路人机 `tools/call`（见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。可选**即时自动回复**（规则文件 **`0|…`** 行）可在不打开界面时返回。
+- **`relay` / `relay gui`** — Tauri 应用 + **`127.0.0.1:0` 上的 HTTP**。写入 **`{user_data}/gui_endpoint.json`**；退出时删除。
+- **桥接** — MCP 读取端点；缺失或不健康时 **带 `gui` 拉起同一可执行文件**，轮询至多 **~45 s**。随后 **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**。提交、关闭、顶替或 **约 60 分钟**空闲时结束等待；MCP 侧另有 **24 小时**读超时兜底。工具 JSON：**`{ relay_mcp_session_id, human, cmd_skill_count }`**，可选 **`attachments`**（**`RELAY_EXE_IN_WSL`** 路径改写见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。
 
 ```mermaid
 flowchart LR
@@ -70,106 +131,53 @@ flowchart LR
   MCP -->|JSON 结果| IDE
 ```
 
-完整 API 与安全说明：**[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**。
-
 ---
 
 ## MCP 工具：`relay_interactive_feedback`
 
-| 参数                       | 必填                                                                                                        | 含义                                                                                                                              |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **`retell`**               | ✅ 非空                                                                                                     | 本轮**用户可见的助手回复**（原文）。                                                                                              |
-| **`relay_mcp_session_id`** | 有则必传                                                                                                    | 回到同一会话时传入；工具返回的 JSON 中带此字段。                                                                                  |
-| **`commands`**             | 新标签：每次**必须**带数组；填入当前 IDE **能枚举到的全部** commands；**仅当宿主确实没有任何项时**才为 `[]` | 斜杠补全。有 session：可选；若传入则**合并**并按 **`id` 去重**。上一轮 **`cmd_skill_count === 0`** 时下一轮须同样重新带齐两数组。 |
-| **`skills`**               | 与 `commands` 同意图，对象为 **skills**                                                                     | 同上。                                                                                                                            |
+| 参数                       | 必填                                                                                 | 含义                                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| **`retell`**               | ✅ 非空                                                                              | 本轮**用户可见的助手回复**（原文）。                                                                       |
+| **`relay_mcp_session_id`** | 有则必传                                                                             | 延续同一会话；工具返回中带此字段。                                                                         |
+| **`commands`**             | 新标签：每次**必须**带数组；填入 IDE **能枚举到的全部**；**仅当确实没有项时**为 `[]` | 斜杠补全。有 session：可选；**合并**并按 **`id` 去重**。若 **`cmd_skill_count === 0`**，下一轮须重新带齐。 |
+| **`skills`**               | 与 `commands` 相同，对象为 **skills**                                                | 同上。                                                                                                     |
 
-**暂停 MCP**（设置）：工具返回哨兵 `<<<RELAY_MCP_PAUSED>>>` — 恢复前智能体不应再次调用。
+**暂停 MCP**（设置）：哨兵 **`<<<RELAY_MCP_PAUSED>>>`** — 恢复前勿再次调用。
 
 <p align="center">
   <img src="docs/ScreenShot_2.png" alt="Relay 输入框斜杠命令与技能补全" width="440" style="max-width:100%; height:auto;" />
 </p>
-<p align="center"><sub><strong>斜杠补全</strong> — MCP 传入的 <code>commands</code> / <code>skills</code> 出现在输入框上方（可选 <strong>category</strong> 徽标）。</sub></p>
-
----
-
-## 快速开始
-
-1. **获取 Relay** — 推荐从 [最新发布](https://github.com/andeya/ide-relay-mcp/releases/latest) 下载已编译的安装包（macOS、Linux、Windows）。也可 [从源码构建](#构建)：`npm ci && npm run build && npm run tauri build`。
-2. 将 IDE 的 MCP 指向 **`relay` 可执行文件**，参数 **`["mcp"]`**。
-
-```json
-{
-  "mcpServers": {
-    "relay-mcp": {
-      "command": "/path/to/relay",
-      "args": ["mcp"],
-      "autoApprove": ["relay_interactive_feedback"]
-    }
-  }
-}
-```
-
-**Cursor：** 除全局 `~/.cursor/mcp.json` 外，还可以在仓库里放 **`.cursor/mcp.json`**，按项目覆盖 MCP。附件内联**只**认 **`RELAY_MCP_INLINE_MAX_KB`**：不写或空字符串 → 默认 **512** KiB；`0` 或负数 → 关闭；正整数 → 上限（KiB）。例如关闭：
-
-```json
-{
-  "mcpServers": {
-    "relay-mcp": {
-      "command": "/path/to/relay",
-      "args": ["mcp"],
-      "env": {
-        "RELAY_MCP_INLINE_MAX_KB": "0"
-      },
-      "autoApprove": ["relay_interactive_feedback"]
-    }
-  }
-}
-```
-
-语义与更多示例见 **[docs/HTTP_IPC.md](docs/HTTP_IPC.md)**（_MCP-only: inline `data_url`_）。官方说明：[Cursor MCP — Configuration locations](https://cursor.com/docs/context/mcp)。
-
-<p align="center">
-  <img src="docs/ScreenShot_3.png" alt="设置 环境与 MCP" width="440" style="max-width:100%; height:auto;" />
-</p>
-<p align="center"><sub><strong>设置 → 环境与 MCP</strong> — 终端 PATH、<strong>Cursor / Windsurf</strong> 一键写入、复制 MCP JSON、<strong>暂停 MCP</strong>。</sub></p>
-
-应用内 **设置 → 环境与 MCP**：复制 JSON、**Cursor / Windsurf** 一键安装、可选 **PATH** 持久化（Windows 注册表 / shell 配置）。规则提示词：**设置 → 规则提示词**（中英合本规则 + 各 IDE 粘贴说明）；源码：[`src/ideRulesTemplates.ts`](src/ideRulesTemplates.ts)。
-
-仓库示例：[`mcp.json`](mcp.json)（可不写 `env`，与代码默认 **512** KiB 一致；显式写 `RELAY_MCP_INLINE_MAX_KB` 便于团队统一，见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。
-
-### 使用技巧
-
-- 在 IDE 对话中对 AI 说 **「遵守 Relay 规则」**（或粘贴 **设置 → 规则提示词** 中的规则块），可提醒助手按约定**每回合调用** `relay_interactive_feedback`、在新标签时带上 **`commands` / `skills`**，并记住 **`relay_mcp_session_id`**，从而主动与 Relay **建立或延续同一会话**（具体行为仍取决于模型是否遵循规则）。
+<p align="center"><sub><strong>斜杠补全</strong> — <code>commands</code> / <code>skills</code> 出现在输入框上方（可选 <strong>category</strong> 徽标）。</sub></p>
 
 ---
 
 ## 你能得到什么
 
-- **多标签中心** — 新请求打开或刷新标签；非当前标签可闪烁；**`relay_mcp_session_id`** 合并同一会话流；标签标题 **MM-DD HH:mm:ss**。
-- **编辑器体验** — Enter 提交、Shift+Enter 换行、⌘/Ctrl+Enter 提交并关闭标签；支持贴图；工具 / 等待接口在纯文本 **`human`** 外可返回 **`attachments`**（服务端仍会剥离正文中的旧版 marker）。
-- **自动回复** — 用户数据目录下 `auto_reply_oneshot.txt` / `auto_reply_loop.txt`；仅 **`0|回复`** 行（即时）；见 [配置与路径](#配置与路径)。
-- **存储** — `feedback_log.txt`（**`USER_REPLY` / `CLI_REPLY`** 为**用户 Answer 明文**；旧版整段工具 JSON 行 hydrate **不参与配对**）、**`qa_archive/<session_id>.jsonl`**（每轮对话完成追加一行 JSON，供 hydrate 在归档条数多于日志配对时使用）、界面语言、**附件自动清理**（默认 **30 天**，可在 **设置 → 缓存** 中配置或关闭）。
-- **CLI** — `relay feedback --retell "…"` 将 JSON **Answer** 打到 stdout；GUI 失败或 **`--timeout`** 时 **退出码 1**。
+- **多标签中心** — 新请求打开或刷新标签；非当前标签可闪烁；**`relay_mcp_session_id`** 合并会话；标题 **MM-DD HH:mm:ss**。
+- **编辑器体验** — Enter 提交、Shift+Enter 换行、⌘/Ctrl+Enter 提交并关闭；贴图；工具 JSON 可含 **`attachments`** 与 **`human`**（旧版正文 marker 服务端会剥离）。
+- **自动回复** — `auto_reply_oneshot.txt` / `auto_reply_loop.txt`；仅 **`0|回复`** 行（即时）；见 [配置与路径](#配置与路径)。
+- **存储** — `feedback_log.txt`、**`qa_archive/<session_id>.jsonl`**、界面语言、**附件保留策略**（默认 **30 天**，**设置 → 缓存** 可改）。
+- **CLI** — `relay feedback --retell "…"` 将 JSON **Answer** 输出到 stdout；GUI 失败或 **`--timeout`** 时 **退出码 1**。
 
 <p align="center">
   <img src="docs/ScreenShot_4.png" alt="设置 规则提示词" width="440" style="max-width:100%; height:auto;" />
 </p>
-<p align="center"><sub><strong>设置 → 规则提示词</strong> — 标准 / 严格循环 / 仅工具说明；<strong>粘贴到 IDE</strong> 做人机回路规则。</sub></p>
+<p align="center"><sub><strong>设置 → 规则提示词</strong> — 粘贴到 IDE 做人机回路规则。</sub></p>
 
 <p align="center">
   <img src="docs/ScreenShot_5.png" alt="设置 缓存" width="440" style="max-width:100%; height:auto;" />
 </p>
-<p align="center"><sub><strong>设置 → 缓存</strong> — 本机附件与日志占用、<strong>打开文件夹</strong>、附件自动清理（默认 <strong>30 天</strong>）。</sub></p>
+<p align="center"><sub><strong>设置 → 缓存</strong> — 本机附件与日志占用、<strong>打开文件夹</strong>、自动清理。</sub></p>
 
 ---
 
 ## 可执行文件与子命令
 
-| 命令                          | 作用                                                            |
-| ----------------------------- | --------------------------------------------------------------- |
-| `relay` · `relay gui`         | 中心窗口 + 本机 HTTP 服务                                       |
-| `relay mcp`                   | MCP stdio（IDE 实际运行的命令）                                 |
-| `relay feedback --retell "…"` | 终端试用；`--timeout`（分钟）、`--relay-mcp-session-id`（可选） |
+| 命令                          | 作用                                            |
+| ----------------------------- | ----------------------------------------------- |
+| `relay` · `relay gui`         | 中心窗口 + 本机 HTTP                            |
+| `relay mcp`                   | MCP stdio（IDE 实际运行的命令）                 |
+| `relay feedback --retell "…"` | 终端试用；`--timeout`、`--relay-mcp-session-id` |
 
 **没有** `relay window`；IDE 不会按请求拉起 GUI 子进程。
 
@@ -183,7 +191,18 @@ flowchart LR
 | Linux   | `~/.config/relay-mcp/`                     |
 | Windows | `%APPDATA%\relay-mcp\`                     |
 
-常见文件：`feedback_log.txt`、`qa_archive/*.jsonl`（可选会话轮次归档）、`ui_locale.json`、`gui_endpoint.json`（GUI 运行时）、`relay_gui_alive.marker`（心跳）、`mcp_pause.json`、`attachment_retention.json`、`auto_reply_*.txt`（可选）。
+常见文件：`feedback_log.txt`、`qa_archive/*.jsonl`、`ui_locale.json`、`gui_endpoint.json`、`relay_gui_alive.marker`、`mcp_pause.json`、`attachment_retention.json`、`auto_reply_*.txt`（可选）。
+
+---
+
+## 文档索引
+
+| 文档                                                         | 内容                         |
+| ------------------------------------------------------------ | ---------------------------- |
+| [docs/HTTP_IPC.md](docs/HTTP_IPC.md)                         | HTTP API、超时、WSL 路径改写 |
+| [docs/RELAY_MCP_SESSION_ID.md](docs/RELAY_MCP_SESSION_ID.md) | 会话 id 与标签               |
+| [docs/TERMINOLOGY.md](docs/TERMINOLOGY.md)                   | 术语表                       |
+| [docs/RELEASING.md](docs/RELEASING.md)                       | 发布与 CI                    |
 
 ---
 
@@ -209,13 +228,13 @@ npm run tauri dev
 npm run icons:build
 ```
 
-CI（PR / `main`）：lint、typecheck、Vite 构建、`cargo fmt`、`clippy -D warnings`、`cargo test` — 见 [docs/RELEASING.md](docs/RELEASING.md)。
+CI（PR / `main`）：lint、typecheck、Vite、`cargo fmt`、`clippy -D warnings`、`cargo test` — [docs/RELEASING.md](docs/RELEASING.md)。
 
 ---
 
 ## 隐私
 
-所有 **Answer**、日志与 GUI 状态均保留在**本机**。无内置遥测。请将 **`feedback_log.txt`** 与 MCP 会话记录视为敏感信息。
+**Answer**、日志与 GUI 状态均保留在**本机**；**无**内置遥测。请将 **`feedback_log.txt`** 及 MCP 会话日志按**敏感信息**处理。
 
 ---
 
