@@ -5,6 +5,9 @@
       "args": [
         "mcp"
       ],
+      "env": {
+        "RELAY_MCP_INLINE_MAX_KB": "512"
+      },
       "autoApprove": [
         "relay_interactive_feedback"
       ]
