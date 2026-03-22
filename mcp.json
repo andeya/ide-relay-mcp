@@ -6,7 +6,7 @@
         "mcp"
       ],
       "env": {
-        "RELAY_MCP_INLINE_MAX_KB": "512"
+        "RELAY_EXE_IN_WSL": "0"
       },
       "autoApprove": [
         "relay_interactive_feedback"
