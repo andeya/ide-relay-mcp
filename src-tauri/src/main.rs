@@ -6,17 +6,19 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use clap::{Parser, Subcommand};
+use serde::Serialize;
 use tauri::{Manager, State};
 
 use relay_mcp::{
-    gui_http::RelayGuiRuntime, refresh_gui_presence_marker, run_feedback_cli, ControlStatus,
-    FeedbackTabsState, LaunchState, QaRound,
+    dock_edge_hide::EdgeHideState, gui_http::RelayGuiRuntime, refresh_gui_presence_marker,
+    run_feedback_cli, ControlStatus, FeedbackTabsState, LaunchState, QaRound,
 };
 
 /// Release Windows builds use the GUI subsystem; attach to the parent console so CLI subcommands
@@ -146,12 +148,60 @@ fn get_window_dock() -> String {
     relay_mcp::read_window_dock()
 }
 
+/// Called after pointer left the webview (debounced) — tuck to screen edge when enabled.
 #[tauri::command]
-fn set_window_dock(dock: String, app: tauri::AppHandle) -> Result<(), String> {
+fn dock_edge_hide_after_leave(app: tauri::AppHandle) -> Result<(), String> {
+    relay_mcp::dock_edge_hide::collapse_after_leave(&app)
+}
+
+#[tauri::command]
+fn get_dock_edge_hide() -> bool {
+    relay_mcp::read_dock_edge_hide()
+}
+
+/// Timing for dock-edge tuck UI — single source of truth (see `dock_edge_hide` constants).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DockEdgeHideUiTiming {
+    shell_leave_debounce_ms: u64,
+    suppress_after_peek_ms: u64,
+}
+
+#[tauri::command]
+fn get_dock_edge_hide_ui_timing() -> DockEdgeHideUiTiming {
+    DockEdgeHideUiTiming {
+        shell_leave_debounce_ms: relay_mcp::dock_edge_hide::SHELL_LEAVE_DEBOUNCE_MS,
+        suppress_after_peek_ms: relay_mcp::dock_edge_hide::SUPPRESS_COLLAPSE_AFTER_PEEK_MS,
+    }
+}
+
+#[tauri::command]
+fn set_dock_edge_hide(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
+    relay_mcp::write_dock_edge_hide(enabled).map_err(|e| e.to_string())?;
+    if !enabled {
+        let _ = relay_mcp::dock_edge_hide::expand_if_collapsed(&app);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_window_dock(
+    dock: String,
+    app: tauri::AppHandle,
+    edge_state: State<'_, Mutex<EdgeHideState>>,
+) -> Result<(), String> {
     let d = dock.trim();
     relay_mcp::write_window_dock(d).map_err(|e| e.to_string())?;
+    if let Ok(mut g) = edge_state.lock() {
+        g.collapsed = false;
+        g.tuck_side = None;
+        g.suppress_collapse_until_ms = 0;
+        g.suppress_peek_expand_until_ms = 0;
+    }
+    relay_mcp::dock_edge_hide::set_peek_fast_poll(false);
     if let Some(w) = app.get_webview_window("main") {
         let _ = relay_mcp::position_main_window_for_dock(&w, d);
+        let _ = w.set_always_on_top(false);
     }
     Ok(())
 }
@@ -487,6 +537,15 @@ fn run_tauri(initial: LaunchState) {
         }));
     }
     builder
+        .manage(Mutex::new(EdgeHideState::default()))
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            if let tauri::WindowEvent::Focused(focused) = event {
+                relay_mcp::dock_edge_hide::handle_main_window_focus(window.app_handle(), *focused);
+            }
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
             let runtime = RelayGuiRuntime::new(initial_state, handle);
@@ -496,6 +555,7 @@ fn run_tauri(initial: LaunchState) {
             }
             app.manage(runtime);
             let h = app.handle().clone();
+            let peek_h = app.handle().clone();
             let dock0 = relay_mcp::read_window_dock();
             thread::spawn(move || {
                 thread::sleep(Duration::from_millis(160));
@@ -507,6 +567,15 @@ fn run_tauri(initial: LaunchState) {
             thread::spawn(|| loop {
                 let _ = refresh_gui_presence_marker();
                 thread::sleep(Duration::from_secs(3));
+            });
+            thread::spawn(move || loop {
+                let ms = if relay_mcp::dock_edge_hide::peek_fast_poll_wanted() {
+                    120
+                } else {
+                    900
+                };
+                thread::sleep(Duration::from_millis(ms));
+                relay_mcp::dock_edge_hide::try_expand_from_peek_hover(&peek_h);
             });
             Ok(())
         })
@@ -521,6 +590,10 @@ fn run_tauri(initial: LaunchState) {
             set_ui_locale,
             get_window_dock,
             set_window_dock,
+            get_dock_edge_hide,
+            get_dock_edge_hide_ui_timing,
+            set_dock_edge_hide,
+            dock_edge_hide_after_leave,
             get_mcp_paused,
             set_mcp_paused,
             get_relay_path_env_status,
