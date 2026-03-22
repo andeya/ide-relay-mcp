@@ -24,6 +24,12 @@
 
 </div>
 
+### 1.2.4 更新摘要
+
+- **Windows**：release 使用图形子系统链接，减少直接启动 GUI 时多余控制台窗口。
+- **Windows**：`relay mcp` 拉起 `relay gui` 时使用 `CREATE_NO_WINDOW`，减轻空白终端窗。
+- **Windows**：从 cmd/PowerShell 运行 `relay mcp` / `relay feedback` 时，若 stdout 不是管道则尝试挂接父控制台以便输出；**stdout 为管道（典型 IDE MCP）时跳过**，避免干扰 stdio JSON-RPC。
+
 ---
 
 Relay 是一个 **MCP 服务**：把 **`relay_interactive_feedback`** 变成**阻塞式工具调用**——智能体暂停，**Tauri + Vue** 窗口收集你的 **Answer**，**同一次** JSON-RPC 往返即返回结果；不经云端中转，也不把超长助手正文塞进 shell argv。

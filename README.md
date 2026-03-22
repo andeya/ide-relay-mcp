@@ -24,6 +24,12 @@
 
 </div>
 
+### 1.2.4 release notes
+
+- **Windows**: release binary is linked as a GUI subsystem app to avoid an extra console when launching the hub.
+- **Windows**: spawning `relay gui` from `relay mcp` uses `CREATE_NO_WINDOW` to reduce blank terminal flashes.
+- **Windows**: `relay mcp` / `relay feedback` try to attach to the parent console when stdout is **not** a pipe (cmd/PowerShell); **pipe stdout (typical IDE MCP) skips attach** so stdio JSON-RPC stays intact.
+
 ---
 
 Relay is an **MCP server** that turns **`relay_interactive_feedback`** into a **blocking tool call**: the agent pauses, a **Tauri + Vue** window collects your **Answer**, and the **same** JSON-RPC round-trip returns it—no cloud relay, no stuffing giant assistant text through shell argv.
