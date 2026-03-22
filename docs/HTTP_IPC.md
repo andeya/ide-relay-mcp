@@ -65,12 +65,14 @@ sequenceDiagram
 
 Set on the **`relay mcp`** process:
 
-| Variable | Meaning |
-| -------- | ------- |
+| Variable                       | Meaning                                                                                                                                                  |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RELAY_MCP_INLINE_ATTACHMENTS` | Unset / empty: default — inline **`kind: image`** only, under size cap. `0` / `false` / `off`: never add `data_url`. `all` or `2`: any `kind` under cap. |
-| `RELAY_MCP_INLINE_MAX_BYTES` | Max file size to read for inlining (default **524288**). Capped at 20 MiB. |
+| `RELAY_MCP_INLINE_MAX_BYTES`   | Max file size to read for inlining (default **524288**). Capped at 20 MiB.                                                                               |
 
 Large files or disabled mode: **`path` only** (agent may read the file if its environment can see that path).
+
+**Per-workspace / per-project policy:** Many IDEs let you set **environment variables only for the MCP server process** (e.g. Cursor **`mcp.json`** / VS Code–style MCP config with an **`env`** object on that server entry). Those vars are inherited by **`relay mcp`** when the IDE spawns it, so you can use **`RELAY_MCP_INLINE_ATTACHMENTS`** / **`RELAY_MCP_INLINE_MAX_BYTES`** to differ by repository (e.g. disable inlining in huge-monorepo, enable **`all`** in a small docs repo) without changing the global shell profile. Exact schema depends on the host; check your IDE’s MCP documentation for **`env`**.
 
 ### MCP client (`relay mcp` → ureq)
 
