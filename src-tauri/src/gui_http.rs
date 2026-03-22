@@ -113,6 +113,8 @@ fn emit_tabs(app: &tauri::AppHandle) {
 /// Bring main window to foreground (minimized / hidden / behind other apps).
 fn focus_main_window(app: &tauri::AppHandle) {
     use tauri::Manager;
+    // Restore full window geometry before raising so new MCP retell is visible (edge tuck).
+    let _ = crate::dock_edge_hide::expand_if_collapsed(app);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
