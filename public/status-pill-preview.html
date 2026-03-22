@@ -76,6 +76,7 @@
         overflow: hidden;
         vertical-align: middle;
       }
+      /* Mirrors src/style.css — transform-only ring; Hub has no ring in App.vue */
       .statusPillWaitRing {
         display: block;
         width: 10px;
@@ -86,7 +87,12 @@
         border-right-color: transparent;
         border-radius: 50%;
         opacity: 0.8;
-        animation: statusPillWaitRingBreath 2.45s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+        animation: statusPillWaitRingSpin 1.35s linear infinite;
+      }
+      @keyframes statusPillWaitRingSpin {
+        to {
+          transform: rotate(360deg);
+        }
       }
       .mainTopBarStatusPillText {
         min-width: 0;
@@ -97,12 +103,13 @@
       .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-hub,
       .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-loading {
         border-color: rgba(45, 212, 191, 0.45);
-        box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12);
-        animation: statusPillWaitPulse 2.45s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+        box-shadow:
+          0 0 0 1px rgba(45, 212, 191, 0.2),
+          0 0 12px rgba(45, 212, 191, 0.14);
       }
       .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-idle,
       .mainTopBarStatusPill--waiting.mainTopBarStatusPill--hue-active {
-        animation: mainTopBarStatusPillOpacityBreath 2.45s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+        opacity: 1;
       }
       .mainTopBarStatusPill--hue-hub {
         background: rgba(15, 118, 110, 0.18);
@@ -129,56 +136,6 @@
         color: #fca5a5;
         border-color: rgba(248, 113, 113, 0.42);
       }
-      @keyframes statusPillWaitPulse {
-        0%,
-        100% {
-          box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.1);
-        }
-
-        25%,
-        75% {
-          box-shadow:
-            0 0 0 1px rgba(45, 212, 191, 0.18),
-            0 0 10px rgba(45, 212, 191, 0.1);
-        }
-
-        50% {
-          box-shadow:
-            0 0 0 1px rgba(45, 212, 191, 0.28),
-            0 0 14px rgba(45, 212, 191, 0.18);
-        }
-      }
-      @keyframes mainTopBarStatusPillOpacityBreath {
-        0%,
-        100% {
-          opacity: 0.66;
-        }
-
-        25%,
-        75% {
-          opacity: 0.84;
-        }
-
-        50% {
-          opacity: 1;
-        }
-      }
-      @keyframes statusPillWaitRingBreath {
-        0%,
-        100% {
-          opacity: 0.32;
-        }
-
-        25%,
-        75% {
-          opacity: 0.64;
-        }
-
-        50% {
-          opacity: 1;
-        }
-      }
-
       /* —— Mirrors src/style.css: full top bar (brand | status | dock + release) —— */
       .topBarDemo {
         margin-bottom: 18px;
@@ -337,12 +294,14 @@
     <h1>顶栏状态胶囊（示意）</h1>
     <p class="lead">
       开发时打开：<strong>http://127.0.0.1:5173/status-pill-preview.html</strong>（需先
-      <code>npm run dev</code> 或 <code>npm run tauri dev</code>）。结构与
-      <code>App.vue</code> 顶栏一致：<code>hue-hub</code> 仅光晕脉冲、<strong>无</strong>
-      呼吸圈；<code>hue-loading</code> / <code>hue-idle</code> / <code>hue-active</code> 左侧有
-      <code>statusPillWaitRing</code>（opacity 呼吸）且 idle/active 另加整颗胶囊呼吸。
-      有可用更新时，中间栏会加 <code>mainTopBarMid--shiftForUpdateBadge</code>（
-      <code>translateX(-1.5ch)</code>）；中文语言下版本条为 <code>v… · New</code>（「New」不翻译）。
+      <code>npm run dev</code> 或 <code>npm run tauri dev</code>）。与
+      <code>App.vue</code> / <code>style.css</code> 一致：<code>hue-hub</code> 为<strong>静态</strong>描边与光晕、<strong>无</strong>左侧等待环（不跑动态等待）；<code>hue-loading</code> /
+      <code>hue-idle</code> / <code>hue-active</code> 左侧有
+      <code>statusPillWaitRing</code>，仅 <code>transform: rotate</code> 小转圈。旧版「呼吸灯」曾对
+      <code>box-shadow</code>、整颗胶囊 <code>opacity</code>、小环 <code>opacity</code> 做无限关键帧，在
+      WebKit 里容易触发持续重绘，比单独转小环更吃 CPU/GPU。有可用更新时，中间栏会加
+      <code>mainTopBarMid--shiftForUpdateBadge</code>（<code>translateX(-1.5ch)</code>）；中文语言下版本条为
+      <code>v… · New</code>（「New」不翻译）。
     </p>
     <p class="note">
       说明：<code>status === null</code>（拉取 <code>read_tab_status</code> 前）时
