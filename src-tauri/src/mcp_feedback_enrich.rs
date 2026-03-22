@@ -1,49 +1,71 @@
 //! Optional `data_url` on `attachments[]` when `relay mcp` returns the tool result to the host.
 //! GUI ↔ HTTP payloads stay path-only; enrichment runs only in the MCP client (`mcp_http`).
+//!
+//! **Single rule:** only `RELAY_MCP_INLINE_MAX_KB` is read. Unset or blank → default **512** KiB;
+//! ≤0 → off; unparseable → off; >0 → cap in bytes (any `kind`, Relay attachment paths only).
 
 use crate::storage::read_feedback_attachment_data_url_if_within;
 use serde_json::{json, Value};
 
-const DEFAULT_INLINE_MAX: u64 = 512 * 1024;
+pub(crate) const RELAY_MCP_INLINE_MAX_KB: &str = "RELAY_MCP_INLINE_MAX_KB";
+
+const DEFAULT_MAX_KB: u64 = 512;
 const INLINE_MAX_CAP: u64 = 20 * 1024 * 1024;
 
-fn inline_max_bytes() -> u64 {
-    std::env::var("RELAY_MCP_INLINE_MAX_BYTES")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .filter(|&n| n > 0 && n <= INLINE_MAX_CAP)
-        .unwrap_or(DEFAULT_INLINE_MAX)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct InlinePolicy {
+    enabled: bool,
+    max_bytes: u64,
 }
 
-fn inline_disabled() -> bool {
-    let Some(raw) = std::env::var("RELAY_MCP_INLINE_ATTACHMENTS").ok() else {
-        return false;
-    };
-    let s = raw.to_ascii_lowercase();
-    s == "0" || s == "false" || s == "off"
+fn kb_to_max_bytes(kb: u64) -> u64 {
+    kb.checked_mul(1024)
+        .unwrap_or(INLINE_MAX_CAP)
+        .clamp(1, INLINE_MAX_CAP)
 }
 
-/// `RELAY_MCP_INLINE_ATTACHMENTS=all` (or `2`) — inline any `kind` under the size cap.
-/// Otherwise default: only `kind == "image"` (case-insensitive).
-fn inline_include_all_kinds() -> bool {
-    matches!(
-        std::env::var("RELAY_MCP_INLINE_ATTACHMENTS")
-            .ok()
-            .as_deref(),
-        Some("all") | Some("2")
-    )
-}
-
-fn should_try_inline(kind: &str) -> bool {
-    if inline_include_all_kinds() {
-        return true;
+fn default_policy() -> InlinePolicy {
+    InlinePolicy {
+        enabled: true,
+        max_bytes: kb_to_max_bytes(DEFAULT_MAX_KB),
     }
-    kind.eq_ignore_ascii_case("image")
+}
+
+/// `raw` is the env value string, or `None` if the variable is unset.
+fn inline_policy_from_max_kb_raw(raw: Option<&str>) -> InlinePolicy {
+    let Some(r) = raw else {
+        return default_policy();
+    };
+    let s = r.trim();
+    if s.is_empty() {
+        return default_policy();
+    }
+    let Ok(kb) = s.parse::<i64>() else {
+        return InlinePolicy {
+            enabled: false,
+            max_bytes: 0,
+        };
+    };
+    if kb <= 0 {
+        return InlinePolicy {
+            enabled: false,
+            max_bytes: 0,
+        };
+    }
+    InlinePolicy {
+        enabled: true,
+        max_bytes: kb_to_max_bytes(kb as u64),
+    }
+}
+
+fn resolve_inline_policy() -> InlinePolicy {
+    inline_policy_from_max_kb_raw(std::env::var(RELAY_MCP_INLINE_MAX_KB).ok().as_deref())
 }
 
 /// Parse tool-result JSON, add `data_url` next to existing `path` when allowed (paths unchanged).
 pub fn enrich_tool_result_json_for_mcp_host(body: String) -> String {
-    if inline_disabled() {
+    let policy = resolve_inline_policy();
+    if !policy.enabled {
         return body;
     }
     let Ok(mut v) = serde_json::from_str::<Value>(&body) else {
@@ -58,7 +80,7 @@ pub fn enrich_tool_result_json_for_mcp_host(body: String) -> String {
     let Some(arr) = att.as_array_mut() else {
         return serde_json::to_string(&v).unwrap_or(body);
     };
-    let max = inline_max_bytes();
+    let max = policy.max_bytes;
     for item in arr.iter_mut() {
         let Some(o) = item.as_object_mut() else {
             continue;
@@ -75,7 +97,7 @@ pub fn enrich_tool_result_json_for_mcp_host(body: String) -> String {
         if path.trim().is_empty() {
             continue;
         }
-        if !should_try_inline(kind) {
+        if kind.trim().is_empty() {
             continue;
         }
         if let Ok(url) = read_feedback_attachment_data_url_if_within(path, max) {
@@ -88,7 +110,47 @@ pub fn enrich_tool_result_json_for_mcp_host(body: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
+
+    #[test]
+    fn policy_unset_is_default_512kb() {
+        let p = super::inline_policy_from_max_kb_raw(None);
+        assert!(p.enabled);
+        assert_eq!(p.max_bytes, 512 * 1024);
+    }
+
+    #[test]
+    fn policy_empty_string_is_default() {
+        let p = super::inline_policy_from_max_kb_raw(Some(""));
+        assert!(p.enabled);
+        assert_eq!(p.max_bytes, 512 * 1024);
+        let p = super::inline_policy_from_max_kb_raw(Some("   "));
+        assert!(p.enabled);
+    }
+
+    #[test]
+    fn policy_zero_disables() {
+        let p = super::inline_policy_from_max_kb_raw(Some("0"));
+        assert!(!p.enabled);
+    }
+
+    #[test]
+    fn policy_negative_disables() {
+        let p = super::inline_policy_from_max_kb_raw(Some("-1"));
+        assert!(!p.enabled);
+    }
+
+    #[test]
+    fn policy_positive_cap() {
+        let p = super::inline_policy_from_max_kb_raw(Some("1024"));
+        assert!(p.enabled);
+        assert_eq!(p.max_bytes, 1024 * 1024);
+    }
+
+    #[test]
+    fn policy_invalid_disables() {
+        let p = super::inline_policy_from_max_kb_raw(Some("12abc"));
+        assert!(!p.enabled);
+    }
 
     #[test]
     fn enrich_invalid_json_unchanged() {
@@ -99,9 +161,13 @@ mod tests {
     #[test]
     fn enrich_adds_nothing_when_no_attachments() {
         use serde_json::json;
+        use serde_json::Value;
         let s = r#"{"relay_mcp_session_id":"1","human":"x","cmd_skill_count":0}"#.to_string();
         let out = enrich_tool_result_json_for_mcp_host(s);
         let a: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(a, json!({"relay_mcp_session_id":"1","human":"x","cmd_skill_count":0}));
+        assert_eq!(
+            a,
+            json!({"relay_mcp_session_id":"1","human":"x","cmd_skill_count":0})
+        );
     }
 }
