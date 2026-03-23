@@ -29,10 +29,7 @@ pub fn relay_mcp_command_and_args() -> Result<(String, Vec<String>)> {
     if !exe.exists() {
         anyhow::bail!("relay not found at {}", exe.display());
     }
-    Ok((
-        exe.to_string_lossy().into_owned(),
-        vec!["mcp".to_string()],
-    ))
+    Ok((exe.to_string_lossy().into_owned(), vec!["mcp".to_string()]))
 }
 
 /// `command`, `args`, and `autoApprove` for `relay-mcp` (Cursor / Windsurf one-click install).
