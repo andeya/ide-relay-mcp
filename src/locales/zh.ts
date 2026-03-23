@@ -44,7 +44,8 @@ export default {
 ### Cursor
 - **规则**：Settings → **Rules** → User rules 或 Project rules → 将规则全文**粘贴到规则顶部**（或使用 \`.cursor/rules/00-relay-mcp.mdc\` 以优先加载）。该规则声明 relay_interactive_feedback 最高优先级。  
 - **MCP 文件** \`{cursorPath}\`  
-- \`command\` = 本机 \`relay\`，\`args\` = \`["mcp"]\`；建议 \`autoApprove\`：\`relay_interactive_feedback\`
+- \`command\` = 本机 \`relay\`（绝对路径）；\`args\` = \`["mcp"]\`；建议 \`autoApprove\`：\`relay_interactive_feedback\`  
+- **WSL**：若 IDE/Agent 跑在 **WSL** 内、而 \`command\` 指向 **Windows** 的 \`relay.exe\`（如 \`/mnt/c/.../relay.exe\`），请将 \`args\` 改为 \`["mcp", "--exe_in_wsl"]\`，工具结果里的附件 \`path\` 才会变成 \`/mnt/...\`（否则仍为 \`C:\\...\`）。
 
 ### Windsurf
 - **说明区**：Agent / MCP 相关自定义说明里粘贴**同一套**规则（界面随版本可能不同）  
@@ -52,13 +53,13 @@ export default {
 
 ### VS Code
 - 在 MCP 扩展要求的 **Rules / 自定义指令** 中写入英文提示词  
-- MCP：\`command\` = \`relay\`（建议绝对路径），\`args\` = \`["mcp"]\`
+- MCP：\`command\` = \`relay\`（建议绝对路径），\`args\` = \`["mcp"]\`（WSL + Windows \`relay.exe\` 时用 \`["mcp", "--exe_in_wsl"]\`）
 
 ### Claude Desktop
-- **自定义指令** 贴英文；MCP 的 \`command\` 须为 relay **绝对路径**，\`args\`：\`["mcp"]\`
+- **自定义指令** 贴英文；MCP 的 \`command\` 须为 relay **绝对路径**，\`args\`：\`["mcp"]\`（同上 WSL 场景加 \`"--exe_in_wsl"\`）
 
 ### 其他 IDE
-支持 MCP + 系统/项目级规则即可：贴规则全文，并注册工具 \`relay_interactive_feedback\`。`,
+支持 MCP + 系统/项目级规则即可：贴规则全文，并注册工具 \`relay_interactive_feedback\`；\`args\` 规则与上表一致。`,
 
   setupTitle: "本机环境",
   setupLead:
@@ -89,7 +90,7 @@ export default {
   setupUninstallOnlyHint: "至少一项已配置时可一键卸载还原。",
   setupToolParamsTitle: "人机回路与本机 MCP",
   setupToolParamsLead:
-    "本页：可复制的 MCP JSON、以及仅改 Cursor 或 Windsurf 时的快捷操作。",
+    "本页：绿框内为合并后的 MCP JSON（默认可复制）；默认 `args` 为 `[\"mcp\"]`。若 **WSL 内 IDE + Windows relay.exe**，请把 `args` 改成 `[\"mcp\", \"--exe_in_wsl\"]` 再保存/合并。下方可做 Cursor / Windsurf 单 IDE 写入。",
   mcpCopy: "复制 MCP JSON",
   mcpCopied: "已复制到剪贴板。",
   mcpCopyErr: "复制失败。",
@@ -237,13 +238,13 @@ export default {
   noLaunch: "无启动数据。",
 
   ideHintCursor:
-    "Cursor — 一键安装会写入：\n{cursorPath}\n也可手动合并 JSON 后重启，在设置 → MCP 查看 relay-mcp。",
+    "Cursor — 一键安装会写入：\n{cursorPath}\n也可手动合并 JSON 后重启，在设置 → MCP 查看 relay-mcp。WSL + Windows relay：args 请含 \"--exe_in_wsl\"。",
   ideHintVscode:
-    "VS Code — MCP 入口因扩展而异；command 为 relay 绝对路径，args 为 [\"mcp\"]。",
+    "VS Code — MCP 入口因扩展而异；command 为 relay 绝对路径，args 至少 [\"mcp\"]；WSL + Windows relay 时用 [\"mcp\", \"--exe_in_wsl\"]。",
   ideHintWindsurf:
-    "Windsurf — 一键安装写入：\n{windsurfPath}\n手动添加时 command 与 JSON 一致。",
+    "Windsurf — 一键安装写入：\n{windsurfPath}\n手动添加时与绿框 JSON 一致；WSL + Windows relay 时在 args 中加 \"--exe_in_wsl\"。",
   ideHintClaude:
-    "Claude Desktop — command 为 relay 全路径，args 为 [\"mcp\"]；允许 relay_interactive_feedback。",
+    "Claude Desktop — command 为 relay 全路径，args 至少 [\"mcp\"]；WSL + Windows relay 时 [\"mcp\", \"--exe_in_wsl\"]；允许 relay_interactive_feedback。",
 
   cacheTitle: "存储与缓存",
   cacheSubtitle:

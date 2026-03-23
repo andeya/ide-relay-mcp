@@ -44,7 +44,8 @@ export default {
 ### Cursor
 - **Rules**: Settings → **Rules** → User or Project → paste the rule block **at the top** (or use \`.cursor/rules/00-relay-mcp.mdc\` so it loads first). The rule declares highest priority for relay_interactive_feedback.  
 - **MCP file** \`{cursorPath}\`  
-- \`command\` = local \`relay\`, \`args\` = \`["mcp"]\`; suggest \`autoApprove\`: \`relay_interactive_feedback\`
+- \`command\` = local \`relay\` (absolute path); \`args\` = \`["mcp"]\`; suggest \`autoApprove\`: \`relay_interactive_feedback\`  
+- **WSL**: If the IDE/agent runs **inside WSL** and \`command\` points at **Windows** \`relay.exe\` (e.g. \`/mnt/c/.../relay.exe\`), set \`args\` to \`["mcp", "--exe_in_wsl"]\` so attachment \`path\` values in tool results become \`/mnt/...\` (otherwise they stay \`C:\\...\`).
 
 ### Windsurf
 - **Instructions**: paste the same rule block in Agent / MCP custom text (UI varies by version)  
@@ -52,13 +53,13 @@ export default {
 
 ### VS Code
 - Put the English prompt where your MCP extension expects **Rules / custom instructions**  
-- MCP: \`command\` = \`relay\` (full path recommended), \`args\` = \`["mcp"]\`
+- MCP: \`command\` = \`relay\` (full path recommended), \`args\` = \`["mcp"]\` (WSL + Windows \`relay.exe\`: \`["mcp", "--exe_in_wsl"]\`)
 
 ### Claude Desktop
-- **Custom instructions** + MCP \`command\` = **full path** to relay, \`args\` = \`["mcp"]\`
+- **Custom instructions** + MCP \`command\` = **full path** to relay, \`args\` = \`["mcp"]\` (same WSL case: add \`"--exe_in_wsl"\`)
 
 ### Other IDEs
-Any MCP + rules-capable client: paste the rule block and register \`relay_interactive_feedback\`.`,
+Any MCP + rules-capable client: paste the rule block and register \`relay_interactive_feedback\`; \`args\` follow the table above.`,
 
   setupTitle: "This machine",
   setupLead:
@@ -89,7 +90,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   setupUninstallOnlyHint: "Uninstall is available when at least one item above is configured.",
   setupToolParamsTitle: "Human-in-the-loop & MCP on this machine",
   setupToolParamsLead:
-    "Copy MCP JSON here, or use the Cursor / Windsurf panels below for per-IDE install/remove.",
+    "Green card: merged MCP JSON (ready to copy). Default `args` is `[\"mcp\"]`. For **WSL-hosted IDE + Windows relay.exe**, change `args` to `[\"mcp\", \"--exe_in_wsl\"]` before saving/merging. Use the panels below for Cursor / Windsurf-only install or remove.",
   mcpCopy: "Copy MCP JSON",
   mcpCopied: "Copied to clipboard.",
   mcpCopyErr: "Copy failed.",
@@ -248,13 +249,13 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   noLaunch: "No launch data available.",
 
   ideHintCursor:
-    "Cursor — Full install writes:\n{cursorPath}\nOr merge JSON manually, then restart. Check Settings → MCP.",
+    "Cursor — Full install writes:\n{cursorPath}\nOr merge JSON manually, then restart. Settings → MCP. WSL + Windows relay: include \"--exe_in_wsl\" in args.",
   ideHintVscode:
-    "VS Code — MCP UI varies; command = full path to relay, args = [\"mcp\"].",
+    "VS Code — MCP UI varies; command = full path to relay; args at least [\"mcp\"]; WSL + Windows relay: [\"mcp\", \"--exe_in_wsl\"].",
   ideHintWindsurf:
-    "Windsurf — Full install writes:\n{windsurfPath}\nManual MCP: same command as in JSON.",
+    "Windsurf — Full install writes:\n{windsurfPath}\nManual MCP: match the green JSON; WSL + Windows relay: add \"--exe_in_wsl\" to args.",
   ideHintClaude:
-    "Claude Desktop — command = full path to relay, args = [\"mcp\"]. Approve relay_interactive_feedback if prompted.",
+    "Claude Desktop — command = full path to relay; args at least [\"mcp\"]; WSL + Windows relay: [\"mcp\", \"--exe_in_wsl\"]. Approve relay_interactive_feedback if prompted.",
 
   cacheTitle: "Storage & cache",
   cacheSubtitle:
