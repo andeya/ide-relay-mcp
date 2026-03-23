@@ -1,5 +1,5 @@
 //! MCP client configuration for **Cursor** (`~/.cursor/mcp.json`) and **Windsurf**
-//! (`~/.codeium/windsurf/mcp_config.json`): merge `relay-mcp` (`command` = `relay`, `args` = `["mcp"]`, …).
+//! (`~/.codeium/windsurf/mcp_config.json`): merge `relay-mcp` (`command` = `relay`, `args` = `["mcp"]` or `["mcp", "--exe_in_wsl"]` for WSL, …).
 //! See `docs/TERMINOLOGY.md`. Tool `relay_interactive_feedback` requires non-empty `retell` (this turn's assistant reply).
 //! Full install may also update user `PATH`.
 
@@ -21,38 +21,29 @@ fn home_dir() -> Result<PathBuf> {
     }
 }
 
-/// Absolute path to `relay` and argv prefix `["mcp"]` for MCP stdio server.
+/// Absolute path to `relay` and argv for MCP stdio server.
+/// Default args: `["mcp"]`; WSL users add `"--exe_in_wsl"` to get `/mnt/...` paths.
 pub fn relay_mcp_command_and_args() -> Result<(String, Vec<String>)> {
     let dir = relay_cli_directory()?;
     let exe = dir.join(gui_binary_name());
     if !exe.exists() {
         anyhow::bail!("relay not found at {}", exe.display());
     }
-    Ok((exe.to_string_lossy().into_owned(), vec!["mcp".to_string()]))
+    Ok((
+        exe.to_string_lossy().into_owned(),
+        vec!["mcp".to_string()],
+    ))
 }
 
-/// `command`, `args`, `env`, and `autoApprove` for `relay-mcp` (Cursor / Windsurf one-click install).
-/// `RELAY_EXE_IN_WSL`: `"1"` / `"true"` rewrites attachment paths for WSL-hosted agents when `relay.exe` runs on Windows; `"0"` keeps default (no rewrite).
+/// `command`, `args`, and `autoApprove` for `relay-mcp` (Cursor / Windsurf one-click install).
+/// Default `args`: `["mcp"]`. For WSL-hosted agents with Windows `relay.exe`, use `["mcp", "--exe_in_wsl"]`.
 fn relay_mcp_entry() -> Result<Value> {
     let (command, args) = relay_mcp_command_and_args()?;
     Ok(json!({
         "command": command,
         "args": args,
-        "env": {
-            "RELAY_EXE_IN_WSL": "0"
-        },
         "autoApprove": ["relay_interactive_feedback"]
     }))
-}
-
-fn merge_env_missing_keys(user_env: Value, default_env: &Value) -> Value {
-    let mut m = user_env.as_object().cloned().unwrap_or_default();
-    if let Some(dm) = default_env.as_object() {
-        for (k, v) in dm {
-            m.entry(k.clone()).or_insert_with(|| v.clone());
-        }
-    }
-    Value::Object(m)
 }
 
 /// Merge `mcpServers.relay-mcp`: keep values from the user file, fill only missing keys from [`relay_mcp_entry`].
@@ -65,13 +56,7 @@ fn merge_relay_mcp_entry(user: Option<&Value>) -> Result<Value> {
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default();
     for (k, v) in def_obj {
-        if k == "env" {
-            let u_env = map.get("env").cloned().unwrap_or(json!({}));
-            let merged_env = merge_env_missing_keys(u_env, v);
-            map.insert("env".to_string(), merged_env);
-        } else {
-            map.entry(k.clone()).or_insert_with(|| v.clone());
-        }
+        map.entry(k.clone()).or_insert_with(|| v.clone());
     }
     Ok(Value::Object(map))
 }
