@@ -78,26 +78,20 @@
     "relay-mcp": {
       "command": "/path/to/relay",
       "args": ["mcp"],
-      "env": {
-        "RELAY_EXE_IN_WSL": "0"
-      },
       "autoApprove": ["relay_interactive_feedback"]
     }
   }
 }
 ```
 
-**Cursor：** 可在仓库中放置 **`.cursor/mcp.json`**（与全局 **`~/.cursor/mcp.json`** 合并）。**WSL 内 Agent + Windows `relay.exe`：** 将 **`RELAY_EXE_IN_WSL`** 设为 **`1`** 或 **`true`**，工具结果中的附件路径会变为 `/mnt/c/...`（见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。
+**Cursor：** 可在仓库中放置 **`.cursor/mcp.json`**（与全局 **`~/.cursor/mcp.json`** 合并）。**WSL 内 Agent + Windows `relay.exe`：** 在 **`args`** 中加入 **`--exe_in_wsl`**（例如 `["mcp", "--exe_in_wsl"]`），工具结果中的附件路径会变为 `/mnt/c/...`（见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。
 
 ```json
 {
   "mcpServers": {
     "relay-mcp": {
       "command": "/path/to/relay.exe",
-      "args": ["mcp"],
-      "env": {
-        "RELAY_EXE_IN_WSL": "1"
-      },
+      "args": ["mcp", "--exe_in_wsl"],
       "autoApprove": ["relay_interactive_feedback"]
     }
   }
@@ -119,7 +113,7 @@
 
 - **`relay mcp`** — stdio MCP（`clap`）。处理 `initialize`、`tools/list`、`tools/call`。同一条连接上可并发多路人机 `tools/call`（见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。可选**即时自动回复**（规则文件 **`0|…`** 行）可在不打开界面时返回。
 - **`relay` / `relay gui`** — Tauri 应用 + **`127.0.0.1:0` 上的 HTTP**。写入 **`{user_data}/gui_endpoint.json`**；退出时删除。
-- **桥接** — MCP 读取端点；缺失或不健康时 **带 `gui` 拉起同一可执行文件**，轮询至多 **~45 s**。随后 **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**。提交、关闭、顶替或 **约 60 分钟**空闲时结束等待；MCP 侧另有 **24 小时**读超时兜底。工具 JSON：**`{ relay_mcp_session_id, human, cmd_skill_count }`**，可选 **`attachments`**（**`RELAY_EXE_IN_WSL`** 路径改写见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。
+- **桥接** — MCP 读取端点；缺失或不健康时 **带 `gui` 拉起同一可执行文件**，轮询至多 **~45 s**。随后 **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**。提交、关闭、顶替或 **约 60 分钟**空闲时结束等待；MCP 侧另有 **24 小时**读超时兜底。工具 JSON：**`{ relay_mcp_session_id, human, cmd_skill_count }`**，可选 **`attachments`**（**`relay mcp --exe_in_wsl`** 路径改写见 [docs/HTTP_IPC.md](docs/HTTP_IPC.md)）。
 
 ```mermaid
 flowchart LR

@@ -78,26 +78,20 @@
     "relay-mcp": {
       "command": "/path/to/relay",
       "args": ["mcp"],
-      "env": {
-        "RELAY_EXE_IN_WSL": "0"
-      },
       "autoApprove": ["relay_interactive_feedback"]
     }
   }
 }
 ```
 
-**Cursor:** use **`.cursor/mcp.json`** in a repo (merged with **`~/.cursor/mcp.json`**). **WSL agent + Windows `relay.exe`:** set **`RELAY_EXE_IN_WSL`** to **`1`** or **`true`** so attachment paths in tool results become `/mnt/c/...` ([docs/HTTP_IPC.md](docs/HTTP_IPC.md)).
+**Cursor:** use **`.cursor/mcp.json`** in a repo (merged with **`~/.cursor/mcp.json`**). **WSL agent + Windows `relay.exe`:** add **`--exe_in_wsl`** to **`args`** (e.g. `["mcp", "--exe_in_wsl"]`) so attachment paths in tool results become `/mnt/c/...` ([docs/HTTP_IPC.md](docs/HTTP_IPC.md)).
 
 ```json
 {
   "mcpServers": {
     "relay-mcp": {
       "command": "/path/to/relay.exe",
-      "args": ["mcp"],
-      "env": {
-        "RELAY_EXE_IN_WSL": "1"
-      },
+      "args": ["mcp", "--exe_in_wsl"],
       "autoApprove": ["relay_interactive_feedback"]
     }
   }
@@ -119,7 +113,7 @@ Repo template: [`mcp.json`](mcp.json). Semantics: **[docs/HTTP_IPC.md](docs/HTTP
 
 - **`relay mcp`** — Stdio MCP (`clap`). Handles `initialize`, `tools/list`, `tools/call`. Multiple human **`tools/call`** rounds may be in flight on one connection ([docs/HTTP_IPC.md](docs/HTTP_IPC.md) — router, workers, cap). Optional **auto-reply** (`0|…` lines in user-data rules) can return without opening the UI.
 - **`relay` / `relay gui`** — Tauri app + **HTTP on `127.0.0.1:0`**. Writes **`{user_data}/gui_endpoint.json`** `{ port, token, pid }`; removes it on exit.
-- **Bridge** — MCP reads the endpoint; if missing or unhealthy, **`spawn`s the same binary with `gui`**, polls up to **~45 s** (`ensure_gui_endpoint`). Then **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**. The wait ends on submit, dismiss, supersede, or **~60 min** idle; MCP uses a **24 h** read timeout as a failsafe. Tool JSON: **`{ relay_mcp_session_id, human, cmd_skill_count }`** plus optional **`attachments`** (`kind`, `path`; WSL path rewrite when **`RELAY_EXE_IN_WSL`** is set on `relay mcp` — [docs/HTTP_IPC.md](docs/HTTP_IPC.md)).
+- **Bridge** — MCP reads the endpoint; if missing or unhealthy, **`spawn`s the same binary with `gui`**, polls up to **~45 s** (`ensure_gui_endpoint`). Then **`POST /v1/feedback`** → **`GET /v1/feedback/wait/:request_id`**. The wait ends on submit, dismiss, supersede, or **~60 min** idle; MCP uses a **24 h** read timeout as a failsafe. Tool JSON: **`{ relay_mcp_session_id, human, cmd_skill_count }`** plus optional **`attachments`** (`kind`, `path`; WSL path rewrite with **`relay mcp --exe_in_wsl`** — [docs/HTTP_IPC.md](docs/HTTP_IPC.md)).
 
 ```mermaid
 flowchart LR
