@@ -31,6 +31,11 @@ pub const LOG_FILE: &str = "feedback_log.txt";
 
 pub const GUI_ALIVE_MARKER: &str = "relay_gui_alive.marker";
 
+/// When true, MCP tool results rewrite `attachments[].path` to WSL `/mnt/...` form (`relay mcp --exe_in_wsl`).
+pub fn set_mcp_wsl_path_rewrite_enabled(enabled: bool) {
+    mcp_wsl_paths::set_mcp_wsl_path_rewrite_enabled(enabled);
+}
+
 // Re-export config for backward compatibility (read_ui_locale, write_window_dock, etc.).
 pub use auto_reply::{auto_reply_peek, consume_oneshot, load_auto_reply_rules, AutoReplyRule};
 pub use config::{

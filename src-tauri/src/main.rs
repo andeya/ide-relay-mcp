@@ -59,8 +59,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// MCP JSON-RPC on stdio — set IDE command to this binary and args to `mcp`
-    Mcp,
+    /// MCP JSON-RPC on stdio — set IDE command to this binary and args to `mcp` (add `--exe_in_wsl` for WSL IDEs)
+    Mcp {
+        /// Rewrite `attachments[].path` in tool results to `/mnt/<drive>/...` for WSL-hosted agents (Windows `relay.exe` only).
+        #[arg(long = "exe_in_wsl")]
+        exe_in_wsl: bool,
+    },
     /// Open Relay window (same as running `relay` with no subcommand)
     Gui,
     /// Terminal: open feedback UI and print Answer to stdout when done
@@ -653,7 +657,8 @@ fn main() {
             });
             run_tauri(state);
         }
-        Some(Commands::Mcp) => {
+        Some(Commands::Mcp { exe_in_wsl }) => {
+            relay_mcp::set_mcp_wsl_path_rewrite_enabled(exe_in_wsl);
             try_attach_parent_console_for_cli();
             if let Err(e) = relay_mcp::run_feedback_server() {
                 eprintln!("{e}");

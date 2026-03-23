@@ -1,5 +1,5 @@
 //! MCP process: discover GUI HTTP endpoint and call feedback API.
-//! Tool-result bodies from `GET /v1/feedback/wait` pass through [`crate::mcp_wsl_paths::transform_tool_result_json_for_mcp_host`] here (WSL attachment paths when enabled).
+//! Tool-result bodies from `GET /v1/feedback/wait` pass through [`crate::mcp_wsl_paths::transform_tool_result_json_for_mcp_host`] here (WSL attachment paths when `relay mcp --exe_in_wsl`).
 //!
 //! ## Timeouts
 //! - `GET /v1/feedback/wait/:id` is **completed by the GUI** (submit, dismiss, supersede,

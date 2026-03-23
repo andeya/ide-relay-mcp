@@ -1,25 +1,21 @@
 //! MCP-only: optional `attachments[].path` rewrite for WSL-hosted agents calling Windows `relay.exe`.
 //!
-//! When `RELAY_EXE_IN_WSL` is `1` or `true` (trimmed, ASCII case-insensitive), each attachment path
-//! in the tool-result JSON is rewritten from a Windows path to `/mnt/<drive>/...` before the IDE sees it.
-//! GUI HTTP payloads and on-disk history stay Windows paths; only the MCP `tools/call` return string is transformed.
+//! Enable with **`relay mcp --exe_in_wsl`**. Each `attachments[].path` in the MCP `tools/call` result is
+//! rewritten from a Windows path to `/mnt/<drive>/...`. GUI HTTP payloads and on-disk history stay Windows paths.
 #![cfg_attr(not(windows), allow(dead_code))] // Non-Windows builds omit MCP path transform; helpers still run in unit tests.
 
-pub(crate) const RELAY_EXE_IN_WSL: &str = "RELAY_EXE_IN_WSL";
+use std::sync::atomic::{AtomicBool, Ordering};
 
-/// True when MCP should rewrite attachment paths for WSL (`1` or `true`; anything else is false).
-pub fn relay_exe_in_wsl_enabled() -> bool {
-    match std::env::var(RELAY_EXE_IN_WSL) {
-        Ok(s) => {
-            let t = s.trim();
-            if t.is_empty() {
-                return false;
-            }
-            let lower = t.to_ascii_lowercase();
-            lower == "1" || lower == "true"
-        }
-        Err(_) => false,
-    }
+static MCP_WSL_PATH_REWRITE_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Called from `relay mcp` after CLI parse, before the stdio loop.
+pub(crate) fn set_mcp_wsl_path_rewrite_enabled(enabled: bool) {
+    MCP_WSL_PATH_REWRITE_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+/// True when `relay mcp` was started with `--exe_in_wsl`.
+fn mcp_wsl_path_rewrite_enabled() -> bool {
+    MCP_WSL_PATH_REWRITE_ENABLED.load(Ordering::Relaxed)
 }
 
 /// Strips `\\?\` long-path prefix; leaves UNC verbatim paths detectable via `\\` start.
@@ -86,7 +82,7 @@ pub fn transform_tool_result_json_for_mcp_host(body: String) -> String {
 pub fn transform_tool_result_json_for_mcp_host(body: String) -> String {
     use serde_json::{json, Value};
 
-    if !relay_exe_in_wsl_enabled() {
+    if !mcp_wsl_path_rewrite_enabled() {
         return body;
     }
     let Ok(mut v) = serde_json::from_str::<Value>(&body) else {
@@ -117,6 +113,9 @@ pub fn transform_tool_result_json_for_mcp_host(body: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static MCP_WSL_PATH_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn wsl_mapping_basic_backslash() {
@@ -171,27 +170,20 @@ mod tests {
     }
 
     #[test]
-    fn relay_exe_in_wsl_env() {
-        std::env::remove_var(RELAY_EXE_IN_WSL);
-        assert!(!relay_exe_in_wsl_enabled());
-        std::env::set_var(RELAY_EXE_IN_WSL, "1");
-        assert!(relay_exe_in_wsl_enabled());
-        std::env::set_var(RELAY_EXE_IN_WSL, "true");
-        assert!(relay_exe_in_wsl_enabled());
-        std::env::set_var(RELAY_EXE_IN_WSL, "TRUE");
-        assert!(relay_exe_in_wsl_enabled());
-        std::env::set_var(RELAY_EXE_IN_WSL, "0");
-        assert!(!relay_exe_in_wsl_enabled());
-        std::env::set_var(RELAY_EXE_IN_WSL, "false");
-        assert!(!relay_exe_in_wsl_enabled());
-        std::env::set_var(RELAY_EXE_IN_WSL, "maybe");
-        assert!(!relay_exe_in_wsl_enabled());
-        std::env::remove_var(RELAY_EXE_IN_WSL);
+    fn mcp_wsl_path_rewrite_follows_cli_flag() {
+        let _g = MCP_WSL_PATH_TEST_LOCK.lock().unwrap();
+        set_mcp_wsl_path_rewrite_enabled(false);
+        assert!(!mcp_wsl_path_rewrite_enabled());
+        set_mcp_wsl_path_rewrite_enabled(true);
+        assert!(mcp_wsl_path_rewrite_enabled());
+        set_mcp_wsl_path_rewrite_enabled(false);
+        assert!(!mcp_wsl_path_rewrite_enabled());
     }
 
     #[test]
     fn transform_noop_when_disabled() {
-        std::env::remove_var(RELAY_EXE_IN_WSL);
+        let _g = MCP_WSL_PATH_TEST_LOCK.lock().unwrap();
+        set_mcp_wsl_path_rewrite_enabled(false);
         let s = r#"{"relay_mcp_session_id":"1","human":"","cmd_skill_count":0,"attachments":[{"kind":"image","path":"C:\\a.png"}]}"#.to_string();
         assert_eq!(transform_tool_result_json_for_mcp_host(s.clone()), s);
     }
@@ -199,10 +191,11 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn transform_rewrites_when_enabled() {
-        std::env::set_var(RELAY_EXE_IN_WSL, "1");
+        let _g = MCP_WSL_PATH_TEST_LOCK.lock().unwrap();
+        set_mcp_wsl_path_rewrite_enabled(true);
         let s = r#"{"relay_mcp_session_id":"1","human":"","cmd_skill_count":0,"attachments":[{"kind":"image","path":"C:\\Users\\x\\y.png"}]}"#.to_string();
         let out = transform_tool_result_json_for_mcp_host(s);
         assert!(out.contains("/mnt/c/Users/x/y.png"));
-        std::env::remove_var(RELAY_EXE_IN_WSL);
+        set_mcp_wsl_path_rewrite_enabled(false);
     }
 }
