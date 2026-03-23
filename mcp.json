@@ -5,9 +5,6 @@
       "args": [
         "mcp"
       ],
-      "env": {
-        "RELAY_EXE_IN_WSL": "0"
-      },
       "autoApprove": [
         "relay_interactive_feedback"
       ]
