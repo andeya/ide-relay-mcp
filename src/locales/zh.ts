@@ -22,7 +22,7 @@ export default {
   rulePromptsSectionIde: "各 IDE 配置方式",
   rulePromptsModeMild: "标准（推荐）",
   rulePromptsModeMildDesc:
-    "每回合结束时调用一次；收到 human 后按需再次调用。不强制无限循环，适合多数场景。",
+    "每回合结束时调用一次；收到 human 或 attachments 后按需再次调用。不强制无限循环，适合多数场景。",
   rulePromptsModeLoop: "严格循环",
   rulePromptsModeLoopDesc:
     "每轮结束必调一次；传输失败时退避后重试。确保每轮都不遗漏调用。",
