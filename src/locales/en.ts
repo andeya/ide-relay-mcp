@@ -22,7 +22,7 @@ export default {
   rulePromptsSectionIde: "Where to paste (by IDE)",
   rulePromptsModeMild: "Standard (recommended)",
   rulePromptsModeMildDesc:
-    "Call once at end of each turn; call again as needed when you get human. Does not force an infinite loop. Suited for most use cases.",
+    "Call once at end of each turn; call again as needed when you get human or attachments. Does not force an infinite loop. Suited for most use cases.",
   rulePromptsModeLoop: "Strict loop",
   rulePromptsModeLoopDesc:
     "Every turn must end with a call; back off and retry on transport failure. Ensures the tool is never skipped.",
