@@ -21,5 +21,5 @@
 
 - Every non-paused, non–auto-reply result is JSON: `{"relay_mcp_session_id":"<string>","human":"<string>","cmd_skill_count":<number>}` (plus optional `attachments` with `{kind, path}`; `relay mcp` may rewrite `path` to WSL form when started with `--exe_in_wsl` — see [HTTP_IPC.md](HTTP_IPC.md)).
 - **`cmd_skill_count`** is the number of command + skill items currently stored on that Relay tab (length of slash menu source).
-- `human` is the user’s Answer text (empty on dismiss/timeout).
+- `human` is the user’s Answer text (empty on dismiss/timeout). **Agent loop:** the turn ends only when both `human` and `attachments` are empty (or attachments absent); if the user submitted only attachments (no text), treat attachments as input and reply.
 - **Pause:** If the result contains `<<<RELAY_MCP_PAUSED>>>`, do not call the tool again until the user resumes in Settings.
