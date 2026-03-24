@@ -1050,7 +1050,8 @@ export function useFeedbackWindow() {
   }
 
   const STATUS_POLL_MS_VISIBLE = 5_000;
-  const STATUS_POLL_MS_HIDDEN = 60_000;
+  // Shorter when hidden to reduce Windows suspending WebView2 child process (~1h idle → unresponsive)
+  const STATUS_POLL_MS_HIDDEN = 15_000;
 
   function scheduleStatusPoll() {
     if (closing) return;
