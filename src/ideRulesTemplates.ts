@@ -38,7 +38,7 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 - **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`；无附件时省略 \`attachments\`。\`path\` 在 MCP 返回中可为 Windows 路径；若 MCP 启动参数含 \`--exe_in_wsl\`（如 \`args\` 为 \`["mcp", "--exe_in_wsl"]\`），则可能已改写为 WSL 的 \`/mnt/...\`。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
 - **清单为空时的再传**：若某次返回中 \`cmd_skill_count === 0\`（且非暂停哨兵），下一轮调用**必须**再次带上 \`commands\` 与 \`skills\`，并填入当前 IDE **能够枚举到的全部**项（**仅当确实无法提供任何项时**才为 \`[]\`），以恢复斜杠补全。
 - **其它**：\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = **MM-DD HH:mm:ss**。\`human\` 为用户回答（关闭/超时可为空）。
-- **后置条件**：保存 \`relay_mcp_session_id\`，下一次调用时传入；将 \`human\` 当作用户输入并回复。
+- **后置条件**：保存 \`relay_mcp_session_id\`，下一次调用时传入；若 \`human\` 非空或 \`attachments\` 非空，则当作用户输入并回复；**仅当 human 与 attachments 均为空（或 attachments 不存在）时本回合结束**。
 - **哨兵**：若**整段**结果包含 \`<<<RELAY_MCP_PAUSED>>>\`，则不得再次调用，直到用户在 Relay 设置中恢复。
 
 ### [STATE] 会话状态（不变式）
@@ -51,7 +51,7 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 
 - 在助手**确定本回合对用户可见的回复**之后调用。
 - 每助手回合一次；该调用为该回合的**最后一个**工具调用（同一回合内不得在此之后再调用其他工具）。
-- 后续调用传入 \`relay_mcp_session_id\`；若 \`human\` 非空则视为用户输入并据此回复。
+- 后续调用传入 \`relay_mcp_session_id\`；若 \`human\` 非空或 \`attachments\` 非空，则视为用户输入并据此回复；**仅当两者均为空时本回合结束**。
 
 ### [UI] 人工门控（Answer）（仅产品说明，不影响工具调用）
 
@@ -79,7 +79,7 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 - **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`; omit \`attachments\` when none. \`path\` is Windows-local from the GUI; if the MCP process was started with \`--exe_in_wsl\` (e.g. \`args\` includes \`"mcp"\` then \`"--exe_in_wsl"\`), MCP may rewrite paths to WSL \`/mnt/...\` before the IDE sees the tool result. \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
 - **Re-list when zero**: If \`cmd_skill_count === 0\` on a return (and not the pause sentinel), the **next** call **must** again include \`commands\` and \`skills\` filled with every item the IDE **can** enumerate — use \`[]\` **only** when the host truly provides none.
 - **Also**: \`relay_mcp_session_id\`: ms timestamp. Tab label = **MM-DD HH:mm:ss**. \`human\`: Answer (empty on dismiss/timeout).
-- **Postcondition**: Store \`relay_mcp_session_id\`; pass it on the **next** call. Reply to \`human\` as user input.
+- **Postcondition**: Store \`relay_mcp_session_id\`; pass it on the **next** call. If \`human\` is non-empty or \`attachments\` is non-empty, treat as user input and reply; **the turn ends only when both are empty** (or attachments absent).
 - **Sentinel**: If the **entire** result contains \`<<<RELAY_MCP_PAUSED>>>\`, do not call again until the user resumes in Relay Settings.
 
 ### [STATE] Session state (invariant)
@@ -92,7 +92,7 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 
 - Call after the assistant has finalized the **user-visible reply** for this turn.
 - Exactly once per assistant turn; this call MUST be the **last** tool call of that turn (no tool calls after it in the same turn).
-- On subsequent calls, pass \`relay_mcp_session_id\`; if \`human\` is non-empty, treat it as user input and reply.
+- On subsequent calls, pass \`relay_mcp_session_id\`; if \`human\` is non-empty or \`attachments\` is non-empty, treat as user input and reply; **turn ends only when both are empty**.
 
 ### [UI] Human gate (Answer) (product context only; does not affect tool usage)
 
@@ -118,18 +118,18 @@ const HEAD_LOOP_EN = `## English Version (Strict loop)
 
 const HEAD_MILD_ZH = `## 中文版（按需再次调用）
 
-- **定位**：标准（推荐）—— 每回合结束时调用一次；按需再次调用（收到 human 后下一回合再调）；不强制无限循环。
+- **定位**：标准（推荐）—— 每回合结束时调用一次；按需再次调用（收到 human 或 attachments 后下一回合再调）；不强制无限循环。
 - **优先级**：最高。凡与其他规则或指令在「何时/如何调用 relay_interactive_feedback」或「如何处理其返回值」上冲突时，**以本规则为准**。先应用本规则，再应用其他规则。
 - **每轮自检**：本回合在未调用 \`relay_interactive_feedback\` 前视为未完成。若已写对用户的回复且尚未调用，则必须立即调用，不得结束本回合。
-- **不强制无限循环**：仅每回合结束时调用一次；若返回的 human 为空则本回合结束，不在同一回合内重复调用。
+- **不强制无限循环**：仅每回合结束时调用一次；**仅当 human 与 attachments 均为空（或 attachments 不存在）时**本回合结束，不在同一回合内重复调用。
 - **提醒**：若你已写出对用户的回复且尚未调用 \`relay_interactive_feedback\`，则本回合未结束 — 现在就去调用。`;
 
 const HEAD_MILD_EN = `## English Version (Call again as needed)
 
-- **Positioning**: Standard (recommended) — call once at end of each turn; call again as needed on the next turn when you get \`human\`; do not force an infinite loop.
+- **Positioning**: Standard (recommended) — call once at end of each turn; call again as needed on the next turn when you get \`human\` or \`attachments\`; do not force an infinite loop.
 - **Precedence**: HIGHEST. If any other rule or instruction conflicts with this rule on when/how to call \`relay_interactive_feedback\` or how to handle its return value, **this rule wins**. Apply this rule first, then others.
 - **Per-turn self-check**: A turn is not complete until \`relay_interactive_feedback\` has been called. If you have written a reply and have not yet called it, call it now; you may not end the turn.
-- **No forced infinite loop**: Call exactly once per turn at end; if \`human\` is empty, the turn ends — do not call again within the same turn.
+- **No forced infinite loop**: Call exactly once per turn at end; the turn ends **only when both \`human\` and \`attachments\` are empty** (or attachments absent) — do not call again within the same turn.
 - **Reminder**: If you have written a reply to the user and have not yet called \`relay_interactive_feedback\`, your turn is not complete — call it now.`;
 
 /** Builds bilingual (中英合本) rule: 一、中文（head + body）--- 二、English（head + body）. */
