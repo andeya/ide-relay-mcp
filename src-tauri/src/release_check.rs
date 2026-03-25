@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use std::cmp::Ordering;
+use std::time::Duration;
 
 /// Public repo page (click target).
 pub const RELAY_REPO_HOME: &str = "https://github.com/andeya/ide-relay-mcp";
@@ -45,7 +46,9 @@ fn parse_semver_prefix(s: &str) -> Option<SemVer3> {
 
 pub fn check_latest_release(current_version: &str) -> ReleaseCheckPayload {
     let current_version = current_version.trim().to_string();
-    let agent = ureq::Agent::new();
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(10))
+        .build();
     let resp = match agent
         .get(GITHUB_API_LATEST)
         .set(
