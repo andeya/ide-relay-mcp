@@ -8,6 +8,14 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
+    warmup: {
+      clientFiles: [
+        "./src/main.ts",
+        "./src/App.vue",
+        "./src/style.css",
+        "./src/composables/useFeedbackWindow.ts",
+      ],
+    },
   },
   build: {
     target: "es2020",
