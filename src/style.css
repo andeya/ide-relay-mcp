@@ -71,7 +71,7 @@ kbd {
 
 /* Main feedback view: fill viewport height, feedback area gets flex growth */
 .shell.shellMainFill {
-  padding: 10px 12px;
+  padding: 6px 8px;
   align-items: stretch;
   align-self: stretch;
   width: 100%;
@@ -85,6 +85,8 @@ kbd {
   width: 100%;
   max-width: 920px;
   margin: 0 auto;
+  padding: 16px;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -103,10 +105,10 @@ kbd {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 12px;
+  column-gap: 8px;
   flex-shrink: 0;
-  margin-bottom: 10px;
-  padding-bottom: 10px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   min-height: 40px;
 }
@@ -153,7 +155,7 @@ kbd {
   justify-self: end;
   gap: 6px;
   min-width: 0;
-  padding-inline-start: 4px;
+  padding-inline-start: 2px;
   border-left: 1px solid rgba(148, 163, 184, 0.12);
 }
 
@@ -599,7 +601,7 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   flex: 0 0 auto;
   flex-shrink: 0;
   /* No rule between thread and composer — cards + spacing read as two panes */
-  padding-top: 10px;
+  padding-top: 6px;
   margin-top: 0;
   border-top: none;
   max-height: min(42vh, 320px);
@@ -617,7 +619,7 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   gap: 6px;
   overflow-x: auto;
   flex-shrink: 0;
-  padding: 6px 0 10px;
+  padding: 4px 0 6px;
   margin-bottom: 2px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
@@ -727,61 +729,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   gap: 0;
 }
 
-.mainFieldHeader {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px 12px;
-  margin-bottom: 6px;
-  flex-shrink: 0;
-}
-
-.mainFieldHeader--me {
-  align-items: center;
-  gap: 8px 14px;
-}
-
-.mainFieldHeader--me .mainFieldTitleGroup {
-  align-items: center;
-}
-
-.mainFieldTitleGroup {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 10px;
-}
-
-.mainFieldTitleGloss {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: #86efac;
-  opacity: 0.92;
-}
-
-.mainFieldTitle {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #f8fafc;
-}
-
-.mainFieldSub {
-  font-size: 0.75rem;
-  color: #94a3b8;
-}
-
-.composerIdeBlockingHint {
-  margin: 0 0 0.5rem;
-  padding: 0.45rem 0.6rem;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: #a5b4fc;
-  background: rgba(99, 102, 241, 0.12);
-  border-radius: 8px;
-  border: 1px solid rgba(129, 140, 248, 0.25);
-}
-
 .setupInstallChangesNote {
   margin: 0 0 1.25rem;
   max-width: 42rem;
@@ -799,40 +746,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   font-size: 0.78rem;
   line-height: 1.5;
   color: var(--set-color-muted, #64748b);
-}
-
-/* Composer input — short strip like Cursor agent panel */
-.mainInputComposer {
-  flex: 0 1 auto;
-  width: 100%;
-  min-height: 72px;
-  max-height: 140px;
-  resize: vertical;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.92);
-  color: #e2e8f0;
-  font: inherit;
-  font-size: 0.88rem;
-  line-height: 1.45;
-  padding: 10px 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.mainInputComposer:focus {
-  outline: none;
-  border-color: rgba(148, 163, 184, 0.45);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 0 0 2px rgba(99, 102, 241, 0.2);
-}
-
-.mainInputComposer::placeholder {
-  color: #64748b;
-}
-
-.mainInputComposer:read-only {
-  opacity: 0.75;
 }
 
 .srOnly {
@@ -872,19 +785,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 0 0 2px rgba(99, 102, 241, 0.2);
-}
-
-.composerCard .mainInputComposer {
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  min-height: 72px;
-  max-height: 200px;
-}
-
-.composerCard .mainInputComposer:focus {
-  outline: none;
-  box-shadow: none;
 }
 
 .composerThumbRow {
@@ -1000,15 +900,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   padding: 0 2px;
 }
 
-.composerTextarea {
-  display: block;
-}
-
-.composerTextarea--thumbs {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-
 /* CodeMirror 6 composer (replaces textarea+mirror) */
 .relay-cm-host {
   width: 100%;
@@ -1063,7 +954,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
 .composerTextareaWrap {
   position: relative;
   z-index: 1;
-  /* Same stack for textarea + mirror so CJK + `/` metrics match; IME overlay fix below. */
   font-family:
     "Inter",
     ui-sans-serif,
@@ -1073,106 +963,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
     "Noto Sans CJK SC",
     system-ui,
     sans-serif;
-}
-
-/* Highlighted `/slash` tokens behind the transparent textarea */
-.composerMirrorScroll {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: auto;
-  pointer-events: none;
-  scrollbar-width: none;
-  border-radius: inherit;
-}
-
-.composerMirrorScroll::-webkit-scrollbar {
-  display: none;
-}
-
-/* Mirror text during IME would desync underline/candidates from the textarea. */
-.composerMirrorScroll--hiddenDuringIme {
-  visibility: hidden;
-}
-
-.composerMirrorScroll--thumbs {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-
-.composerMirrorInner {
-  box-sizing: border-box;
-  min-height: 100%;
-  padding: 10px 12px;
-  font: inherit;
-  font-size: 0.88rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  color: #e2e8f0;
-}
-
-.composerCard .composerMirrorInner {
-  padding: 10px 12px;
-  min-height: 72px;
-}
-
-.composerTextarea--mirrorOverlay {
-  position: relative;
-  z-index: 1;
-  background: transparent !important;
-  color: transparent !important;
-  -webkit-text-fill-color: transparent;
-  caret-color: #e2e8f0;
-}
-
-/* Show real textarea glyphs while composing so system IME anchors correctly. */
-.composerTextarea--mirrorOverlay.composerTextarea--imeComposing {
-  color: #e2e8f0 !important;
-  -webkit-text-fill-color: #e2e8f0 !important;
-}
-
-.composerTextarea--mirrorOverlay::placeholder {
-  color: #64748b;
-  opacity: 1;
-  -webkit-text-fill-color: #64748b;
-}
-
-.composerCard .composerTextarea--mirrorOverlay {
-  background: transparent !important;
-}
-
-.composerSlashToken {
-  display: inline;
-  /* Allow long ids to wrap like the textarea; nowrap caused mirror/textarea desync. */
-  white-space: inherit;
-}
-
-.composerSlashMark {
-  color: #cbd5e1;
-  font-weight: 500;
-}
-
-.composerSlashTag {
-  display: inline;
-  padding: 0.06em 0.38em 0.08em;
-  margin-left: 0.02em;
-  border-radius: 5px;
-  background: rgba(79, 70, 229, 0.35);
-  border: 1px solid rgba(129, 140, 248, 0.35);
-  color: #eef2ff;
-  font-weight: 600;
-  font-size: 0.92em;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-
-.composerSlashTag:empty {
-  display: none;
-  padding: 0;
-  margin: 0;
-  border: none;
-  background: none;
 }
 
 /* Slash dropdown — opens upward (Cursor-style); strong separation from composer / page chrome */
@@ -1529,17 +1319,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   flex-shrink: 0;
 }
 
-/* Legacy full-width actions — unused on main composer */
-.mainActionBar {
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 0 10px;
-}
-
 .mainContextZone {
   flex-shrink: 0;
   margin-top: 10px;
@@ -1576,10 +1355,85 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   min-height: 52px;
   overflow-x: hidden;
   overflow-y: auto;
-  border-radius: 14px;
+  --summary-top-fade-alpha: 0;
+  --summary-bottom-fade-alpha: 0;
+  /* Keep scrolling while making the thumb nearly invisible by default. */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   background: rgba(7, 13, 25, 0.72);
-  padding: 14px 16px;
+  padding: 10px 12px;
+  transition: background 0.16s ease;
+}
+
+.mainSummaryScroll::-webkit-scrollbar {
+  width: 7px;
+}
+
+.mainSummaryScroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mainSummaryScroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.mainSummaryScroll:hover {
+  scrollbar-color: rgba(148, 163, 184, 0.34) transparent;
+}
+
+.mainSummaryScroll.mainSummaryScroll--scrolling {
+  scrollbar-color: rgba(148, 163, 184, 0.34) transparent;
+}
+
+.mainSummaryScroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.34);
+  background-clip: padding-box;
+}
+
+.mainSummaryScroll.mainSummaryScroll--scrolling::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.34);
+  background-clip: padding-box;
+}
+
+/* Scrollability cues when scrollbar is mostly hidden. */
+.mainSummaryScroll--canUp {
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(2, 6, 23, var(--summary-top-fade-alpha)) 0,
+      rgba(2, 6, 23, 0) 18px
+    ),
+    rgba(7, 13, 25, 0.72);
+}
+
+.mainSummaryScroll--canDown {
+  background:
+    linear-gradient(
+      to top,
+      rgba(2, 6, 23, var(--summary-bottom-fade-alpha)) 0,
+      rgba(2, 6, 23, 0) 18px
+    ),
+    rgba(7, 13, 25, 0.72);
+}
+
+.mainSummaryScroll--canUp.mainSummaryScroll--canDown {
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(2, 6, 23, var(--summary-top-fade-alpha)) 0,
+      rgba(2, 6, 23, 0) 18px
+    ),
+    linear-gradient(
+      to top,
+      rgba(2, 6, 23, var(--summary-bottom-fade-alpha)) 0,
+      rgba(2, 6, 23, 0) 18px
+    ),
+    rgba(7, 13, 25, 0.72);
 }
 
 /* Default cap when not in agent column (fallback) */
@@ -1730,15 +1584,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   font-style: italic;
 }
 
-.qaRoundAgentScroll--bubble {
-  max-height: min(48vh, 440px);
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0;
-  margin: 0;
-}
-
 .qaRoundMd--bubble :first-child {
   margin-top: 0;
 }
@@ -1818,114 +1663,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
 }
 
-.qaRoundLabel {
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #64748b;
-  margin-bottom: 8px;
-}
-
-.qaRoundBlock--agent {
-  padding: 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(7, 13, 25, 0.45);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.qaRoundAiRibbon {
-  padding: 8px 14px;
-  background: rgba(79, 70, 229, 0.12);
-  border-bottom: 1px solid rgba(129, 140, 248, 0.18);
-}
-
-.qaRoundAiRibbonText {
-  font-size: 0.65rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  color: #a5b4fc;
-}
-
-.qaRetellPanel {
-  padding: 12px 16px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.qaAssistantPanel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.qaAssistantPanel .qaFieldLabelRow {
-  padding: 12px 16px 0;
-  margin-bottom: 0;
-}
-
-.qaAssistantPanel .qaRoundAgentScroll {
-  padding-top: 8px;
-}
-
-.qaFieldLabelRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 12px;
-  margin-bottom: 8px;
-}
-
-.qaFieldLabel {
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  color: #93c5fd;
-  text-transform: uppercase;
-}
-
-.qaFieldHint {
-  font-size: 0.65rem;
-  color: #64748b;
-  line-height: 1.35;
-}
-
-.qaRetellBody {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: #e2e8f0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.qaRoundStickyBar {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  padding: 12px 16px 10px;
-  background: linear-gradient(
-    180deg,
-    rgba(12, 20, 38, 0.98) 0%,
-    rgba(12, 20, 38, 0.94) 70%,
-    rgba(12, 20, 38, 0.82) 100%
-  );
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-  backdrop-filter: blur(8px);
-}
-
-.qaRoundStickyBar .qaRoundLabel {
-  color: #a5b4fc;
-}
-
-.qaRoundSummaryLine {
-  margin: 6px 0 0;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: #94a3b8;
-}
-
 .qaRoundAgentScroll {
   max-height: min(48vh, 440px);
   overflow-x: hidden;
@@ -1933,6 +1670,13 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   overscroll-behavior: contain;
   padding: 12px 16px 16px;
   scroll-behavior: smooth;
+}
+
+/* Bubble mode must always expand to full content height (no inner scroll). */
+.qaRoundAgentScroll.qaRoundAgentScroll--bubble {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
 }
 
 .qaRoundMd {
@@ -2017,94 +1761,17 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   color: #94a3b8;
 }
 
-.qaRoundPre--full {
-  color: #e2e8f0;
-  font-size: 0.86rem;
-  line-height: 1.55;
-}
-
-.qaRoundBlock--user {
-  padding: 14px 16px;
-  background: linear-gradient(
-    135deg,
-    rgba(6, 78, 59, 0.35) 0%,
-    rgba(15, 118, 110, 0.2) 100%
-  );
-  border-left: 4px solid rgba(45, 212, 191, 0.85);
-}
-
-.qaRoundBlock--user .qaRoundLabel {
-  color: #5eead4;
-}
-
-.qaRoundBlock--skipped,
-.qaRoundBlock--pendingMuted {
-  padding: 12px 16px;
-  background: rgba(30, 41, 59, 0.5);
-}
-
-.qaRoundBlock--pending {
-  padding: 12px 16px;
-  background: rgba(67, 56, 202, 0.12);
-  border-left: 4px solid rgba(129, 140, 248, 0.55);
-}
-
-.qaRoundBlock--pending .qaRoundLabel {
-  color: #a5b4fc;
-}
-
-.qaRoundPre {
-  margin: 0;
-  font-family: inherit;
-  font-size: 0.84rem;
-  line-height: 1.5;
-  color: #f1f5f9;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.qaRoundBlock--agent .qaRoundPre {
-  color: #cbd5e1;
-}
-
-.qaRoundMuted,
-.qaRoundHint {
+.qaRoundMuted {
   margin: 0;
   font-size: 0.82rem;
   line-height: 1.45;
-}
-
-.qaRoundMuted {
   color: #64748b;
-}
-
-.qaRoundHint {
-  color: #7dd3c0;
-}
-
-.mainSummaryBody {
-  margin: 0;
-  font-family: inherit;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: #cbd5e1;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .mainSummaryPlaceholder {
   margin: 0;
   font-size: 0.82rem;
   color: #64748b;
-}
-
-.mainMetaTiny {
-  margin: 8px 0 0;
-  font-size: 0.65rem;
-  color: #475569;
-  word-break: break-all;
-  line-height: 1.35;
-  flex-shrink: 0;
 }
 
 .panel {
@@ -2116,22 +1783,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   backdrop-filter: blur(16px);
   box-shadow: 0 24px 80px rgba(2, 6, 23, 0.55);
   padding: 24px;
-}
-
-.hero {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: start;
-  margin-bottom: 14px;
-}
-
-.heroRight {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-  flex-shrink: 0;
 }
 
 .langToggle {
@@ -2164,24 +1815,10 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   color: #5eead4;
 }
 
-.eyebrow {
-  margin: 0 0 8px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  font-size: 0.74rem;
-  color: #7dd3fc;
-}
-
 h1 {
   margin: 0;
   font-size: clamp(1.8rem, 3vw, 2.6rem);
   line-height: 1.1;
-}
-
-.subtitle {
-  margin: 8px 0 0;
-  color: #cbd5e1;
-  font-size: 0.98rem;
 }
 
 .statusPill {
@@ -2191,78 +1828,6 @@ h1 {
   color: #99f6e4;
   border: 1px solid rgba(45, 212, 191, 0.24);
   white-space: nowrap;
-}
-
-.hint {
-  margin: 0 0 16px;
-  color: #b6c2d9;
-}
-
-.pathEnvCard {
-  margin-bottom: 20px;
-  padding: 20px 22px;
-  border-radius: 16px;
-}
-
-.pathEnvTitle {
-  margin: 0 0 8px;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #e2e8f0;
-}
-
-.pathEnvDesc {
-  margin: 0 0 10px;
-  font-size: 0.88rem;
-  color: #94a3b8;
-  line-height: 1.45;
-}
-
-.pathEnvStatus {
-  margin: 0 0 8px;
-  font-size: 0.9rem;
-  color: #fbbf24;
-}
-
-.pathEnvStatus.ok {
-  color: #4ade80;
-}
-
-.pathEnvDir {
-  margin: 0 0 12px;
-  font-size: 0.82rem;
-  color: #cbd5e1;
-  word-break: break-all;
-}
-
-.pathEnvDirLabel {
-  margin-right: 6px;
-  color: #64748b;
-}
-
-.pathEnvDir code {
-  font-size: 0.8rem;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.35);
-}
-
-.pathEnvActions {
-  margin-bottom: 8px;
-}
-
-button.pathEnvBtn {
-  font-size: 0.9rem;
-  padding: 10px 16px;
-}
-
-.pathEnvMsg {
-  margin: 8px 0 0;
-}
-
-.pathEnvErr {
-  margin: 8px 0 0;
-  font-size: 0.85rem;
 }
 
 .installHubCard {
@@ -2905,12 +2470,6 @@ button.pathEnvBtn {
   font-size: 0.9rem;
 }
 
-.mcpSubTitle {
-  margin: 18px 0 10px;
-  font-size: 0.95rem;
-  color: #e2e8f0;
-}
-
 .mcpPreview {
   margin: 0 0 10px;
   padding: 12px 14px;
@@ -2925,57 +2484,9 @@ button.pathEnvBtn {
   word-break: break-all;
 }
 
-.mcpCopyRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
 .copyToast {
   font-size: 0.85rem;
   color: #4ade80;
-}
-
-.mcpWindsurfTop {
-  margin-top: 1.1rem;
-}
-
-.mcpCursorLine {
-  margin: 0 0 6px;
-  font-size: 0.86rem;
-}
-
-.mcpCursorState {
-  margin: 0 0 10px;
-  font-size: 0.88rem;
-  color: #fbbf24;
-}
-
-.mcpCursorState.ok {
-  color: #4ade80;
-}
-
-.mcpCursorBtns {
-  margin-bottom: 8px;
-}
-
-.installDetails {
-  margin-top: 14px;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
-  padding-top: 12px;
-}
-
-.installDetails summary {
-  cursor: pointer;
-  color: #93c5fd;
-  font-size: 0.9rem;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.pathEnvInner {
-  padding: 8px 0 4px;
 }
 
 .ideHintsPre {
@@ -3001,38 +2512,6 @@ button.pathEnvBtn {
   margin: 0;
   color: #fca5a5;
   font-size: 0.94rem;
-}
-
-.field {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.field > span {
-  font-size: 0.95rem;
-  color: #cbd5e1;
-}
-
-.footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: center;
-  margin-top: 8px;
-}
-
-.meta {
-  margin: 0;
-  color: #9fb0cc;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.actions {
-  display: flex;
-  gap: 12px;
 }
 
 button {
@@ -3084,20 +2563,6 @@ textarea[readonly] {
   .panel {
     padding: 18px;
     border-radius: 18px;
-  }
-
-  .hero,
-  .footer {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .actions {
-    justify-content: stretch;
-  }
-
-  .actions button {
-    width: 100%;
   }
 
 }
@@ -3388,268 +2853,6 @@ textarea[readonly] {
 }
 
 .settingsCard {
-  margin-bottom: 0;
-}
-
-.mcpPreviewTall {
-  max-height: min(260px, 32vh);
-}
-
-.ideHintsTall {
-  max-height: min(420px, 48vh);
-}
-
-.langToggleLarge {
-  margin-top: 8px;
-  align-self: flex-start;
-}
-
-.langToggleLarge .langBtn {
-  padding: 10px 22px;
-  font-size: 0.92rem;
-}
-
-.pathEnvStandalone {
-  padding-top: 4px;
-}
-
-/* PATH settings — structured layout */
-.pathEnvCard {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 16px;
-  background: linear-gradient(
-    165deg,
-    rgba(15, 23, 42, 0.72) 0%,
-    rgba(15, 23, 42, 0.5) 100%
-  );
-}
-
-.pathEnvHeader {
-  margin-bottom: 18px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.pathEnvPageTitle {
-  margin: 0 0 8px;
-  font-size: var(--set-h2);
-  font-weight: 700;
-  line-height: var(--set-lh-tight);
-  color: var(--set-color-strong);
-  letter-spacing: -0.015em;
-}
-
-.pathEnvSubtitle {
-  margin: 0;
-  font-size: var(--set-body);
-  line-height: var(--set-lh);
-  color: var(--set-color-body);
-  max-width: 58ch;
-}
-
-.settingsBulletList {
-  margin: 0 0 18px;
-  padding-left: 1.2rem;
-  color: var(--set-color-body);
-  font-size: var(--set-body);
-  line-height: var(--set-lh);
-}
-
-.settingsBulletList li {
-  margin-bottom: 0.45rem;
-}
-
-.settingsBulletList li:last-child {
-  margin-bottom: 0;
-}
-
-.settingsBulletList--compact {
-  margin-bottom: 14px;
-}
-
-.installHubLead {
-  margin: 0 0 10px;
-  font-size: var(--set-body);
-  font-weight: 600;
-  color: var(--set-color-strong);
-  line-height: var(--set-lh);
-}
-
-.installHubDesc--done {
-  color: #a7f3d0;
-}
-
-.installHubHint {
-  margin: 0 0 14px;
-  font-size: var(--set-small);
-  line-height: var(--set-lh);
-  color: var(--set-color-muted);
-}
-
-.pathEnvStatusCard {
-  padding: 18px 20px;
-  border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.65);
-  margin-bottom: 18px;
-}
-
-.pathEnvStatusCard--ok {
-  border-color: rgba(45, 212, 191, 0.22);
-  background: rgba(6, 78, 59, 0.14);
-}
-
-.pathEnvStatusRow {
-  margin-bottom: 12px;
-}
-
-.pathEnvStatusPill {
-  display: inline-block;
-  padding: 5px 11px;
-  border-radius: 999px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  background: rgba(30, 41, 59, 0.65);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-}
-
-.pathEnvStatusPill.ok {
-  background: rgba(6, 95, 70, 0.22);
-  color: #6ee7b7;
-  border-color: rgba(45, 212, 191, 0.32);
-}
-
-.pathEnvPathBox {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-
-.pathEnvPathLabel {
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #64748b;
-}
-
-.pathEnvPathCode {
-  display: block;
-  padding: 11px 14px;
-  border-radius: 10px;
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  word-break: break-all;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  background: rgba(2, 6, 23, 0.65);
-  border: 1px solid rgba(100, 116, 139, 0.28);
-  color: #e2e8f0;
-}
-
-.pathEnvDetailSection {
-  margin-top: 8px;
-  margin-bottom: 14px;
-}
-
-.pathEnvDetailHeading {
-  margin: 0 0 10px;
-  font-size: var(--set-overline);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--set-color-muted);
-}
-
-.pathDetailGrid {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-@media (min-width: 560px) {
-  .pathDetailGrid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.pathDetailCard {
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.55);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.pathDetailCard--current {
-  border-color: rgba(45, 212, 191, 0.45);
-  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.08);
-  background: rgba(45, 212, 191, 0.06);
-}
-
-.pathDetailCardTop {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.pathDetailCardTitle {
-  font-size: var(--set-body);
-  font-weight: 600;
-  line-height: var(--set-lh-tight);
-  color: var(--set-color-strong);
-}
-
-.pathDetailCardTitle--accent {
-  color: #5eead4;
-}
-
-.pathDetailBadge {
-  flex-shrink: 0;
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(6, 95, 70, 0.2);
-  color: #5eead4;
-  border: 1px solid rgba(45, 212, 191, 0.35);
-}
-
-.pathDetailCardBody {
-  margin: 0;
-  font-size: var(--set-small);
-  line-height: var(--set-lh);
-  color: var(--set-color-body);
-}
-
-.pathDetailCard--fish {
-  border-style: dashed;
-  border-color: rgba(94, 234, 212, 0.25);
-  background: rgba(15, 23, 42, 0.35);
-}
-
-.pathEnvFootnote {
-  margin: 0;
-  padding-top: 4px;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: #64748b;
-  font-style: italic;
-}
-
-.pathEnvLoading {
-  padding: 24px 0;
-  text-align: center;
-}
-
-.pathEnvBody .pathEnvActions {
   margin-bottom: 0;
 }
 
@@ -4470,8 +3673,7 @@ textarea[readonly] {
 }
 
 /* Cursor rules tab */
-.rulePromptsCard,
-.cursorRulesCard {
+.rulePromptsCard {
   max-width: 100%;
 }
 
