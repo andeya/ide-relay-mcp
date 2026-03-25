@@ -28,11 +28,32 @@ jobs:
       - run: npm run build
 
   rust:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux
+          - os: windows-latest
+            label: windows
+          - os: macos-latest
+            label: macos
+    runs-on: ${{ matrix.os }}
+    name: rust (${{ matrix.label }})
     steps:
       - uses: actions/checkout@v4
+      - name: Reject tracked Cargo target dirs
+        if: runner.os == 'Linux'
+        run: |
+          tracked="$(git ls-files 'src-tauri/target' 'target' 2>/dev/null || true)"
+          if [ -n "$tracked" ]; then
+            echo "Build artifacts must not be committed. Tracked paths:" >&2
+            echo "$tracked" >&2
+            exit 1
+          fi
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Linux dependencies (Tauri / GTK / WebKit)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -44,8 +65,9 @@ jobs:
             librsvg2-dev \
             patchelf
       - name: fmt
+        if: runner.os == 'Linux'
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - name: clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps --all-targets -- -D warnings
       - name: test
         run: cargo test --manifest-path src-tauri/Cargo.toml
