@@ -1,7 +1,7 @@
 /**
  * Minimal i18n: `en` / `zh` message maps and `{key}` interpolation for Vue UI.
  */
-import { ref, type Ref } from "vue";
+import { ref, watch, type Ref } from "vue";
 import en from "./locales/en";
 import zh from "./locales/zh";
 
@@ -10,7 +10,13 @@ type Messages = typeof en;
 
 const messages: Record<Locale, Messages> = { en, zh };
 
+const LANG_MAP: Record<Locale, string> = { en: "en", zh: "zh-CN" };
+
 export const locale: Ref<Locale> = ref("en");
+
+watch(locale, (l) => {
+  document.documentElement.lang = LANG_MAP[l] || "en";
+});
 
 /** Resolve catalog key even if `locale` was ever set to a non-Locale string at runtime. */
 function activeLocale(): Locale {
