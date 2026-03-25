@@ -179,13 +179,15 @@ flowchart LR
 
 ## 配置与路径
 
-| 系统    | 用户数据目录                               |
-| ------- | ------------------------------------------ |
-| macOS   | `~/Library/Application Support/relay-mcp/` |
-| Linux   | `~/.config/relay-mcp/`                     |
-| Windows | `%APPDATA%\relay-mcp\`                     |
+应用内 **`prepare_user_data_dir` / `user_data_dir`** 使用 **`directories::ProjectDirs::from("com", "relay", "relay-mcp")`** 并取 **`config_dir()`**；该库在 **Linux 上会忽略 qualifier**，因此三平台路径并不相同：
 
-常见文件：`feedback_log.txt`、`qa_archive/*.jsonl`、`ui_locale.json`、`gui_endpoint.json`、`relay_gui_alive.marker`、`mcp_pause.json`、`attachment_retention.json`、`auto_reply_*.txt`（可选）。
+| 系统    | 配置 / 用户数据目录（`config_dir`） |
+| ------- | ----------------------------------- |
+| macOS   | `~/Library/Application Support/com.relay.relay-mcp/` |
+| Linux   | `$XDG_CONFIG_HOME/relay-mcp/` 或 `~/.config/relay-mcp/` |
+| Windows | `%APPDATA%\relay\relay-mcp\config\` |
+
+常见文件（均在该目录下）：`feedback_log.txt`、`qa_archive/*.jsonl`、`ui_locale.json`、`gui_endpoint.json`、`relay_gui_alive.marker`、`mcp_pause.json`、`attachment_retention.json`、`auto_reply_*.txt`（可选）。
 
 ---
 
@@ -213,7 +215,7 @@ npm run tauri build    # 安装包 / .app 等
 
 ```bash
 npm run lint && npm run typecheck   # ESLint：src/**/*.vue + src/**/*.ts
-npm run tauri dev
+npm run tauri:dev
 ```
 
 **图标**（源文件 [`src-tauri/icons/source/relay-icon.svg`](src-tauri/icons/source/relay-icon.svg)）：
@@ -222,13 +224,15 @@ npm run tauri dev
 npm run icons:build
 ```
 
-CI（PR / `main`）：lint、typecheck、Vite、`cargo fmt`、`clippy -D warnings`、`cargo test` — [docs/RELEASING.md](docs/RELEASING.md)。
+CI（PR / `main`）：lint、typecheck、Vite、`cargo fmt`、`clippy --no-deps --all-targets -D warnings`、`cargo test`，并检查 **勿将 `target/` 构建产物纳入 git** — [docs/RELEASING.md](docs/RELEASING.md)。
 
 ---
 
 ## 隐私
 
-**Answer**、日志与 GUI 状态均保留在**本机**；**无**内置遥测。请将 **`feedback_log.txt`** 及 MCP 会话日志按**敏感信息**处理。
+**数据不出本机。** Answer、`feedback_log.txt`、`qa_archive`、附件与界面设置仅写入 OS 用户配置路径（见 [配置与路径](#配置与路径)）。Relay GUI 与 **`relay mcp`** 经 **127.0.0.1 HTTP** 通信，该链路不指向公网。
+
+**无产品级埋点/遥测。** 不包含第三方统计 SDK、崩溃上报或向厂商服务器发送使用行为的「上报型埋点」。（仍会有**本地**日志与状态文件便于排障；**`feedback_log.txt`** 与 IDE 侧 MCP 日志请按**敏感资料**保管。）
 
 ---
 
