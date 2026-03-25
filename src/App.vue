@@ -21,6 +21,7 @@ import type { SettingsToastPayload } from "./composables/useRelayCacheSettings";
 import SettingsCachePanel from "./components/settings/SettingsCachePanel.vue";
 import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsPanel.vue";
 import relayLogoUrl from "./assets/relay-logo.svg?url";
+import QaAssistantRetellMd from "./components/QaAssistantRetellMd.vue";
 import QaUserSubmittedBubble from "./components/QaUserSubmittedBubble.vue";
 import RelayComposerInput from "./components/RelayComposerInput.vue";
 import {
@@ -28,11 +29,11 @@ import {
   slashItemDetailPreview,
 } from "./composables/feedbackComposerUtils";
 import { qaRoundHasRenderableUserContent } from "./utils/parseRelayFeedbackReply";
-import { safeMarkdownToHtml } from "./utils/safeMarkdown";
 
 const lightboxSrc = ref<string | null>(null);
 const windowDock = ref<"left" | "center" | "right">("left");
 const dockEdgeHide = ref(false);
+const windowAlwaysOnTop = ref(false);
 /** Debounce tuck after pointer leaves the webview — ms from Rust `get_dock_edge_hide_ui_timing`. */
 let shellLeaveTimer: ReturnType<typeof setTimeout> | null = null;
 const shellLeaveDebounceMs = ref(120);
@@ -40,6 +41,15 @@ const mcpPaused = ref(false);
 const mcpPauseBusy = ref(false);
 const mcpPauseErr = ref("");
 const qaScrollEndRef = ref<HTMLElement | null>(null);
+const summaryScrolling = ref(false);
+let summaryScrollTimer: ReturnType<typeof setTimeout> | undefined;
+const summaryCanScrollUp = ref(false);
+const summaryCanScrollDown = ref(false);
+const summaryTopFadeAlpha = ref(0);
+const summaryBottomFadeAlpha = ref(0);
+let summaryScrollRaf = 0;
+const SUMMARY_FADE_DISTANCE = 88;
+const SUMMARY_FADE_MAX_ALPHA = 0.34;
 
 const {
   payload: releasePayload,
@@ -75,10 +85,6 @@ function openLightbox(src: string) {
 function closeLightbox() {
   lightboxSrc.value = null;
 }
-function qaMd(html: string) {
-  return safeMarkdownToHtml(html);
-}
-
 /** Show `/id` in slash menu; `name` is for IDE display elsewhere, not the palette primary line. */
 function slashMenuLabel(cmd: CommandItem) {
   const n = (cmd.id ?? cmd.name ?? "").trim();
@@ -184,6 +190,59 @@ function onAttachChange(e: Event) {
 }
 
 const summaryScrollRef = ref<HTMLElement | null>(null);
+const summaryScrollClasses = computed(() => ({
+  "mainSummaryScroll--scrolling": summaryScrolling.value,
+  "mainSummaryScroll--canUp": summaryCanScrollUp.value,
+  "mainSummaryScroll--canDown": summaryCanScrollDown.value,
+}));
+const summaryScrollStyles = computed(() => ({
+  "--summary-top-fade-alpha": String(summaryTopFadeAlpha.value),
+  "--summary-bottom-fade-alpha": String(summaryBottomFadeAlpha.value),
+}));
+
+function updateSummaryScrollHints() {
+  const el = summaryScrollRef.value;
+  if (!el) {
+    summaryCanScrollUp.value = false;
+    summaryCanScrollDown.value = false;
+    summaryTopFadeAlpha.value = 0;
+    summaryBottomFadeAlpha.value = 0;
+    return;
+  }
+  const maxScroll = el.scrollHeight - el.clientHeight;
+  if (maxScroll <= 2) {
+    summaryCanScrollUp.value = false;
+    summaryCanScrollDown.value = false;
+    summaryTopFadeAlpha.value = 0;
+    summaryBottomFadeAlpha.value = 0;
+    return;
+  }
+  summaryCanScrollUp.value = el.scrollTop > 2;
+  summaryCanScrollDown.value = el.scrollTop < maxScroll - 2;
+  const topRatio = Math.min(1, Math.max(0, el.scrollTop / SUMMARY_FADE_DISTANCE));
+  const bottomRatio = Math.min(
+    1,
+    Math.max(0, (maxScroll - el.scrollTop) / SUMMARY_FADE_DISTANCE),
+  );
+  summaryTopFadeAlpha.value = Number((topRatio * SUMMARY_FADE_MAX_ALPHA).toFixed(3));
+  summaryBottomFadeAlpha.value = Number(
+    (bottomRatio * SUMMARY_FADE_MAX_ALPHA).toFixed(3),
+  );
+}
+
+function onSummaryScroll() {
+  if (summaryScrollRaf) return;
+  summaryScrollRaf = requestAnimationFrame(() => {
+    summaryScrollRaf = 0;
+    updateSummaryScrollHints();
+  });
+  summaryScrolling.value = true;
+  if (summaryScrollTimer) clearTimeout(summaryScrollTimer);
+  summaryScrollTimer = setTimeout(() => {
+    summaryScrolling.value = false;
+    summaryScrollTimer = undefined;
+  }, 720);
+}
 
 function scrollQaToBottom() {
   requestAnimationFrame(() => {
@@ -200,12 +259,26 @@ function scrollQaToBottom() {
 }
 
 watch(
-  qaRounds,
+  () => qaRounds.value.length,
   async () => {
     await nextTick();
     scrollQaToBottom();
+    await nextTick();
+    updateSummaryScrollHints();
   },
-  { deep: true, immediate: true },
+  { immediate: true },
+);
+
+watch(
+  () => {
+    const last = qaRounds.value[qaRounds.value.length - 1];
+    if (!last) return "";
+    return `${last.submitted ? 1 : 0}|${last.retell?.length ?? 0}`;
+  },
+  async () => {
+    await nextTick();
+    updateSummaryScrollHints();
+  },
 );
 
 const {
@@ -357,6 +430,24 @@ function closeSettings() {
   uiView.value = "main";
 }
 
+function onTabStripKeydown(e: KeyboardEvent) {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") return;
+  e.preventDefault();
+  const ids = tabs.value.map((t) => t.tab_id);
+  if (ids.length < 2) return;
+  const cur = ids.indexOf(activeTabId.value);
+  let next: number;
+  if (e.key === "ArrowRight") next = (cur + 1) % ids.length;
+  else if (e.key === "ArrowLeft") next = (cur - 1 + ids.length) % ids.length;
+  else if (e.key === "Home") next = 0;
+  else next = ids.length - 1;
+  const strip = e.currentTarget as HTMLElement;
+  void selectTab(ids[next]);
+  void nextTick(() => {
+    strip.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  });
+}
+
 function onGlobalKeydown(e: KeyboardEvent) {
   if (
     dockEdgeHide.value &&
@@ -425,6 +516,16 @@ async function toggleDockEdgeHide() {
   }
 }
 
+async function toggleWindowAlwaysOnTop() {
+  const next = !windowAlwaysOnTop.value;
+  try {
+    await invoke("set_window_always_on_top", { enabled: next });
+    windowAlwaysOnTop.value = next;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
 function onShellMouseEnter() {
   if (shellLeaveTimer !== null) {
     clearTimeout(shellLeaveTimer);
@@ -460,33 +561,32 @@ async function setLang(code: "en" | "zh") {
 onMounted(async () => {
   try {
     const saved = await invoke<string>("get_ui_locale");
+
     if (saved === "zh") {
       locale.value = "zh";
     }
-    await initAfterLocale();
-    try {
-      const d = await invoke<string>("get_window_dock");
-      if (d === "center" || d === "right") windowDock.value = d;
-      else windowDock.value = "left";
-    } catch {
-      /* ignore */
-    }
-    try {
-      dockEdgeHide.value = await invoke<boolean>("get_dock_edge_hide");
-    } catch {
-      /* ignore */
-    }
-    try {
-      const timing = await invoke<{
-        shellLeaveDebounceMs: number;
-        suppressAfterPeekMs: number;
-      }>("get_dock_edge_hide_ui_timing");
-      shellLeaveDebounceMs.value = timing.shellLeaveDebounceMs;
-    } catch {
-      /* keep default */
-    }
-    await refreshMcpPaused();
+
+    // Fire all independent Rust queries in parallel while initAfterLocale loads tabs.
+    const [, dockResult, edgeResult, aotResult, timingResult] = await Promise.all([
+      initAfterLocale(),
+      invoke<string>("get_window_dock").catch(() => "left" as string),
+      invoke<boolean>("get_dock_edge_hide").catch(() => false),
+      invoke<boolean>("get_window_always_on_top").catch(() => false),
+      invoke<{ shellLeaveDebounceMs: number; suppressAfterPeekMs: number }>(
+        "get_dock_edge_hide_ui_timing",
+      ).catch(() => null),
+    ]);
+
+    const d = dockResult;
+    windowDock.value = d === "center" || d === "right" ? d : "left";
+    dockEdgeHide.value = edgeResult;
+    windowAlwaysOnTop.value = aotResult;
+    if (timingResult) shellLeaveDebounceMs.value = timingResult.shellLeaveDebounceMs;
+
+    void refreshMcpPaused();
     window.addEventListener("keydown", onGlobalKeydown);
+    await nextTick();
+    updateSummaryScrollHints();
   } catch (err) {
     loading.value = false;
     error.value = err instanceof Error ? err.message : String(err);
@@ -497,6 +597,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", onGlobalKeydown);
   if (settingsRefreshToastTimer) clearTimeout(settingsRefreshToastTimer);
   if (shellLeaveTimer !== null) clearTimeout(shellLeaveTimer);
+  if (summaryScrollTimer) clearTimeout(summaryScrollTimer);
+  if (summaryScrollRaf) cancelAnimationFrame(summaryScrollRaf);
 });
 </script>
 
@@ -593,6 +695,31 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="iconDockEdge"
+              :class="{ 'iconDockEdge--on': windowAlwaysOnTop }"
+              :title="strings.windowAlwaysOnTopTitle"
+              :aria-label="strings.windowAlwaysOnTopAria"
+              :aria-pressed="windowAlwaysOnTop"
+              @click="toggleWindowAlwaysOnTop"
+            >
+              <svg
+                class="iconDockEdgeSvg"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M12 3l3 3h-2v6h-2V6H9l3-3zM6 12h12v7H6z"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="iconDockEdge"
               :class="{ 'iconDockEdge--on': dockEdgeHide }"
               :title="strings.dockEdgeHideTitle"
               :aria-label="strings.dockEdgeHideAria"
@@ -667,6 +794,7 @@ onBeforeUnmount(() => {
         class="tabStrip"
         role="tablist"
         :aria-label="strings.tabStripAria"
+        @keydown="onTabStripKeydown"
       >
         <div
           v-for="tab in tabs"
@@ -714,9 +842,12 @@ onBeforeUnmount(() => {
             v-if="qaRounds.length > 0"
             ref="summaryScrollRef"
             class="mainSummaryScroll"
+            :class="summaryScrollClasses"
+            :style="summaryScrollStyles"
             tabindex="0"
             role="region"
             :aria-label="strings.qaHistoryTitle"
+            @scroll="onSummaryScroll"
           >
             <article
               v-for="(round, idx) in qaRounds"
@@ -739,10 +870,7 @@ onBeforeUnmount(() => {
                       v-if="round.retell?.trim()"
                       class="qaRoundAgentScroll qaRoundAgentScroll--bubble"
                     >
-                      <div
-                        class="qaRoundMd qaRoundMd--agent"
-                        v-html="qaMd(round.retell)"
-                      />
+                      <QaAssistantRetellMd :retell="round.retell" />
                     </div>
                     <p v-else class="qaChatBubblePlaceholder">
                       {{ strings.qaNoRetellYet }}
@@ -801,7 +929,13 @@ onBeforeUnmount(() => {
               aria-hidden="true"
             />
           </div>
-          <div v-else class="mainSummaryScroll mainSummaryScroll--empty">
+          <div
+            v-else
+            class="mainSummaryScroll mainSummaryScroll--empty"
+            :class="summaryScrollClasses"
+            :style="summaryScrollStyles"
+            @scroll="onSummaryScroll"
+          >
             <p class="mainSummaryPlaceholder">{{ loading ? strings.loading : strings.noLaunch }}</p>
           </div>
         </div>
@@ -935,7 +1069,7 @@ onBeforeUnmount(() => {
                     id="relay-slash-listbox"
                     class="slashDropdown"
                     role="listbox"
-                    aria-label="Commands"
+                    :aria-label="strings.slashListboxAria"
                   >
                     <div ref="slashDropdownRef" class="slashDropdownList">
                       <div
