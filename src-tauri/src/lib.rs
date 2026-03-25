@@ -40,15 +40,15 @@ pub fn set_mcp_wsl_path_rewrite_enabled(enabled: bool) {
 pub use auto_reply::{auto_reply_peek, consume_oneshot, load_auto_reply_rules, AutoReplyRule};
 pub use config::{
     collapse_window_for_edge_hide, desktop_cursor_outside_outer_window,
-    mouse_in_dock_edge_peek_zone_window_only,
-    position_main_window_for_dock, read_dock_edge_hide, read_mcp_paused, read_ui_locale,
-    read_window_always_on_top, read_window_dock, window_nearest_horizontal_screen_edge_side,
-    window_outer_straddles_screen_edge, write_dock_edge_hide, write_mcp_paused, write_ui_locale,
-    write_window_always_on_top, write_window_dock,
+    mouse_in_dock_edge_peek_zone_window_only, position_main_window_for_dock, read_dock_edge_hide,
+    read_mcp_paused, read_ui_locale, read_window_always_on_top, read_window_dock,
+    window_nearest_horizontal_screen_edge_side, window_outer_straddles_screen_edge,
+    write_dock_edge_hide, write_mcp_paused, write_ui_locale, write_window_always_on_top,
+    write_window_dock,
 };
 pub use path_persistence::{
-    persist_relay_cli_path, relay_path_config_reason,
-    relay_path_persistently_configured, remove_relay_cli_path_persistent,
+    persist_relay_cli_path, relay_path_config_reason, relay_path_persistently_configured,
+    remove_relay_cli_path_persistent,
 };
 pub use server::{run_feedback_cli, run_feedback_server};
 pub use storage::{
@@ -242,7 +242,10 @@ pub fn reconcile_qa_rounds_when_tabs_empty_after_preview_strip(
 }
 
 /// One tab's merge input: log/archive rows ready to apply (built **without** holding `tabs` lock).
-pub type QaHydrationBundle = Vec<(LaunchState, Vec<(String, String, bool, Vec<QaAttachmentRef>)>)>;
+pub type QaHydrationBundle = Vec<(
+    LaunchState,
+    Vec<(String, String, bool, Vec<QaAttachmentRef>)>,
+)>;
 
 /// Read `qa_archive` and pair log rows per tab — may touch disk; do **not** call while holding `tabs`.
 pub fn hydration_bundle_per_tab(
@@ -306,9 +309,7 @@ pub fn apply_hydration_bundle(g: &mut FeedbackTabsState, bundle: &QaHydrationBun
 
         for r in mem.iter() {
             if !r.submitted {
-                let already_in_source = source
-                    .iter()
-                    .any(|(t, _, _, _)| t == &r.retell);
+                let already_in_source = source.iter().any(|(t, _, _, _)| t == &r.retell);
                 if already_in_source {
                     continue;
                 }
