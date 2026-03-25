@@ -39,16 +39,19 @@ export function slashItemDetailPreview(desc: string, maxLen = 52): string {
   const s = desc.trim();
   if (!s) return "";
   if (s.length <= maxLen) return s;
-  const lastSlash = s.lastIndexOf("/");
+  const lastFwd = s.lastIndexOf("/");
+  const lastBack = s.lastIndexOf("\\");
+  const lastSlash = Math.max(lastFwd, lastBack);
+  const sep = lastBack > lastFwd ? "\\" : "/";
   if (lastSlash >= 0 && lastSlash < s.length - 1) {
     const base = s.slice(lastSlash + 1);
     const prefixBudget = maxLen - base.length - 2;
     if (prefixBudget >= 8) {
       const dir = s.slice(0, lastSlash);
       const tail = dir.length > prefixBudget ? `…${dir.slice(-prefixBudget)}` : dir;
-      return `${tail}/${base}`;
+      return `${tail}${sep}${base}`;
     }
-    return `…/${base}`;
+    return `…${sep}${base}`;
   }
   return `${s.slice(0, Math.max(1, maxLen - 1))}…`;
 }
@@ -63,14 +66,6 @@ export function slashCommandSecondaryLine(cmd: CommandItem): string {
   const name = (cmd.name ?? "").trim();
   if (!name || name === primary) return "";
   return name;
-}
-
-/**
- * Query slice after `/` for slash menu + mirror: IDE/skill ids (ASCII), not CJK prose
- * (Chinese has no spaces; `[^\s]+` would swallow the whole line).
- */
-export function isSlashCommandQueryChars(query: string): boolean {
-  return new RegExp(`^[${SLASH_CMD_CHAR_CLASS}]*$`).test(query);
 }
 
 /**
