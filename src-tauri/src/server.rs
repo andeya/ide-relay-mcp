@@ -310,7 +310,7 @@ fn spawn_hil_worker(
     Ok(())
 }
 
-fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
+fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value, rpc_id: Value) -> Result<()> {
     let name = msg
         .get("params")
         .and_then(|params| params.get("name"))
@@ -318,11 +318,8 @@ fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
         .unwrap_or("");
 
     if name != TOOL_NAME {
-        ctx.outbound.send_error(
-            msg["id"].clone(),
-            -32601,
-            format!("Unrecognized tool: {}", name),
-        )?;
+        ctx.outbound
+            .send_error(rpc_id, -32601, format!("Unrecognized tool: {}", name))?;
         return Ok(());
     }
 
@@ -339,14 +336,12 @@ fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
         .to_string();
     if retell.trim().is_empty() {
         ctx.outbound.send_error(
-            msg["id"].clone(),
+            rpc_id,
             -32602,
             "retell is required (non-empty): this turn's assistant reply to the user",
         )?;
         return Ok(());
     }
-
-    let rpc_id = msg["id"].clone();
     if read_mcp_paused() {
         let _ = log_write(
             &ctx.config_dir,
@@ -399,17 +394,20 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
         return Ok(());
     };
 
-    if msg.get("id").is_none() {
-        if method == "notifications/cancelled" {
-            process_cancel_notification(ctx, msg)?;
+    let rpc_id = match msg.get("id").cloned() {
+        None => {
+            if method == "notifications/cancelled" {
+                process_cancel_notification(ctx, msg)?;
+            }
+            return Ok(());
         }
-        return Ok(());
-    }
+        Some(id) => id,
+    };
 
     match method {
         "initialize" => {
             ctx.outbound.send_result(
-                msg["id"].clone(),
+                rpc_id,
                 json!({
                     "protocolVersion": "2024-11-05",
                     "capabilities": { "tools": {} },
@@ -418,11 +416,11 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
             )?;
         }
         "ping" => {
-            ctx.outbound.send_result(msg["id"].clone(), json!({}))?;
+            ctx.outbound.send_result(rpc_id, json!({}))?;
         }
         "tools/list" => {
             ctx.outbound.send_result(
-                msg["id"].clone(),
+                rpc_id,
                 json!({
                     "tools": [
                         {
@@ -475,14 +473,11 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
             )?;
         }
         "tools/call" => {
-            handle_tool_call(ctx, msg)?;
+            handle_tool_call(ctx, msg, rpc_id)?;
         }
         _ => {
-            ctx.outbound.send_error(
-                msg["id"].clone(),
-                -32601,
-                format!("Method not found: {}", method),
-            )?;
+            ctx.outbound
+                .send_error(rpc_id, -32601, format!("Method not found: {}", method))?;
         }
     }
 
