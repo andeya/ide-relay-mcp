@@ -14,7 +14,7 @@ function syncRelayDocHiddenClass() {
 function syncRelayWindowFocusClass() {
   document.documentElement.classList.toggle(
     "relay-window-unfocused",
-    typeof document !== "undefined" && !document.hasFocus(),
+    !document.hasFocus(),
   );
 }
 
