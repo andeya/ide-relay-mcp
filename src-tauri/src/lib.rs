@@ -40,14 +40,14 @@ pub fn set_mcp_wsl_path_rewrite_enabled(enabled: bool) {
 pub use auto_reply::{auto_reply_peek, consume_oneshot, load_auto_reply_rules, AutoReplyRule};
 pub use config::{
     collapse_window_for_edge_hide, desktop_cursor_outside_outer_window,
-    mouse_in_dock_edge_peek_zone, mouse_in_dock_edge_peek_zone_window_only,
+    mouse_in_dock_edge_peek_zone_window_only,
     position_main_window_for_dock, read_dock_edge_hide, read_mcp_paused, read_ui_locale,
-    read_window_dock, window_nearest_horizontal_screen_edge_side,
+    read_window_always_on_top, read_window_dock, window_nearest_horizontal_screen_edge_side,
     window_outer_straddles_screen_edge, write_dock_edge_hide, write_mcp_paused, write_ui_locale,
-    write_window_dock,
+    write_window_always_on_top, write_window_dock,
 };
 pub use path_persistence::{
-    gui_binary_path, persist_relay_cli_path, relay_path_config_reason,
+    persist_relay_cli_path, relay_path_config_reason,
     relay_path_persistently_configured, remove_relay_cli_path_persistent,
 };
 pub use server::{run_feedback_cli, run_feedback_server};
@@ -241,33 +241,20 @@ pub fn reconcile_qa_rounds_when_tabs_empty_after_preview_strip(
     }
 }
 
-/// Merge `qa_rounds` for each tab when the **persisted** source has more completed MCP rounds
-/// than in-memory submitted count. Source = `feedback_log.txt` FIFO pairs **or** `qa_archive`
-/// lines, whichever has **more rows** for that `relay_mcp_session_id` (see `storage.rs`).
-///
-/// Open rounds from memory are re-appended only if the same `retell` does not already appear in
-/// the chosen source (avoids duplicating after the file caught up). Same `retell` twice in
-/// distinct rounds can drop the later in-flight round (rare).
-/// Returns `true` if any session's `qa_rounds` were updated (for UI refresh).
-pub fn hydrate_qa_rounds_from_feedback_log(g: &mut FeedbackTabsState) -> Result<bool> {
-    let tabs: Vec<LaunchState> = g
-        .tabs
-        .iter()
-        .filter(|t| !t.is_preview && !t.relay_mcp_session_id.trim().is_empty())
-        .cloned()
-        .collect();
-    if tabs.is_empty() {
-        return Ok(false);
-    }
+/// One tab's merge input: log/archive rows ready to apply (built **without** holding `tabs` lock).
+pub type QaHydrationBundle = Vec<(LaunchState, Vec<(String, String, bool, Vec<QaAttachmentRef>)>)>;
 
-    let dir = prepare_user_data_dir()?;
-    let parse = crate::storage::parse_feedback_log_mcp(&dir)?;
-
-    let mut any_changed = false;
-    for tab in tabs {
+/// Read `qa_archive` and pair log rows per tab — may touch disk; do **not** call while holding `tabs`.
+pub fn hydration_bundle_per_tab(
+    parse: &crate::storage::McpFeedbackLogParse,
+    tabs: &[LaunchState],
+    dir: &Path,
+) -> QaHydrationBundle {
+    let mut out = QaHydrationBundle::new();
+    for tab in tabs.iter().cloned() {
         let sid = tab.relay_mcp_session_id.trim();
-        let from_log_pairs = crate::storage::feedback_log_pairs_for_session(&parse, sid);
-        let from_arch = crate::storage::qa_archive_load_session(&dir, sid);
+        let from_log_pairs = crate::storage::feedback_log_pairs_for_session(parse, sid);
+        let from_arch = crate::storage::qa_archive_load_session(dir, sid);
         let source: Vec<(String, String, bool, Vec<QaAttachmentRef>)> =
             if from_arch.len() > from_log_pairs.len() {
                 from_arch
@@ -277,7 +264,16 @@ pub fn hydrate_qa_rounds_from_feedback_log(g: &mut FeedbackTabsState) -> Result<
                     .map(|(r, p)| (r, p, false, vec![]))
                     .collect()
             };
+        out.push((tab, source));
+    }
+    out
+}
 
+/// Apply a prebuilt bundle under `tabs` lock only (memory).
+pub fn apply_hydration_bundle(g: &mut FeedbackTabsState, bundle: &QaHydrationBundle) -> bool {
+    let mut any_changed = false;
+    for (tab, source) in bundle {
+        let sid = tab.relay_mcp_session_id.trim();
         let mem: Vec<QaRound> = g
             .qa_rounds
             .iter()
@@ -289,7 +285,6 @@ pub fn hydrate_qa_rounds_from_feedback_log(g: &mut FeedbackTabsState) -> Result<
         if source.is_empty() && mem.is_empty() {
             continue;
         }
-        // Re-merge when the persisted source has more completed rounds than submitted in memory.
         if source.len() <= completed_mem && !mem.is_empty() {
             continue;
         }
@@ -297,7 +292,7 @@ pub fn hydrate_qa_rounds_from_feedback_log(g: &mut FeedbackTabsState) -> Result<
         any_changed = true;
         g.qa_rounds.retain(|r| r.relay_mcp_session_id.trim() != sid);
 
-        for (retell, reply, skipped_flag, att) in &source {
+        for (retell, reply, skipped_flag, att) in source.iter() {
             g.qa_rounds.push(QaRound {
                 retell: retell.clone(),
                 reply: reply.clone(),
@@ -311,7 +306,9 @@ pub fn hydrate_qa_rounds_from_feedback_log(g: &mut FeedbackTabsState) -> Result<
 
         for r in mem.iter() {
             if !r.submitted {
-                let already_in_source = source.iter().any(|(t, _, _, _)| t == &r.retell);
+                let already_in_source = source
+                    .iter()
+                    .any(|(t, _, _, _)| t == &r.retell);
                 if already_in_source {
                     continue;
                 }
@@ -323,7 +320,18 @@ pub fn hydrate_qa_rounds_from_feedback_log(g: &mut FeedbackTabsState) -> Result<
         }
     }
     trim_qa_rounds(g);
-    Ok(any_changed)
+    any_changed
+}
+
+/// Merge `qa_rounds` from caller-provided parsed log + `qa_archive` (see `hydration_bundle_per_tab`).
+pub fn hydrate_qa_rounds_from_parsed(
+    g: &mut FeedbackTabsState,
+    parse: &crate::storage::McpFeedbackLogParse,
+    tabs: &[LaunchState],
+    dir: &Path,
+) -> bool {
+    let bundle = hydration_bundle_per_tab(parse, tabs, dir);
+    apply_hydration_bundle(g, &bundle)
 }
 
 pub fn push_qa_round(
@@ -454,15 +462,14 @@ pub fn finish_tab_remove_empty_close(
     g.tabs.retain(|t| t.tab_id != tab_id);
     if g.tabs.is_empty() {
         if g.persist_hub && !was_preview {
-            if let Ok(preview) = dev_preview_launch_state() {
-                let tid = preview.tab_id.clone();
-                push_qa_round(g, preview.retell.trim(), &tid, "");
-                g.tabs.push(preview);
-                g.active_tab_id = tid;
-                trim_qa_rounds(g);
-                let _ = refresh_gui_presence_marker();
-                return;
-            }
+            let preview = dev_preview_launch_state();
+            let tid = preview.tab_id.clone();
+            push_qa_round(g, preview.retell.trim(), &tid, "");
+            g.tabs.push(preview);
+            g.active_tab_id = tid;
+            trim_qa_rounds(g);
+            let _ = refresh_gui_presence_marker();
+            return;
         }
         remove_gui_presence_marker();
         if let Some(w) = app.get_webview_window("main") {
@@ -523,8 +530,8 @@ pub fn launch_state_preview() -> LaunchState {
 }
 
 /// Hub / `tauri dev` — placeholder tab until MCP delivers real requests.
-pub fn dev_preview_launch_state() -> Result<LaunchState> {
-    Ok(launch_state_preview())
+pub fn dev_preview_launch_state() -> LaunchState {
+    launch_state_preview()
 }
 
 #[cfg(test)]
