@@ -99,7 +99,6 @@ export default {
   setupAdvPathTitle: "只补写 PATH",
   setupAdvPathLead:
     "若一键安装时 PATH 未成功（例如未找到 relay 可执行文件），可单独写入。新开终端或 fish 新会话后生效。",
-  pathEnvFolder: "目录",
   pathEnvBtn: "写入用户 PATH",
   pathEnvBusy: "正在写入…",
   pathEnvDoneWin:
@@ -152,15 +151,15 @@ export default {
   dockEdgeHideAria: "贴边隐藏",
   dockEdgeHideTitle:
     "靠左或靠右时：鼠标离开窗口后向屏边收起，只露一条边；鼠标移到屏边露出的区域时自动展开（类似早年 QQ 贴边）。窗口获得焦点时会展开；IDE 发来新的 MCP 消息时也会先展开并前置窗口。若卡住：⌘⇧E（Windows/Linux 用 Ctrl+Shift+E）可强制展开。",
+  windowAlwaysOnTopAria: "窗口置顶",
+  windowAlwaysOnTopTitle: "窗口置顶（始终显示在最前）",
 
   releaseBadgeAria: "在 GitHub 打开 Relay 仓库",
   releaseBadgeUpdate: "v{latest} · New",
   releaseBadgeCurrent: "v{current}",
 
-  mainSessionBadge: "Chat",
   appTitle: "Relay MCP",
   brand: "Relay",
-  subtitle: "面向 AI IDE 的人工反馈层",
   statusAwaiting: "ME 回合",
   statusHubWaiting: "Hub · 未连IDE",
   ideBlockingHint:
@@ -179,7 +178,6 @@ export default {
   statusIdle: "AI 回合",
   statusTimedOut: "已超时",
   statusCancelled: "已取消",
-  hint: "上：`retell` = 本轮AI回复；下：**Answer · 你的回复**。",
   mainHintPreview:
     "有待回复的标签时在此输入。Enter 发送 · ⌘/Ctrl+Enter 发送并关闭该标签。",
   mainSummaryReadonly: "只读 · 左：AI（retell）· 右：我（Answer）",
@@ -192,10 +190,7 @@ export default {
   qaRetellHint: "本轮AI对用户可见内容（MCP：`retell`）",
   qaAssistantTurn: "AI",
   qaUserTurnMe: "我",
-  qaUserFeedback: "Answer（你的回复）",
   qaNoRetellYet: "本轮尚无AI消息。",
-  composerMessage: "Answer",
-  composerAnswerSub: "你的回复",
   composerAriaRegion: "你的回复输入区",
   composerHint:
     "Enter 提交 · Shift+Enter 换行 · ⌘/Ctrl+Enter 提交并关标签页 · 粘贴或附加图片/文件",
@@ -217,20 +212,15 @@ export default {
   composerSubmitting: "正在提交…",
   composerSubmitDisabledPreview: "有 MCP 请求后可点此提交（或按 Enter）。",
   composerSubmitDisabledIdle: "等待AI请求到达后可提交。",
-  composerSendShort: "提交",
-  composerSendCloseShort: "提交并关标签",
-  qaPendingCurrent: "在下方输入后按 Enter 或点右下角发送按钮。",
-  qaPendingOther: "请在对应标签中回复…",
   qaSkipped: "已关闭（未填写回复）",
   qaEmptySubmit: "已提交（无文字）",
-  feedback: "Answer",
   placeholder: "写下你的回复…",
+  slashListboxAria: "命令",
   slashNoMatch: "无匹配的命令或技能",
   slashNoCommandsForSession: "本会话暂无命令或技能（IDE 未传入）",
   slashDropdownHint: "↑↓ 选择 · Enter 或 Tab 插入",
   slashCategoryAgentSkill: "技能",
   noteExpired: "该请求已超时或已被取消。内容仅可本地查看，无法再提交。",
-  close: "关闭",
   submit: "提交（Enter）",
   submitClose: "关闭此条",
   submitCloseTab: "提交并关标签页（⌘/Ctrl+Enter）",
