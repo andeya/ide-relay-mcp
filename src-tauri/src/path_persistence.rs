@@ -2,7 +2,9 @@
 
 use anyhow::{anyhow, Context, Result};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(windows))]
+use std::path::PathBuf;
 
 use crate::{gui_binary_name, relay_cli_directory};
 
@@ -465,7 +467,7 @@ pub fn relay_path_config_reason() -> Option<String> {
         if !windows_user_path_has_dir(&dir) {
             return Some("User PATH does not include the current relay directory. Use one-click install or add it manually.".to_string());
         }
-        return None;
+        None
     }
     #[cfg(not(windows))]
     {
@@ -507,7 +509,7 @@ pub fn persist_relay_cli_path() -> Result<&'static str> {
     #[cfg(windows)]
     {
         windows_append_user_path(&dir)?;
-        return Ok("windows");
+        Ok("windows")
     }
     #[cfg(not(windows))]
     {
@@ -519,7 +521,7 @@ pub fn persist_relay_cli_path() -> Result<&'static str> {
                 "Cannot add relay to PATH: install path contains shell-special characters ($, \", `, or newlines). Use a simpler install path."
             ));
         }
-        let home = user_home_dir().ok_or_else(|| anyhow!("HOME / USERPROFILE not set"))?;
+        let home = user_home_dir().ok_or_else(|| anyhow!("HOME not set"))?;
         unix_append_path_block(&home, &dir)?;
         Ok("unix")
     }
@@ -552,8 +554,4 @@ pub fn remove_relay_cli_path_persistent() -> Result<()> {
         }
         Ok(())
     }
-}
-
-pub fn gui_binary_path(exe_dir: &Path) -> PathBuf {
-    exe_dir.join(gui_binary_name())
 }
