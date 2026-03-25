@@ -99,7 +99,6 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   setupAdvPathTitle: "PATH only",
   setupAdvPathLead:
     "If full install skipped PATH (e.g. relay binary not found beside the app), add it here. Open a new terminal or fish session afterward.",
-  pathEnvFolder: "Folder",
   pathEnvBtn: "Add to user PATH",
   pathEnvBusy: "Applying…",
   pathEnvDoneWin: "Done. Open a new Command Prompt or PowerShell.",
@@ -155,15 +154,15 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   dockEdgeHideAria: "Edge tuck",
   dockEdgeHideTitle:
     "When docked left or right: after the pointer leaves the window, tuck to the screen edge (a thin strip remains). Move the pointer onto that strip to expand — like classic QQ panels. The window also expands when focused, and when a new MCP message arrives (Relay is raised to the front). If tuck/expand feels stuck: ⌘⇧E (Ctrl+Shift+E on Windows/Linux) forces expand.",
+  windowAlwaysOnTopAria: "Always on top",
+  windowAlwaysOnTopTitle: "Always on top (keep window above others)",
 
   releaseBadgeAria: "Open Relay repository on GitHub",
   releaseBadgeUpdate: "v{latest} · New",
   releaseBadgeCurrent: "v{current}",
 
-  mainSessionBadge: "Chat",
   appTitle: "Relay MCP",
   brand: "Relay",
-  subtitle: "Human feedback layer for AI IDEs",
   statusAwaiting: "ME turn",
   statusHubWaiting: "Hub · no IDE",
   ideBlockingHint:
@@ -182,7 +181,6 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   statusIdle: "AI turn",
   statusTimedOut: "Timed out",
   statusCancelled: "Cancelled",
-  hint: "Top: **Retell** (`retell`) = this turn's AI reply. Bottom: **Answer**.",
   mainHintPreview:
     "When a tab is waiting for your reply, type here. Enter to send · ⌘/Ctrl+Enter to send and close the tab.",
   mainSummaryReadonly:
@@ -197,10 +195,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   qaAssistantTurn: "AI",
   /** Thread bubble label for the user side (composer still says “Answer”). */
   qaUserTurnMe: "ME",
-  qaUserFeedback: "Answer",
   qaNoRetellYet: "No AI message for this turn yet.",
-  composerMessage: "Answer",
-  composerAnswerSub: "Your reply",
   /** a11y: composer region after removing visible “Answer” heading */
   composerAriaRegion: "Your reply",
   composerHint:
@@ -227,21 +222,16 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
     "Open when an MCP request is active — then tap to submit (Enter).",
   composerSubmitDisabledIdle:
     "Submit is available once an AI request is active.",
-  composerSendShort: "Submit",
-  composerSendCloseShort: "Submit & close tab",
-  qaPendingCurrent: "Type below, then Enter or the send button.",
-  qaPendingOther: "Awaiting reply on another tab…",
   qaSkipped: "Closed with no reply",
   qaEmptySubmit: "Submitted with no text",
-  feedback: "Answer",
   placeholder: "Write your reply…",
+  slashListboxAria: "Commands",
   slashNoMatch: "No matching command or skill",
   slashNoCommandsForSession: "No commands or skills for this session (IDE did not provide any)",
   slashDropdownHint: "↑↓ Navigate · Enter or Tab to insert",
   slashCategoryAgentSkill: "Skill",
   noteExpired:
     "This request has already timed out or been cancelled. Your text can be reviewed locally, but it can no longer be submitted.",
-  close: "Close",
   submit: "Submit (Enter)",
   submitClose: "Dismiss",
   submitCloseTab: "Submit & close tab (⌘/Ctrl+Enter)",
