@@ -1,11 +1,12 @@
 //! Local HTTP for MCP ↔ GUI (`docs/HTTP_IPC.md`).
 
 use crate::{
-    apply_reply_for_tab, feedback_tool_result_string, finish_tab_remove_empty_close,
-    format_session_id_as_title, hydrate_qa_rounds_from_feedback_log, mcp_http, merge_command_items,
-    new_tab_id, push_qa_round, reconcile_qa_rounds_when_tabs_empty_after_preview_strip,
-    relay_mcp_session_id_now, session_id_from_tool_arg, skip_open_round_for_tab, CommandItem,
-    ControlStatus, FeedbackTabsState, LaunchState, QaAttachmentRef,
+    apply_hydration_bundle, apply_reply_for_tab, feedback_tool_result_string,
+    finish_tab_remove_empty_close, format_session_id_as_title, hydration_bundle_per_tab, mcp_http,
+    merge_command_items, new_tab_id, push_qa_round,
+    reconcile_qa_rounds_when_tabs_empty_after_preview_strip, relay_mcp_session_id_now,
+    session_id_from_tool_arg, skip_open_round_for_tab, CommandItem, ControlStatus,
+    FeedbackTabsState, LaunchState, QaAttachmentRef,
 };
 use axum::{
     extract::{Path, State},
@@ -17,14 +18,18 @@ use axum::{
 use rand::Rng;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::TcpListener as StdTcpListener;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::Emitter;
 use tokio::sync::oneshot;
 use tower_http::limit::RequestBodyLimitLayer;
+
+/// HTTP wait can hang until user acts; drop stale waiter channels after this duration (+ slack in orphan timer).
+const FEEDBACK_HTTP_WAIT_MAX_SECS: u64 = 60 * 60;
 
 /// Stable JSON body when no tab matches (must stay in sync with [`crate::feedback_tool_result_string`] shape).
 fn empty_tool_result_fallback() -> String {
@@ -66,10 +71,19 @@ pub struct RelayGuiRuntime(Arc<RelayGuiInner>);
 
 struct RelayGuiInner {
     tabs: Mutex<FeedbackTabsState>,
+    hydrated_sessions: Mutex<HashSet<String>>,
+    log_parse_cache: Mutex<Option<LogParseCache>>,
+    hydration_running: AtomicBool,
     wait_tx: Mutex<HashMap<String, oneshot::Sender<String>>>,
     wait_rx: Mutex<HashMap<String, oneshot::Receiver<String>>>,
     token: String,
     app: tauri::AppHandle,
+}
+
+#[derive(Clone)]
+struct LogParseCache {
+    signature: Option<(u64, u128)>,
+    parsed: crate::storage::McpFeedbackLogParse,
 }
 
 fn random_token() -> String {
@@ -89,15 +103,139 @@ fn auth_ok(headers: &HeaderMap, token: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn cancel_wait(inner: &RelayGuiInner, rid: &str) {
-    let empty_result = {
-        let g = lock_tabs(inner);
-        g.tabs
-            .iter()
-            .find(|t| t.request_id == rid)
-            .map(|t| feedback_tool_result_string(t, "", &[]))
-            .unwrap_or_else(empty_tool_result_fallback)
+/// Binds `127.0.0.1:0` and returns the listener plus chosen port.
+fn gui_http_bind_listener() -> Result<(StdTcpListener, u16), String> {
+    let listener = StdTcpListener::bind("127.0.0.1:0").map_err(|e| format!("bind: {e}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("local_addr: {e}"))?
+        .port();
+    Ok((listener, port))
+}
+
+/// Writes `gui_endpoint.json` so MCP can discover port and bearer token.
+fn gui_http_write_endpoint_file(port: u16, token: &str) -> Result<(), String> {
+    let path = mcp_http::gui_endpoint_path().map_err(|e| format!("gui_endpoint_path: {e}"))?;
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let payload = serde_json::json!({
+        "port": port,
+        "token": token,
+        "pid": std::process::id(),
+    });
+    std::fs::write(&path, payload.to_string()).map_err(|e| format!("write endpoint: {e}"))
+}
+
+fn run_gui_axum_server(std_listener: StdTcpListener, inner: Arc<RelayGuiInner>) {
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("relay gui_http: runtime {}", e);
+            return;
+        }
     };
+    if let Err(e) = std_listener.set_nonblocking(true) {
+        eprintln!("relay gui_http: set_nonblocking {}", e);
+        return;
+    }
+
+    rt.block_on(async move {
+        let listener = match tokio::net::TcpListener::from_std(std_listener) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("relay gui_http: from_std {}", e);
+                return;
+            }
+        };
+        let axum_state = AxumState {
+            inner: inner.clone(),
+        };
+        let app = Router::new()
+            .route("/v1/health", get(health))
+            .route("/v1/feedback", post(post_feedback))
+            .route("/v1/feedback/wait/:rid", get(wait_feedback))
+            .layer(RequestBodyLimitLayer::new(16 * 1024 * 1024))
+            .with_state(axum_state);
+
+        if let Err(e) = axum::serve(listener, app).await {
+            eprintln!("relay gui_http: serve {}", e);
+        }
+    });
+}
+
+/// Returns cached parse when log signature matches; otherwise parses disk and refreshes cache.
+fn log_parse_cache_get_or_parse(
+    inner: &Arc<RelayGuiInner>,
+    data_dir: &std::path::Path,
+    signature: Option<(u64, u128)>,
+) -> Result<crate::storage::McpFeedbackLogParse, ()> {
+    let mut cache = match inner.log_parse_cache.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+    if let Some(cached) = cache.as_ref() {
+        if cached.signature == signature {
+            return Ok(cached.parsed.clone());
+        }
+    }
+    let fresh = match crate::storage::parse_feedback_log_mcp(data_dir) {
+        Ok(p) => p,
+        Err(e) => {
+            #[cfg(debug_assertions)]
+            eprintln!("relay: parse_feedback_log_mcp: {e}");
+            #[cfg(not(debug_assertions))]
+            let _ = e;
+            return Err(());
+        }
+    };
+    *cache = Some(LogParseCache {
+        signature,
+        parsed: fresh.clone(),
+    });
+    Ok(fresh)
+}
+
+fn session_ids_from_tabs(g: &FeedbackTabsState) -> Vec<String> {
+    g.tabs
+        .iter()
+        .filter(|t| !t.is_preview)
+        .map(|t| t.relay_mcp_session_id.trim().to_string())
+        .filter(|sid| !sid.is_empty())
+        .collect()
+}
+
+fn hydration_needed_for_sessions(inner: &Arc<RelayGuiInner>, session_ids: &[String]) -> bool {
+    if session_ids.is_empty() {
+        return false;
+    }
+    let hs = match inner.hydrated_sessions.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+    session_ids.iter().any(|sid| !hs.contains(sid))
+}
+
+/// Lightweight signature for `feedback_log.txt` to decide parse-cache reuse.
+fn feedback_log_signature(data_dir: &std::path::Path) -> Option<(u64, u128)> {
+    let p = data_dir.join(crate::LOG_FILE);
+    let meta = std::fs::metadata(p).ok()?;
+    let len = meta.len();
+    let modified_nanos = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    Some((len, modified_nanos))
+}
+
+/// Cancel pending wait by request id using a precomputed empty tool result.
+/// Use this when caller already holds `tabs` lock to avoid recursive lock.
+fn cancel_wait_with_result(inner: &RelayGuiInner, rid: &str, empty_result: String) {
     let mut wtx = lock_wait_tx(inner);
     let mut wrx = lock_wait_rx(inner);
     if let Some(tx) = wtx.remove(rid) {
@@ -126,6 +264,9 @@ impl RelayGuiRuntime {
     pub fn new(initial: FeedbackTabsState, app: tauri::AppHandle) -> Self {
         Self(Arc::new(RelayGuiInner {
             tabs: Mutex::new(initial),
+            hydrated_sessions: Mutex::new(HashSet::new()),
+            log_parse_cache: Mutex::new(None),
+            hydration_running: AtomicBool::new(false),
             wait_tx: Mutex::new(HashMap::new()),
             wait_rx: Mutex::new(HashMap::new()),
             token: random_token(),
@@ -140,85 +281,24 @@ impl RelayGuiRuntime {
         let (tx_port, rx_port) = std::sync::mpsc::channel::<std::result::Result<u16, String>>();
 
         thread::spawn(move || {
-            let std_listener = match StdTcpListener::bind("127.0.0.1:0") {
-                Ok(l) => l,
-                Err(e) => {
-                    eprintln!("relay gui_http: bind {}", e);
-                    let _ = tx_port.send(Err(format!("bind: {e}")));
+            let (std_listener, port) = match gui_http_bind_listener() {
+                Ok(x) => x,
+                Err(msg) => {
+                    eprintln!("relay gui_http: {}", msg);
+                    let _ = tx_port.send(Err(msg));
                     return;
                 }
             };
-            let port = match std_listener.local_addr() {
-                Ok(a) => a.port(),
-                Err(e) => {
-                    eprintln!("relay gui_http: local_addr {}", e);
-                    let _ = tx_port.send(Err(format!("local_addr: {e}")));
-                    return;
-                }
-            };
-            let path = match mcp_http::gui_endpoint_path() {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("relay gui_http: path {}", e);
-                    let _ = tx_port.send(Err(format!("gui_endpoint_path: {e}")));
-                    return;
-                }
-            };
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let payload = serde_json::json!({
-                "port": port,
-                "token": token,
-                "pid": std::process::id(),
-            });
-            if let Err(e) = std::fs::write(&path, payload.to_string()) {
-                eprintln!("relay gui_http: write endpoint {}", e);
-                let _ = tx_port.send(Err(format!("write endpoint: {e}")));
+            if let Err(msg) = gui_http_write_endpoint_file(port, &token) {
+                eprintln!("relay gui_http: {}", msg);
+                let _ = tx_port.send(Err(msg));
                 return;
             }
             if tx_port.send(Ok(port)).is_err() {
                 return;
             }
 
-            let rt = match tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("relay gui_http: runtime {}", e);
-                    return;
-                }
-            };
-            if let Err(e) = std_listener.set_nonblocking(true) {
-                eprintln!("relay gui_http: set_nonblocking {}", e);
-                return;
-            }
-
-            // `TcpListener::from_std` must run inside Tokio 1.x runtime (reactor registration).
-            rt.block_on(async move {
-                let listener = match tokio::net::TcpListener::from_std(std_listener) {
-                    Ok(l) => l,
-                    Err(e) => {
-                        eprintln!("relay gui_http: from_std {}", e);
-                        return;
-                    }
-                };
-                let axum_state = AxumState {
-                    inner: inner.clone(),
-                };
-                let app = Router::new()
-                    .route("/v1/health", get(health))
-                    .route("/v1/feedback", post(post_feedback))
-                    .route("/v1/feedback/wait/:rid", get(wait_feedback))
-                    .layer(RequestBodyLimitLayer::new(16 * 1024 * 1024))
-                    .with_state(axum_state);
-
-                if let Err(e) = axum::serve(listener, app).await {
-                    eprintln!("relay gui_http: serve {}", e);
-                }
-            });
+            run_gui_axum_server(std_listener, inner);
         });
 
         match rx_port.recv_timeout(Duration::from_secs(20)) {
@@ -238,22 +318,22 @@ impl RelayGuiRuntime {
     }
 
     /// Fills `qa_rounds` from `feedback_log.txt` and/or `qa_archive` when the persisted source has
-    /// more completed rounds than in-memory submitted count (see `hydrate_qa_rounds_from_feedback_log`).
+    /// more completed rounds than in-memory submitted count (see `hydration_bundle_per_tab` /
+    /// `apply_hydration_bundle`).
     pub fn hydrate_qa_from_log(&self) {
-        let mut g = match self.0.tabs.lock() {
-            Ok(g) => g,
-            Err(e) => e.into_inner(),
-        };
-        match hydrate_qa_rounds_from_feedback_log(&mut g) {
-            Ok(true) => emit_tabs(&self.0.app),
-            Err(e) => {
-                #[cfg(debug_assertions)]
-                eprintln!("relay: hydrate_qa_rounds_from_feedback_log: {e}");
-                #[cfg(not(debug_assertions))]
-                let _ = e;
-            }
-            Ok(false) => {}
+        if self
+            .0
+            .hydration_running
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
         }
+        let inner = self.0.clone();
+        thread::spawn(move || {
+            hydrate_qa_from_log_background(&inner);
+            inner.hydration_running.store(false, Ordering::Release);
+        });
     }
 
     pub fn set_active_tab(&self, tab_id: &str) -> Result<(), String> {
@@ -270,20 +350,6 @@ impl RelayGuiRuntime {
         if let Some(tx) = tx {
             let _ = tx.send(answer);
         }
-    }
-
-    pub fn tab_request_pending(&self, tab_id: &str) -> bool {
-        let g = match self.0.tabs.lock() {
-            Ok(x) => x,
-            Err(_) => return false,
-        };
-        let Some(t) = g.tabs.iter().find(|x| x.tab_id == tab_id) else {
-            return false;
-        };
-        if t.request_id.is_empty() {
-            return false;
-        }
-        lock_wait_tx(&self.0).contains_key(&t.request_id)
     }
 
     pub fn read_tab_status(&self, tab_id: &str) -> Option<ControlStatus> {
@@ -385,6 +451,81 @@ impl RelayGuiRuntime {
     }
 }
 
+fn hydrate_qa_from_log_background(inner: &Arc<RelayGuiInner>) {
+    // Keep `tabs` locked only for small snapshots. Log parsing can take seconds on a large
+    // `feedback_log.txt`; holding `tabs` here blocked `get_feedback_tabs` → UI stuck on "Loading…".
+    let session_ids: Vec<String> = {
+        let g = match inner.tabs.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        session_ids_from_tabs(&g)
+    };
+    if !hydration_needed_for_sessions(inner, &session_ids) {
+        return;
+    }
+
+    let tabs_for_hydrate: Vec<LaunchState> = {
+        let g = match inner.tabs.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        g.tabs
+            .iter()
+            .filter(|t| !t.is_preview && !t.relay_mcp_session_id.trim().is_empty())
+            .cloned()
+            .collect()
+    };
+    if tabs_for_hydrate.is_empty() {
+        return;
+    }
+
+    let data_dir = match crate::prepare_user_data_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            #[cfg(debug_assertions)]
+            eprintln!("relay: prepare_user_data_dir: {e}");
+            #[cfg(not(debug_assertions))]
+            let _ = e;
+            return;
+        }
+    };
+    let signature = feedback_log_signature(&data_dir);
+    let Ok(parsed) = log_parse_cache_get_or_parse(inner, &data_dir, signature) else {
+        return;
+    };
+    // Archive reads happen here (no `tabs` lock) so `get_feedback_tabs` → `tabs_snapshot` is not
+    // blocked on disk I/O inside `apply_hydration_bundle`.
+    let bundle = hydration_bundle_per_tab(&parsed, &tabs_for_hydrate, &data_dir);
+    let changed = {
+        let mut g = match inner.tabs.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        apply_hydration_bundle(&mut g, &bundle)
+    };
+    {
+        let mut cache = match inner.log_parse_cache.lock() {
+            Ok(c) => c,
+            Err(e) => e.into_inner(),
+        };
+        // In-memory rounds are now fresher than disk parse snapshot.
+        *cache = None;
+    }
+    {
+        let mut hs = match inner.hydrated_sessions.lock() {
+            Ok(h) => h,
+            Err(e) => e.into_inner(),
+        };
+        for sid in session_ids {
+            hs.insert(sid);
+        }
+        if changed {
+            emit_tabs(&inner.app);
+        }
+    }
+}
+
 /// If old clients still send `<<<RELAY_FEEDBACK_JSON>>>` inside `human`, keep only the caption.
 fn strip_legacy_relay_marker_tail(s: &str) -> String {
     const M: &str = "<<<RELAY_FEEDBACK_JSON>>>";
@@ -405,6 +546,118 @@ async fn health(State(st): State<AxumState>, headers: HeaderMap) -> impl IntoRes
         return StatusCode::UNAUTHORIZED.into_response();
     }
     StatusCode::OK.into_response()
+}
+
+fn post_feedback_apply_state(
+    inner: &Arc<RelayGuiInner>,
+    retell: String,
+    relay_mcp_session_id: String,
+    commands: Option<Vec<CommandItem>>,
+    skills: Option<Vec<CommandItem>>,
+) -> String {
+    let rid = uuid::Uuid::new_v4().to_string();
+    let mut g = lock_tabs(inner);
+    g.tabs.retain(|t| !t.is_preview);
+    reconcile_qa_rounds_when_tabs_empty_after_preview_strip(&mut g, &relay_mcp_session_id);
+
+    let merge_idx = if !relay_mcp_session_id.is_empty() {
+        g.tabs
+            .iter()
+            .position(|t| t.relay_mcp_session_id == relay_mcp_session_id && !t.is_preview)
+    } else {
+        None
+    };
+
+    if let Some(idx) = merge_idx {
+        let old_rid = g.tabs[idx].request_id.clone();
+        if !old_rid.is_empty() {
+            let empty_result = feedback_tool_result_string(&g.tabs[idx], "", &[]);
+            cancel_wait_with_result(inner, &old_rid, empty_result);
+        }
+        let old_tid = g.tabs[idx].tab_id.clone();
+        let merge_was_active = g.active_tab_id == old_tid;
+        skip_open_round_for_tab(&mut g, &old_tid);
+        let tab_id = new_tab_id();
+        push_qa_round(&mut g, &retell, &tab_id, &relay_mcp_session_id);
+        let t = &mut g.tabs[idx];
+        t.retell = retell.clone();
+        t.request_id = rid.clone();
+        t.tab_id = tab_id.clone();
+        t.commands = merge_command_items(t.commands.clone(), commands.clone());
+        t.skills = merge_command_items(t.skills.clone(), skills.clone());
+        if merge_was_active {
+            g.active_tab_id = tab_id.clone();
+        }
+    } else {
+        let sid = if relay_mcp_session_id.is_empty() {
+            relay_mcp_session_id_now()
+        } else {
+            relay_mcp_session_id.clone()
+        };
+        let title = format_session_id_as_title(&sid);
+        let tid = new_tab_id();
+        push_qa_round(&mut g, &retell, &tid, &sid);
+        g.tabs.push(LaunchState {
+            retell: retell.clone(),
+            request_id: rid.clone(),
+            title,
+            tab_id: tid.clone(),
+            relay_mcp_session_id: sid.clone(),
+            is_preview: false,
+            commands: commands.clone(),
+            skills: skills.clone(),
+        });
+    }
+
+    if !g.tabs.is_empty() && !g.tabs.iter().any(|t| t.tab_id == g.active_tab_id) {
+        g.active_tab_id = g.tabs[g.tabs.len() - 1].tab_id.clone();
+    }
+    drop(g);
+
+    let (tx, rx) = oneshot::channel::<String>();
+    {
+        let mut wtx = lock_wait_tx(inner);
+        let mut wrx = lock_wait_rx(inner);
+        wtx.insert(rid.clone(), tx);
+        wrx.insert(rid.clone(), rx);
+    }
+
+    emit_tabs(&inner.app);
+    focus_main_window(&inner.app);
+    rid
+}
+
+fn feedback_orphan_wait_cleanup(inner: Arc<RelayGuiInner>, rid: String) {
+    let mut wrx = lock_wait_rx(&inner);
+    if !wrx.contains_key(&rid) {
+        return;
+    }
+    wrx.remove(&rid);
+    drop(wrx);
+    let mut g = lock_tabs(&inner);
+    let empty_result = g
+        .tabs
+        .iter()
+        .find(|t| t.request_id == rid)
+        .map(|t| feedback_tool_result_string(t, "", &[]))
+        .unwrap_or_else(empty_tool_result_fallback);
+    if let Some(tx) = lock_wait_tx(&inner).remove(&rid) {
+        let _ = tx.send(empty_result);
+    }
+    if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid).cloned() {
+        if !t.is_preview {
+            apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true);
+            finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner.app);
+        }
+    }
+    emit_tabs(&inner.app);
+}
+
+fn spawn_feedback_orphan_wait_timer(inner: Arc<RelayGuiInner>, rid: String) {
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(FEEDBACK_HTTP_WAIT_MAX_SECS + 20)).await;
+        let _ = tokio::task::spawn_blocking(move || feedback_orphan_wait_cleanup(inner, rid)).await;
+    });
 }
 
 #[derive(Deserialize)]
@@ -441,75 +694,7 @@ async fn post_feedback(
     let skills = body.skills;
 
     let rid = match tokio::task::spawn_blocking(move || {
-        let rid = uuid::Uuid::new_v4().to_string();
-        let mut g = lock_tabs(&inner);
-        g.tabs.retain(|t| !t.is_preview);
-        reconcile_qa_rounds_when_tabs_empty_after_preview_strip(&mut g, &relay_mcp_session_id);
-
-        let merge_idx = if !relay_mcp_session_id.is_empty() {
-            g.tabs
-                .iter()
-                .position(|t| t.relay_mcp_session_id == relay_mcp_session_id && !t.is_preview)
-        } else {
-            None
-        };
-
-        if let Some(idx) = merge_idx {
-            let old_rid = g.tabs[idx].request_id.clone();
-            if !old_rid.is_empty() {
-                cancel_wait(&inner, &old_rid);
-            }
-            let old_tid = g.tabs[idx].tab_id.clone();
-            let merge_was_active = g.active_tab_id == old_tid;
-            skip_open_round_for_tab(&mut g, &old_tid);
-            let tab_id = new_tab_id();
-            push_qa_round(&mut g, &retell, &tab_id, &relay_mcp_session_id);
-            let t = &mut g.tabs[idx];
-            t.retell = retell.clone();
-            t.request_id = rid.clone();
-            t.tab_id = tab_id.clone();
-            t.commands = merge_command_items(t.commands.clone(), commands.clone());
-            t.skills = merge_command_items(t.skills.clone(), skills.clone());
-            if merge_was_active {
-                g.active_tab_id = tab_id.clone();
-            }
-        } else {
-            let sid = if relay_mcp_session_id.is_empty() {
-                relay_mcp_session_id_now()
-            } else {
-                relay_mcp_session_id.clone()
-            };
-            let title = format_session_id_as_title(&sid);
-            let tid = new_tab_id();
-            push_qa_round(&mut g, &retell, &tid, &sid);
-            g.tabs.push(LaunchState {
-                retell: retell.clone(),
-                request_id: rid.clone(),
-                title,
-                tab_id: tid.clone(),
-                relay_mcp_session_id: sid.clone(),
-                is_preview: false,
-                commands: commands.clone(),
-                skills: skills.clone(),
-            });
-        }
-
-        if !g.tabs.is_empty() && !g.tabs.iter().any(|t| t.tab_id == g.active_tab_id) {
-            g.active_tab_id = g.tabs[g.tabs.len() - 1].tab_id.clone();
-        }
-        drop(g);
-
-        let (tx, rx) = oneshot::channel::<String>();
-        {
-            let mut wtx = lock_wait_tx(&inner);
-            let mut wrx = lock_wait_rx(&inner);
-            wtx.insert(rid.clone(), tx);
-            wrx.insert(rid.clone(), rx);
-        }
-
-        emit_tabs(&inner.app);
-        focus_main_window(&inner.app);
-        rid
+        post_feedback_apply_state(&inner, retell, relay_mcp_session_id, commands, skills)
     })
     .await
     {
@@ -519,41 +704,7 @@ async fn post_feedback(
         }
     };
 
-    // POST without matching GET /wait would leak oneshot slots; clean up after 60min+20s (past 60min wait timeout).
-    let inner_orphan = st.inner.clone();
-    let rid_orphan = rid.clone();
-    const WAIT_TIMEOUT_SECS: u64 = 60 * 60; // 60 minutes
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(WAIT_TIMEOUT_SECS + 20)).await;
-        let inner = inner_orphan;
-        let rid = rid_orphan;
-        let _ = tokio::task::spawn_blocking(move || {
-            let mut wrx = lock_wait_rx(&inner);
-            if !wrx.contains_key(&rid) {
-                return;
-            }
-            wrx.remove(&rid);
-            drop(wrx);
-            let mut g = lock_tabs(&inner);
-            let empty_result = g
-                .tabs
-                .iter()
-                .find(|t| t.request_id == rid)
-                .map(|t| feedback_tool_result_string(t, "", &[]))
-                .unwrap_or_else(empty_tool_result_fallback);
-            if let Some(tx) = lock_wait_tx(&inner).remove(&rid) {
-                let _ = tx.send(empty_result);
-            }
-            if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid).cloned() {
-                if !t.is_preview {
-                    apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true);
-                    finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner.app);
-                }
-            }
-            emit_tabs(&inner.app);
-        })
-        .await;
-    });
+    spawn_feedback_orphan_wait_timer(st.inner.clone(), rid.clone());
 
     Json(serde_json::json!({ "request_id": rid })).into_response()
 }
