@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Relay",
-  "version": "1.2.6",
+  "version": "1.3.0",
   "identifier": "com.relay.mcp",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "node scripts/run-vite.mjs",
+    "beforeBuildCommand": "node scripts/run-vite.mjs build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
