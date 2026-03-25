@@ -16,17 +16,15 @@ const props = defineProps<{
   windsurfMcpPath: string;
 }>();
 
-function qaMd(html: string) {
-  return safeMarkdownToHtml(html);
-}
-
 const rulePromptMode = ref<RulePromptMode>("mild");
 const rulesCopyToast = ref("");
 const rulePromptBilingual = computed(() =>
   getRelayRulePromptBilingual(rulePromptMode.value),
 );
 const rulePromptView = ref<"md" | "src">("md");
-const rulePromptBilingualHtml = computed(() => qaMd(rulePromptBilingual.value));
+const rulePromptBilingualHtml = computed(() =>
+  safeMarkdownToHtml(rulePromptBilingual.value),
+);
 
 function setRulePromptView(mode: "md" | "src") {
   rulePromptView.value = mode;
@@ -34,7 +32,7 @@ function setRulePromptView(mode: "md" | "src") {
 
 const rulePromptsIdeHtml = computed(() => {
   void locale.value;
-  return qaMd(
+  return safeMarkdownToHtml(
     t("rulePromptsIdeMd", {
       cursorPath: props.cursorMcpPath || "~/.cursor/mcp.json",
       windsurfPath: props.windsurfMcpPath || "~/.codeium/windsurf/mcp_config.json",
