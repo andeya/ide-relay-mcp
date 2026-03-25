@@ -152,6 +152,11 @@ fn get_window_dock() -> String {
     relay_mcp::read_window_dock()
 }
 
+#[tauri::command]
+fn get_window_always_on_top() -> bool {
+    relay_mcp::read_window_always_on_top()
+}
+
 /// Called after pointer left the webview (debounced) — tuck to screen edge when enabled.
 #[tauri::command]
 fn dock_edge_hide_after_leave(app: tauri::AppHandle) -> Result<(), String> {
@@ -207,13 +212,22 @@ fn set_window_dock(
     // Apply geometry first so we never clear edge state if positioning fails; then persist dock.
     relay_mcp::position_main_window_for_dock(&w, d).map_err(|e| e.to_string())?;
     relay_mcp::write_window_dock(d).map_err(|e| e.to_string())?;
-    let _ = w.set_always_on_top(false);
+    let _ = w.set_always_on_top(relay_mcp::read_window_always_on_top());
     relay_mcp::dock_edge_hide::set_peek_fast_poll(false);
     if let Ok(mut g) = edge_state.lock() {
         g.collapsed = false;
         g.tuck_side = None;
         g.suppress_collapse_until_ms = 0;
         g.suppress_peek_expand_until_ms = 0;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_window_always_on_top(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
+    relay_mcp::write_window_always_on_top(enabled).map_err(|e| e.to_string())?;
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_always_on_top(enabled);
     }
     Ok(())
 }
@@ -369,8 +383,16 @@ fn open_relay_data_folder() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn check_github_latest_release() -> relay_mcp::release_check::ReleaseCheckPayload {
-    relay_mcp::release_check::check_latest_release(env!("CARGO_PKG_VERSION"))
+async fn check_github_latest_release() -> relay_mcp::release_check::ReleaseCheckPayload {
+    let version = env!("CARGO_PKG_VERSION");
+    tokio::task::spawn_blocking(move || relay_mcp::release_check::check_latest_release(version))
+        .await
+        .unwrap_or_else(|_| relay_mcp::release_check::ReleaseCheckPayload {
+            current_version: env!("CARGO_PKG_VERSION").to_string(),
+            latest_version: None,
+            update_available: false,
+            check_error: Some("internal: join error".into()),
+        })
 }
 
 #[tauri::command]
@@ -544,7 +566,7 @@ fn run_tauri(initial: LaunchState) {
             }
         }));
     }
-    builder
+    let app = builder
         .manage(Mutex::new(EdgeHideState::default()))
         .on_window_event(|window, event| {
             if window.label() != "main" {
@@ -571,6 +593,7 @@ fn run_tauri(initial: LaunchState) {
                     return;
                 };
                 let _ = relay_mcp::position_main_window_for_dock(&win, &dock0);
+                let _ = win.set_always_on_top(relay_mcp::read_window_always_on_top());
             });
             thread::spawn(|| loop {
                 let _ = refresh_gui_presence_marker();
@@ -597,7 +620,9 @@ fn run_tauri(initial: LaunchState) {
             get_ui_locale,
             set_ui_locale,
             get_window_dock,
+            get_window_always_on_top,
             set_window_dock,
+            set_window_always_on_top,
             get_dock_edge_hide,
             get_dock_edge_hide_ui_timing,
             set_dock_edge_hide,
@@ -636,25 +661,22 @@ fn run_tauri(initial: LaunchState) {
             read_local_file_bytes_b64
         ])
         .build(tauri::generate_context!())
-        .expect("failed to build Relay")
-        .run(|_app, event| {
-            if let tauri::RunEvent::Exit = event {
-                relay_mcp::remove_gui_presence_marker();
-                if let Ok(p) = relay_mcp::mcp_http::gui_endpoint_path() {
-                    let _ = std::fs::remove_file(p);
-                }
+        .expect("failed to build Relay");
+    app.run(|_app, event| {
+        if let tauri::RunEvent::Exit = event {
+            relay_mcp::remove_gui_presence_marker();
+            if let Ok(p) = relay_mcp::mcp_http::gui_endpoint_path() {
+                let _ = std::fs::remove_file(p);
             }
-        });
+        }
+    });
 }
 
 fn main() {
     let cli = Cli::parse();
     match cli.command {
         None | Some(Commands::Gui) => {
-            let state = relay_mcp::dev_preview_launch_state().unwrap_or_else(|e| {
-                eprintln!("{e}");
-                std::process::exit(1);
-            });
+            let state = relay_mcp::dev_preview_launch_state();
             run_tauri(state);
         }
         Some(Commands::Mcp { exe_in_wsl }) => {
