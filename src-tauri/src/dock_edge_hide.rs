@@ -15,7 +15,7 @@
 //!   drags and duplicated DPI heuristics).
 //! - **Peek hit test** uses [`crate::mouse_in_dock_edge_peek_zone_window_only`] only (no monitor-wide band).
 //! - While tucked, the window uses always-on-top so the peek strip stays above other windows;
-//!   restored when expanded.
+//!   when expanded, restore [`crate::read_window_always_on_top`] (user preference), not hard-coded off.
 //! - **`set_window_dock` (GUI):** apply [`crate::position_main_window_for_dock`] first, then persist
 //!   `window_dock.json` and clear [`EdgeHideState`], so a failed move never leaves stale state.
 
@@ -98,7 +98,7 @@ pub fn expand_if_collapsed(app: &AppHandle) -> Result<bool, String> {
 
     match crate::position_main_window_for_dock(&win, &side) {
         Ok(()) => {
-            let _ = win.set_always_on_top(false);
+            let _ = win.set_always_on_top(crate::read_window_always_on_top());
             Ok(true)
         }
         Err(e) => {

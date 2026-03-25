@@ -595,6 +595,8 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   min-height: 200px;
   max-height: none;
   overflow-y: auto;
+  /* Keep last chat bubble fully above the scroll bottom (composer sits below this region). */
+  padding-bottom: 14px;
 }
 
 .mainFooterFixed {

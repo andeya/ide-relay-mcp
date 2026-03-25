@@ -273,9 +273,12 @@ watch(
   () => {
     const last = qaRounds.value[qaRounds.value.length - 1];
     if (!last) return "";
-    return `${last.submitted ? 1 : 0}|${last.retell?.length ?? 0}`;
+    const att = last.reply_attachments?.length ?? 0;
+    return `${last.submitted ? 1 : 0}|${last.retell?.length ?? 0}|${last.reply?.length ?? 0}|${att}`;
   },
   async () => {
+    await nextTick();
+    scrollQaToBottom();
     await nextTick();
     updateSummaryScrollHints();
   },
