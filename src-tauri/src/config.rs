@@ -82,10 +82,21 @@ pub struct WindowDockConfig {
     /// When true, main window can tuck to the screen edge (see `dock_edge_hide` module).
     #[serde(default)]
     pub dock_edge_hide: bool,
+    /// When true, keep main window always on top.
+    #[serde(default)]
+    pub window_always_on_top: bool,
 }
 
 fn default_window_dock() -> String {
     "left".to_string()
+}
+
+fn default_window_dock_config() -> WindowDockConfig {
+    WindowDockConfig {
+        dock: default_window_dock(),
+        dock_edge_hide: false,
+        window_always_on_top: false,
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -130,25 +141,24 @@ pub fn write_ui_locale(lang: &str) -> Result<()> {
 
 fn read_window_dock_config_or_default() -> WindowDockConfig {
     let Ok(dir) = user_data_dir() else {
-        return WindowDockConfig {
-            dock: default_window_dock(),
-            dock_edge_hide: false,
-        };
+        return default_window_dock_config();
     };
     let path = dir.join(WINDOW_DOCK_FILE);
     let text = match fs::read_to_string(&path) {
         Ok(t) => t,
-        Err(_) => {
-            return WindowDockConfig {
-                dock: default_window_dock(),
-                dock_edge_hide: false,
-            };
-        }
+        Err(_) => return default_window_dock_config(),
     };
-    serde_json::from_str(&text).unwrap_or(WindowDockConfig {
-        dock: default_window_dock(),
-        dock_edge_hide: false,
-    })
+    serde_json::from_str(&text).unwrap_or_else(|_| default_window_dock_config())
+}
+
+fn write_window_dock_config(cfg: &WindowDockConfig) -> Result<()> {
+    let dir = user_data_dir()?;
+    fs::create_dir_all(&dir)?;
+    fs::write(
+        dir.join(WINDOW_DOCK_FILE),
+        serde_json::to_string_pretty(cfg)?,
+    )?;
+    Ok(())
 }
 
 /// Persisted horizontal dock; default **left**.
@@ -165,6 +175,10 @@ pub fn read_dock_edge_hide() -> bool {
     read_window_dock_config_or_default().dock_edge_hide
 }
 
+pub fn read_window_always_on_top() -> bool {
+    read_window_dock_config_or_default().window_always_on_top
+}
+
 pub fn write_window_dock(dock: &str) -> Result<()> {
     let d = dock.trim();
     if d != "left" && d != "center" && d != "right" {
@@ -172,25 +186,19 @@ pub fn write_window_dock(dock: &str) -> Result<()> {
     }
     let mut cfg = read_window_dock_config_or_default();
     cfg.dock = d.to_string();
-    let dir = user_data_dir()?;
-    fs::create_dir_all(&dir)?;
-    fs::write(
-        dir.join(WINDOW_DOCK_FILE),
-        serde_json::to_string_pretty(&cfg)?,
-    )?;
-    Ok(())
+    write_window_dock_config(&cfg)
 }
 
 pub fn write_dock_edge_hide(enabled: bool) -> Result<()> {
     let mut cfg = read_window_dock_config_or_default();
     cfg.dock_edge_hide = enabled;
-    let dir = user_data_dir()?;
-    fs::create_dir_all(&dir)?;
-    fs::write(
-        dir.join(WINDOW_DOCK_FILE),
-        serde_json::to_string_pretty(&cfg)?,
-    )?;
-    Ok(())
+    write_window_dock_config(&cfg)
+}
+
+pub fn write_window_always_on_top(enabled: bool) -> Result<()> {
+    let mut cfg = read_window_dock_config_or_default();
+    cfg.window_always_on_top = enabled;
+    write_window_dock_config(&cfg)
 }
 
 /// Slide main window so only a thin strip remains visible on the docked edge (left or right).
@@ -224,66 +232,9 @@ pub fn collapse_window_for_edge_hide(
     Ok(())
 }
 
-/// Wider hover-to-expand hit test: outer rect plus a band along the monitor edge (scale variants).
-///
-/// The GUI uses [`mouse_in_dock_edge_peek_zone_window_only`] only; this remains for callers that want
-/// the legacy monitor-edge slop or tests.
-pub fn mouse_in_dock_edge_peek_zone(
-    win: &WebviewWindow,
-    dock: &str,
-    mx: i32,
-    my: i32,
-) -> std::result::Result<bool, String> {
-    if dock == "center" {
-        return Ok(false);
-    }
-    let pos = win.outer_position().map_err(|e| e.to_string())?;
-    let sz = win.outer_size().map_err(|e| e.to_string())?;
-    let wx0 = pos.x;
-    let wy = pos.y;
-    let ww = sz.width as i32;
-    let wh = sz.height as i32;
-
-    let y_ok = |cy: i32| cy >= wy.saturating_sub(4) && cy < wy + wh + 4;
-
-    // 1) Pointer inside outer window rect (physical pixels only — see `mouse_in_dock_edge_peek_zone_window_only`).
-    if mx >= wx0 && mx < wx0 + ww && y_ok(my) {
-        return Ok(true);
-    }
-
-    let mon = win
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no monitor".to_string())?;
-    let p = mon.position();
-    let mw = mon.size().width as i32;
-    let peek = DOCK_EDGE_HIDE_PEEK_PX;
-    const EDGE_SLOP: i32 = 36;
-
-    // 2) Wide band on the docked screen edge (same vertical span as the window).
-    if !y_ok(my) {
-        return Ok(false);
-    }
-    if dock == "right" {
-        let strip_x0 = p.x + mw - peek - EDGE_SLOP;
-        let strip_x1 = p.x + mw + EDGE_SLOP;
-        if mx >= strip_x0 && mx < strip_x1 {
-            return Ok(true);
-        }
-    } else {
-        let strip_x0 = p.x - EDGE_SLOP;
-        let strip_x1 = p.x + peek + EDGE_SLOP;
-        if mx >= strip_x0 && mx < strip_x1 {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
-}
-
 /// Hover-to-expand when collapsed: **window outer rect only** (physical desktop pixels).
 ///
-/// Unlike [`mouse_in_dock_edge_peek_zone`], does **not** use the full monitor-edge band — that band
+/// Does **not** use a full monitor-edge band — such a band
 /// is wide enough that a cursor on the right/left side of the screen (but not on the peek strip
 /// window) still matched, causing spurious expand/collapse.
 ///
