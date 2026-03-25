@@ -9,6 +9,15 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+fn config_path_error_hint() -> String {
+    if cfg!(windows) {
+        "Cannot get config path (check USERPROFILE). Use one-click install."
+    } else {
+        "Cannot get config path (check HOME). Use one-click install."
+    }
+    .to_string()
+}
+
 fn home_dir() -> Result<PathBuf> {
     if cfg!(windows) {
         std::env::var_os("USERPROFILE")
@@ -188,9 +197,7 @@ pub fn cursor_has_relay_mcp() -> bool {
 pub fn cursor_relay_mcp_reason() -> Option<String> {
     let path = match cursor_mcp_json_path() {
         Ok(p) => p,
-        Err(_) => {
-            return Some("Cannot get config path (check HOME). Use one-click install.".to_string())
-        }
+        Err(_) => return Some(config_path_error_hint()),
     };
     relay_mcp_reason(&path)
 }
@@ -226,9 +233,7 @@ pub fn windsurf_has_relay_mcp() -> bool {
 pub fn windsurf_relay_mcp_reason() -> Option<String> {
     let path = match windsurf_mcp_json_path() {
         Ok(p) => p,
-        Err(_) => {
-            return Some("Cannot get config path (check HOME). Use one-click install.".to_string())
-        }
+        Err(_) => return Some(config_path_error_hint()),
     };
     relay_mcp_reason(&path)
 }
