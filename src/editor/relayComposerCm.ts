@@ -50,7 +50,7 @@ const slashDecorationsField = StateField.define<DecorationSet>({
 });
 
 /** @internal */
-export function relayComposerBaseTheme(): Extension {
+function relayComposerBaseTheme(): Extension {
   return EditorView.theme(
     {
       "&": {
