@@ -179,13 +179,15 @@ There is **no** `relay window`; the IDE does not spawn per-request GUI children.
 
 ## Configuration & paths
 
-| OS      | User data dir                              |
-| ------- | ------------------------------------------ |
-| macOS   | `~/Library/Application Support/relay-mcp/` |
-| Linux   | `~/.config/relay-mcp/`                     |
-| Windows | `%APPDATA%\relay-mcp\`                     |
+User-facing **`prepare_user_data_dir` / `user_data_dir`** use Rust **`directories::ProjectDirs::from("com", "relay", "relay-mcp")`** and return **`config_dir()`** — layout differs by OS (qualifier is ignored on Linux in this crate):
 
-Notable files: `feedback_log.txt`, `qa_archive/*.jsonl`, `ui_locale.json`, `gui_endpoint.json` (while GUI runs), `relay_gui_alive.marker`, `mcp_pause.json`, `attachment_retention.json`, `auto_reply_*.txt` (optional).
+| OS      | Config / user data directory (`config_dir`) |
+| ------- | ------------------------------------------- |
+| macOS   | `~/Library/Application Support/com.relay.relay-mcp/` |
+| Linux   | `$XDG_CONFIG_HOME/relay-mcp/` or `~/.config/relay-mcp/` |
+| Windows | `%APPDATA%\relay\relay-mcp\config\`        |
+
+Notable files (under that directory): `feedback_log.txt`, `qa_archive/*.jsonl`, `ui_locale.json`, `gui_endpoint.json` (while GUI runs), `relay_gui_alive.marker`, `mcp_pause.json`, `attachment_retention.json`, `auto_reply_*.txt` (optional).
 
 ---
 
@@ -213,7 +215,7 @@ npm run tauri build    # installers / .app / etc.
 
 ```bash
 npm run lint && npm run typecheck   # ESLint: src/**/*.vue + src/**/*.ts
-npm run tauri dev
+npm run tauri:dev
 ```
 
 **Icons** (from [`src-tauri/icons/source/relay-icon.svg`](src-tauri/icons/source/relay-icon.svg)):
@@ -222,13 +224,15 @@ npm run tauri dev
 npm run icons:build
 ```
 
-CI (PR / `main`): lint, typecheck, Vite, `cargo fmt`, `clippy -D warnings`, `cargo test` — [docs/RELEASING.md](docs/RELEASING.md).
+CI (PR / `main`): lint, typecheck, Vite, `cargo fmt`, `clippy --no-deps --all-targets -D warnings`, `cargo test`, plus a check that `target/` trees are not tracked — [docs/RELEASING.md](docs/RELEASING.md).
 
 ---
 
 ## Privacy
 
-**Answers**, logs, and GUI state remain **on the local machine**. There is **no** built-in telemetry. Handle **`feedback_log.txt`** and MCP session logs as **sensitive** material.
+**Data stays on device.** Answers, `feedback_log.txt`, `qa_archive`, attachments, and GUI settings are written only under your OS user/config paths (see [Configuration & paths](#configuration--paths)). The Relay GUI speaks **loopback HTTP** to `relay mcp`; that traffic does not leave your machine.
+
+**No product telemetry.** Relay does **not** ship third-party analytics SDKs, crash reporters, or other remote instrumentation — nothing “phones home” for usage metrics. **Local** files such as `feedback_log.txt` and IDE-side MCP logs can still hold sensitive content; handle them accordingly.
 
 ---
 
