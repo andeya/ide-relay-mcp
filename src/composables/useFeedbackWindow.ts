@@ -305,12 +305,6 @@ export function useFeedbackWindow() {
     return { indeterminate: false, hue: "default" as const };
   });
 
-  const submitLabel = computed(() => {
-    void locale.value;
-    return expired.value ? t("submitClose") : t("submit");
-  });
-  const submitCloseTabLabel = computed(() => t("submitCloseTab"));
-
   function revokeAllPreviews() {
     for (const p of pendingImages.value) {
       URL.revokeObjectURL(p.previewUrl);
@@ -1099,12 +1093,8 @@ export function useFeedbackWindow() {
     };
     document.addEventListener("visibilitychange", pollVisibilityHandler);
     scheduleStatusPoll();
-    await pollCycle();
-    try {
-      await invoke<number>("run_attachment_retention_purge");
-    } catch {
-      /* optional auto-purge; ignore if not in Tauri */
-    }
+    void pollCycle();
+    void invoke<number>("run_attachment_retention_purge").catch(() => {});
   }
 
   onBeforeUnmount(() => {
@@ -1136,7 +1126,6 @@ export function useFeedbackWindow() {
   }
 
   return {
-    launch,
     isHubPage,
     tabs,
     activeTabId,
@@ -1159,8 +1148,6 @@ export function useFeedbackWindow() {
     hasPendingFileDropErrors,
     statusLabel,
     statusPillUi,
-    submitLabel,
-    submitCloseTabLabel,
     setWindowTitle,
     closeWindow: closeTabOrWindow,
     requestCloseTab,
@@ -1176,17 +1163,12 @@ export function useFeedbackWindow() {
     onComposerScroll,
     slashOpen,
     slashDropdownRef,
-    slashQuery,
-    slashAnchorStart,
     slashSelectedIndex,
     filteredCommands,
     hasSlashList,
     insertSlashCommand,
-    imeComposing,
     initAfterLocale,
-    reloadTabs,
     qaRounds,
-    addImageFiles,
     addAttachedFilesFromPicker,
     removePendingImage,
     removePendingFileDrop,
