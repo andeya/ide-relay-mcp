@@ -12,7 +12,7 @@ export type SettingsToastPayload = {
 
 const RETENTION_PRESETS = [7, 15, 30, 90, 180, 365] as const;
 
-export function isRetentionPreset(n: number): boolean {
+function isRetentionPreset(n: number): boolean {
   return (RETENTION_PRESETS as readonly number[]).includes(n);
 }
 
@@ -284,6 +284,5 @@ export function useRelayCacheSettings(
     pickRetentionOption,
     onRetentionKeydown,
     formatBytes,
-    isRetentionPreset,
   };
 }
