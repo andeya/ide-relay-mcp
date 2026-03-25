@@ -595,8 +595,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   min-height: 200px;
   max-height: none;
   overflow-y: auto;
-  /* Keep last chat bubble fully above the scroll bottom (composer sits below this region). */
-  padding-bottom: 14px;
 }
 
 .mainFooterFixed {
@@ -1458,7 +1456,8 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 2px 0 6px;
+  /* Symmetric vertical padding; scroll region uses .mainSummaryScroll padding for outer inset */
+  padding: 2px 0;
   border: none;
   background: transparent;
   box-shadow: none;
@@ -1466,7 +1465,7 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
 }
 
 .qaRoundCard:last-child {
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .qaChatRow {
