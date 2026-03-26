@@ -1,4 +1,4 @@
-//! `relay` / `relay gui` (hub), `relay mcp`, `relay feedback` (terminal).
+//! `relay gui-<ide>` (hub), `relay mcp-<ide>` (stdio MCP), `relay feedback` (terminal).
 #![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
@@ -24,7 +24,7 @@ use relay_mcp::{
 /// Release Windows builds use the GUI subsystem; attach to the parent console so CLI subcommands
 /// can print MCP JSON-RPC / `relay feedback` output when launched from cmd or PowerShell.
 ///
-/// Skips attaching when stdout is already a pipe so IDE-hosted `relay mcp` (stdio JSON-RPC) is
+/// Skips attaching when stdout is already a pipe so IDE-hosted `relay mcp-<ide>` (stdio JSON-RPC) is
 /// never redirected to a stray console.
 #[cfg(all(target_os = "windows", not(debug_assertions)))]
 fn try_attach_parent_console_for_cli() {
@@ -57,16 +57,40 @@ struct Cli {
     command: Option<Commands>,
 }
 
+/// Helper to define per-IDE MCP subcommand flags.
+#[derive(clap::Args, Clone)]
+struct McpFlags {
+    /// Rewrite `attachments[].path` in tool results to `/mnt/<drive>/...` for WSL-hosted agents (Windows `relay.exe` only).
+    #[arg(long = "exe_in_wsl")]
+    exe_in_wsl: bool,
+}
+
 #[derive(Subcommand)]
 enum Commands {
-    /// MCP JSON-RPC on stdio — set IDE command to this binary and args to `mcp` (add `--exe_in_wsl` for WSL IDEs)
-    Mcp {
-        /// Rewrite `attachments[].path` in tool results to `/mnt/<drive>/...` for WSL-hosted agents (Windows `relay.exe` only).
-        #[arg(long = "exe_in_wsl")]
-        exe_in_wsl: bool,
-    },
-    /// Open Relay window (same as running `relay` with no subcommand)
-    Gui,
+    /// MCP JSON-RPC on stdio for Cursor
+    #[command(name = "mcp-cursor")]
+    McpCursor(McpFlags),
+    /// MCP JSON-RPC on stdio for Claude Code
+    #[command(name = "mcp-claudecode")]
+    McpClaudeCode(McpFlags),
+    /// MCP JSON-RPC on stdio for Windsurf
+    #[command(name = "mcp-windsurf")]
+    McpWindsurf(McpFlags),
+    /// MCP JSON-RPC on stdio for Other IDE
+    #[command(name = "mcp-other")]
+    McpOther(McpFlags),
+    /// Open Relay window for Cursor
+    #[command(name = "gui-cursor")]
+    GuiCursor,
+    /// Open Relay window for Claude Code
+    #[command(name = "gui-claudecode")]
+    GuiClaudeCode,
+    /// Open Relay window for Windsurf
+    #[command(name = "gui-windsurf")]
+    GuiWindsurf,
+    /// Open Relay window for Other IDE
+    #[command(name = "gui-other")]
+    GuiOther,
     /// Terminal: open feedback UI and print Answer to stdout when done
     Feedback {
         #[arg(
@@ -285,110 +309,13 @@ fn configure_relay_path_env_permanent() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn remove_relay_path_env() -> Result<(), String> {
+    relay_mcp::remove_relay_cli_path_persistent().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_mcp_config_json() -> Result<String, String> {
     relay_mcp::mcp_setup::mcp_config_json_pretty().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn get_mcp_cursor_installed() -> bool {
-    relay_mcp::mcp_setup::cursor_has_relay_mcp()
-}
-
-#[derive(serde::Serialize)]
-struct McpStatus {
-    installed: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
-}
-
-#[tauri::command]
-fn get_mcp_cursor_status() -> McpStatus {
-    let installed = relay_mcp::mcp_setup::cursor_has_relay_mcp();
-    McpStatus {
-        installed,
-        reason: if installed {
-            None
-        } else {
-            relay_mcp::mcp_setup::cursor_relay_mcp_reason()
-        },
-    }
-}
-
-#[tauri::command]
-fn get_cursor_mcp_json_path() -> Result<String, String> {
-    relay_mcp::mcp_setup::cursor_mcp_json_path()
-        .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn install_mcp_to_cursor() -> Result<(), String> {
-    relay_mcp::mcp_setup::install_relay_mcp_cursor().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn uninstall_mcp_from_cursor() -> Result<(), String> {
-    relay_mcp::mcp_setup::uninstall_relay_mcp_cursor().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn get_cursor_rule_installed() -> bool {
-    relay_mcp::mcp_setup::cursor_rule_installed()
-}
-
-#[tauri::command]
-fn install_cursor_rule(content: String) -> Result<(), String> {
-    relay_mcp::mcp_setup::install_cursor_rule(&content).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn uninstall_cursor_rule() -> Result<(), String> {
-    relay_mcp::mcp_setup::uninstall_cursor_rule().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn get_mcp_windsurf_installed() -> bool {
-    relay_mcp::mcp_setup::windsurf_has_relay_mcp()
-}
-
-#[tauri::command]
-fn get_mcp_windsurf_status() -> McpStatus {
-    let installed = relay_mcp::mcp_setup::windsurf_has_relay_mcp();
-    McpStatus {
-        installed,
-        reason: if installed {
-            None
-        } else {
-            relay_mcp::mcp_setup::windsurf_relay_mcp_reason()
-        },
-    }
-}
-
-#[tauri::command]
-fn get_windsurf_mcp_json_path() -> Result<String, String> {
-    relay_mcp::mcp_setup::windsurf_mcp_json_path()
-        .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn install_mcp_to_windsurf() -> Result<(), String> {
-    relay_mcp::mcp_setup::install_relay_mcp_windsurf().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn uninstall_mcp_from_windsurf() -> Result<(), String> {
-    relay_mcp::mcp_setup::uninstall_relay_mcp_windsurf().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn relay_full_install() -> Result<serde_json::Value, String> {
-    relay_mcp::mcp_setup::full_install_integrated().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn relay_full_uninstall() -> Result<(), String> {
-    relay_mcp::mcp_setup::full_uninstall_integrated().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -613,6 +540,130 @@ async fn fetch_cursor_usage_via_ide() -> Result<relay_mcp::cursor_usage::CursorU
     .map_err(|e| format!("task join error: {e}"))?
 }
 
+// ---------------------------------------------------------------------------
+// IDE mode commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn get_ide_binding() -> Option<relay_mcp::ide::IdeKind> {
+    relay_mcp::ide::get_process_ide()
+}
+
+/// Set IDE mode for the current process. Called from the selection page or
+/// settings switch — also writes the per-IDE endpoint/marker files so MCP
+/// processes targeting this IDE can discover the GUI.
+/// Cleans up old per-IDE files when switching from one IDE to another.
+/// Rejects the switch if the target IDE already has a running GUI process.
+#[tauri::command]
+fn set_ide_binding(
+    ide: relay_mcp::ide::IdeKind,
+    state: State<'_, RelayGuiRuntime>,
+) -> Result<(), String> {
+    let current = relay_mcp::ide::get_process_ide();
+    if current != Some(ide) && relay_mcp::mcp_http::is_ide_gui_alive(ide) {
+        return Err(format!(
+            "Another Relay GUI process is already running in {} mode. Only one process per IDE mode is allowed.",
+            ide.label()
+        ));
+    }
+
+    let old_endpoint = relay_mcp::mcp_http::gui_endpoint_path().ok();
+    let old_marker = relay_mcp::user_data_dir()
+        .ok()
+        .map(|d| d.join(relay_mcp::gui_alive_marker_name()));
+
+    relay_mcp::ide::set_process_ide(ide);
+    state.write_endpoint_file().map_err(|e| e.to_string())?;
+    let _ = refresh_gui_presence_marker();
+
+    if let Some(old) = old_endpoint {
+        let new_endpoint = relay_mcp::mcp_http::gui_endpoint_path().ok();
+        if new_endpoint.as_ref() != Some(&old) {
+            let _ = std::fs::remove_file(&old);
+        }
+    }
+    if let Some(old) = old_marker {
+        let new_marker = relay_mcp::user_data_dir()
+            .ok()
+            .map(|d| d.join(relay_mcp::gui_alive_marker_name()));
+        if new_marker.as_ref() != Some(&old) {
+            let _ = std::fs::remove_file(&old);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_window_title() -> String {
+    relay_mcp::ide::window_title()
+}
+
+#[tauri::command]
+fn recheck_version_upgrade(rule_content: String) {
+    relay_mcp::ide::check_and_upgrade_version(&rule_content);
+}
+
+#[tauri::command]
+fn get_ide_capabilities(ide: relay_mcp::ide::IdeKind) -> relay_mcp::ide::IdeCapabilities {
+    relay_mcp::ide::capabilities(ide)
+}
+
+#[tauri::command]
+fn get_current_ide_capabilities() -> Option<relay_mcp::ide::IdeCapabilities> {
+    relay_mcp::ide::get_process_ide().map(relay_mcp::ide::capabilities)
+}
+
+#[tauri::command]
+fn ide_has_relay_mcp() -> bool {
+    relay_mcp::ide::get_process_ide()
+        .map(relay_mcp::ide::has_relay_mcp)
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn ide_install_relay_mcp() -> Result<(), String> {
+    let ide =
+        relay_mcp::ide::get_process_ide().ok_or_else(|| "no IDE mode configured".to_string())?;
+    relay_mcp::ide::install_relay_mcp(ide).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn ide_uninstall_relay_mcp() -> Result<(), String> {
+    let ide =
+        relay_mcp::ide::get_process_ide().ok_or_else(|| "no IDE mode configured".to_string())?;
+    relay_mcp::ide::uninstall_relay_mcp(ide).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn ide_mcp_json_path() -> Result<String, String> {
+    let ide =
+        relay_mcp::ide::get_process_ide().ok_or_else(|| "no IDE mode configured".to_string())?;
+    relay_mcp::ide::mcp_json_path(ide)
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn ide_rule_installed() -> bool {
+    relay_mcp::ide::get_process_ide()
+        .map(relay_mcp::ide::rule_installed)
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn ide_install_rule(content: String) -> Result<(), String> {
+    let ide =
+        relay_mcp::ide::get_process_ide().ok_or_else(|| "no IDE mode configured".to_string())?;
+    relay_mcp::ide::install_rule(ide, &content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn ide_uninstall_rule() -> Result<(), String> {
+    let ide =
+        relay_mcp::ide::get_process_ide().ok_or_else(|| "no IDE mode configured".to_string())?;
+    relay_mcp::ide::uninstall_rule(ide).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     opener::open(&url).map_err(|e| e.to_string())
@@ -645,19 +696,7 @@ fn run_tauri(initial: LaunchState) {
         persist_hub,
     };
 
-    let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = relay_mcp::dock_edge_hide::expand_if_collapsed(app);
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-        }));
-    }
-    let app = builder
+    let app = tauri::Builder::default()
         .manage(Mutex::new(EdgeHideState::default()))
         .on_window_event(|window, event| {
             if window.label() != "main" {
@@ -683,6 +722,7 @@ fn run_tauri(initial: LaunchState) {
                 let Some(win) = h.get_webview_window("main") else {
                     return;
                 };
+                let _ = win.set_title(&relay_mcp::ide::window_title());
                 let _ = relay_mcp::position_main_window_for_dock(&win, &dock0);
                 let _ = win.set_always_on_top(relay_mcp::read_window_always_on_top());
             });
@@ -723,19 +763,8 @@ fn run_tauri(initial: LaunchState) {
             set_mcp_paused,
             get_relay_path_env_status,
             configure_relay_path_env_permanent,
+            remove_relay_path_env,
             get_mcp_config_json,
-            get_mcp_cursor_installed,
-            get_mcp_cursor_status,
-            get_cursor_mcp_json_path,
-            install_mcp_to_cursor,
-            uninstall_mcp_from_cursor,
-            get_mcp_windsurf_installed,
-            get_mcp_windsurf_status,
-            get_windsurf_mcp_json_path,
-            install_mcp_to_windsurf,
-            uninstall_mcp_from_windsurf,
-            relay_full_install,
-            relay_full_uninstall,
             open_relay_data_folder,
             check_github_latest_release,
             open_relay_github_repo,
@@ -758,9 +787,19 @@ fn run_tauri(initial: LaunchState) {
             fetch_cursor_usage_events,
             fetch_cursor_usage_via_ide,
             open_url,
-            get_cursor_rule_installed,
-            install_cursor_rule,
-            uninstall_cursor_rule
+            get_ide_binding,
+            set_ide_binding,
+            get_window_title,
+            recheck_version_upgrade,
+            get_ide_capabilities,
+            get_current_ide_capabilities,
+            ide_has_relay_mcp,
+            ide_install_relay_mcp,
+            ide_uninstall_relay_mcp,
+            ide_mcp_json_path,
+            ide_rule_installed,
+            ide_install_rule,
+            ide_uninstall_rule
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Relay");
@@ -774,21 +813,46 @@ fn run_tauri(initial: LaunchState) {
     });
 }
 
+fn run_gui_with_ide(ide: relay_mcp::ide::IdeKind) {
+    if relay_mcp::mcp_http::is_ide_gui_alive(ide) {
+        eprintln!(
+            "Error: Another Relay GUI process is already running in {} mode.\n\
+             Only one process per IDE mode is allowed.",
+            ide.label()
+        );
+        std::process::exit(1);
+    }
+    relay_mcp::ide::set_process_ide(ide);
+    let state = relay_mcp::dev_preview_launch_state();
+    run_tauri(state);
+}
+
+fn run_mcp(ide: relay_mcp::ide::IdeKind, flags: McpFlags) {
+    relay_mcp::ide::set_process_ide(ide);
+    relay_mcp::set_mcp_wsl_path_rewrite_enabled(flags.exe_in_wsl);
+    try_attach_parent_console_for_cli();
+    if let Err(e) = relay_mcp::run_feedback_server() {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        None | Some(Commands::Gui) => {
+        None => {
+            // Bare `relay`: open GUI without IDE — shows selection page.
             let state = relay_mcp::dev_preview_launch_state();
             run_tauri(state);
         }
-        Some(Commands::Mcp { exe_in_wsl }) => {
-            relay_mcp::set_mcp_wsl_path_rewrite_enabled(exe_in_wsl);
-            try_attach_parent_console_for_cli();
-            if let Err(e) = relay_mcp::run_feedback_server() {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
+        Some(Commands::GuiCursor) => run_gui_with_ide(relay_mcp::ide::IdeKind::Cursor),
+        Some(Commands::GuiClaudeCode) => run_gui_with_ide(relay_mcp::ide::IdeKind::ClaudeCode),
+        Some(Commands::GuiWindsurf) => run_gui_with_ide(relay_mcp::ide::IdeKind::Windsurf),
+        Some(Commands::GuiOther) => run_gui_with_ide(relay_mcp::ide::IdeKind::Other),
+        Some(Commands::McpCursor(f)) => run_mcp(relay_mcp::ide::IdeKind::Cursor, f),
+        Some(Commands::McpClaudeCode(f)) => run_mcp(relay_mcp::ide::IdeKind::ClaudeCode, f),
+        Some(Commands::McpWindsurf(f)) => run_mcp(relay_mcp::ide::IdeKind::Windsurf, f),
+        Some(Commands::McpOther(f)) => run_mcp(relay_mcp::ide::IdeKind::Other, f),
         Some(Commands::Feedback {
             retell,
             timeout,
