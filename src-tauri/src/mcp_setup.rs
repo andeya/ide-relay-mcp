@@ -273,3 +273,52 @@ pub fn full_uninstall_integrated() -> Result<()> {
     crate::remove_relay_cli_path_persistent()?;
     Ok(())
 }
+
+// --- Cursor rule prompt sync: ~/.cursor/rules/ ---
+
+const CURSOR_RULE_FILENAME: &str = "relay-interactive-feedback.mdc";
+
+pub fn cursor_rules_dir() -> Result<PathBuf> {
+    Ok(home_dir()?.join(".cursor").join("rules"))
+}
+
+pub fn cursor_rule_file_path() -> Result<PathBuf> {
+    Ok(cursor_rules_dir()?.join(CURSOR_RULE_FILENAME))
+}
+
+pub fn cursor_rule_installed() -> bool {
+    cursor_rule_file_path()
+        .ok()
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
+pub fn install_cursor_rule(content: &str) -> Result<()> {
+    let dir = cursor_rules_dir()?;
+    if !dir.exists() {
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("create {}", dir.display()))?;
+    }
+    let path = dir.join(CURSOR_RULE_FILENAME);
+    fs::write(&path, content)
+        .with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+pub fn uninstall_cursor_rule() -> Result<()> {
+    let path = cursor_rule_file_path()?;
+    if path.exists() {
+        fs::remove_file(&path)
+            .with_context(|| format!("remove {}", path.display()))?;
+    }
+    Ok(())
+}
+
+pub fn read_cursor_rule() -> Result<String> {
+    let path = cursor_rule_file_path()?;
+    if !path.exists() {
+        anyhow::bail!("rule file not found at {}", path.display());
+    }
+    fs::read_to_string(&path)
+        .with_context(|| format!("read {}", path.display()))
+}
