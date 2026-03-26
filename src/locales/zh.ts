@@ -18,12 +18,8 @@ export default {
   rulePromptsTitle: "规则提示词",
   rulePromptsLead:
     "relay_interactive_feedback 的规则为**中英合本**。复制会粘贴**整段**内容；请将规则**置于顶部**或使用优先加载的规则文件（如 `00-relay-mcp.mdc`）。MCP：relay_interactive_feedback，接入见「环境与 MCP」。",
-  rulePromptsSectionPreview: "规则预览",
-  rulePromptsSectionIde: "各 IDE 配置方式",
-  rulePromptsModeMild: "标准（推荐）",
-  rulePromptsModeMildDesc:
-    "每回合结束时调用一次；收到 human 或 attachments 后按需再次调用。不强制无限循环，适合多数场景。",
-  rulePromptsModeLoop: "严格循环",
+  rulePromptsSectionIde: "{ide} 配置方式",
+  rulePromptsModeLoop: "默认（严格循环）",
   rulePromptsModeLoopDesc:
     "每轮结束必调一次；传输失败时退避后重试。确保每轮都不遗漏调用。",
   rulePromptsModeTool: "仅工具说明",
@@ -36,75 +32,66 @@ export default {
   rulePromptsLabelBilingual: "规则（中文 + English）",
   rulePromptsCopied: "已复制。",
   rulePromptsCopyErr: "复制失败。",
-  rulePromptsInstallCursor: "安装到 Cursor",
-  rulePromptsUpdateCursor: "更新到 Cursor",
-  rulePromptsRemoveCursor: "从 Cursor 移除",
-  rulePromptsInstallOk: "规则已安装到 ~/.cursor/rules/",
-  rulePromptsUpdateOk: "规则已更新到 ~/.cursor/rules/",
-  rulePromptsRemoveOk: "规则已从 Cursor 移除",
+  rulePromptsInstallCursor: "安装到 {ide}",
+  rulePromptsUpdateCursor: "更新到 {ide}",
+  rulePromptsRemoveCursor: "从 {ide} 移除",
+  rulePromptsInstallOk: "规则已安装到 {ide}。",
+  rulePromptsUpdateOk: "规则已更新到 {ide}。",
+  rulePromptsRemoveOk: "规则已从 {ide} 移除。",
   rulePromptsInstallErr: "安装失败：",
   rulePromptsRemoveErr: "移除失败：",
   rulePromptsInstalledBadge: "已安装",
-  rulePromptsLoopRisk:
-    "「严格循环」可能使对话持续到你手动停止；子 Agent（如 Task 委派）请按提示词内说明由父 Agent 负责调用。",
 
-  rulePromptsIdeMd: `**怎么用** 上方 **粘贴到IDE** 复制的是**中英合本规则**；再按下表把各编辑器的 **规则区** 与 **MCP** 配齐（两件事都要做）。
+  rulePromptsIdeGuideCursor: `**\u5728 Cursor \u4e2d\u4f7f\u7528**
 
-### Cursor
-- **规则**：Settings → **Rules** → User rules 或 Project rules → 将规则全文**粘贴到规则顶部**（或使用 \`.cursor/rules/00-relay-mcp.mdc\` 以优先加载）。该规则声明 relay_interactive_feedback 最高优先级。  
-- **MCP 文件** \`{cursorPath}\`  
-- \`command\` = 本机 \`relay\`（绝对路径）；\`args\` = \`["mcp"]\`；建议 \`autoApprove\`：\`relay_interactive_feedback\`  
-- **WSL**：若 IDE/Agent 跑在 **WSL** 内、而 \`command\` 指向 **Windows** 的 \`relay.exe\`（如 \`/mnt/c/.../relay.exe\`），请将 \`args\` 改为 \`["mcp", "--exe_in_wsl"]\`，工具结果里的附件 \`path\` 才会变成 \`/mnt/...\`（否则仍为 \`C:\\...\`）。
+- **\u89c4\u5219**\uff1aSettings \u2192 **Rules** \u2192 User rules \u6216 Project rules \u2192 \u5c06\u89c4\u5219\u5168\u6587**\u7c98\u8d34\u5230\u89c4\u5219\u9876\u90e8**\uff08\u6216\u4f7f\u7528 \`.cursor/rules/00-relay-mcp.mdc\` \u4ee5\u4f18\u5148\u52a0\u8f7d\uff09\u3002\u8be5\u89c4\u5219\u58f0\u660e relay_interactive_feedback \u6700\u9ad8\u4f18\u5148\u7ea7\u3002
+- **MCP \u6587\u4ef6** \`{mcpPath}\`
+- \`command\` = \u672c\u673a \`relay\`\uff08\u7edd\u5bf9\u8def\u5f84\uff09\uff1b\`args\` = \`["mcp-cursor"]\`\uff1b\u5efa\u8bae \`autoApprove\`\uff1a\`relay_interactive_feedback\`
+- **WSL**\uff1a\u82e5 IDE/Agent \u8dd1\u5728 **WSL** \u5185\u3001\u800c \`command\` \u6307\u5411 **Windows** \u7684 \`relay.exe\`\uff0c\u8bf7\u5c06 \`args\` \u6539\u4e3a \`["mcp-cursor", "--exe_in_wsl"]\`\uff0c\u5de5\u5177\u7ed3\u679c\u91cc\u7684\u9644\u4ef6 \`path\` \u624d\u4f1a\u53d8\u6210 \`/mnt/...\`\u3002`,
+  rulePromptsIdeGuideWindsurf: `**\u5728 Windsurf \u4e2d\u4f7f\u7528**
 
-### Windsurf
-- **说明区**：Agent / MCP 相关自定义说明里粘贴**同一套**规则（界面随版本可能不同）  
-- **MCP 文件** \`{windsurfPath}\`
+- **\u8bf4\u660e\u533a**\uff1aAgent / MCP \u76f8\u5173\u81ea\u5b9a\u4e49\u8bf4\u660e\u91cc\u7c98\u8d34**\u540c\u4e00\u5957**\u89c4\u5219\uff08\u754c\u9762\u968f\u7248\u672c\u53ef\u80fd\u4e0d\u540c\uff09
+- **MCP \u6587\u4ef6** \`{mcpPath}\`
+- \`command\` = \u672c\u673a \`relay\`\uff08\u7edd\u5bf9\u8def\u5f84\uff09\uff1b\`args\` = \`["mcp-windsurf"]\`
+- **WSL**\uff1a\u82e5\u5728 WSL \u5185\u4f7f\u7528 Windows relay.exe\uff0c\u8bf7\u5728 \`args\` \u4e2d\u52a0 \`"--exe_in_wsl"\`\u3002`,
+  rulePromptsIdeGuideClaude: `**\u5728 Claude Code / Claude Desktop \u4e2d\u4f7f\u7528**
 
-### VS Code
-- 在 MCP 扩展要求的 **Rules / 自定义指令** 中写入英文提示词  
-- MCP：\`command\` = \`relay\`（建议绝对路径），\`args\` = \`["mcp"]\`（WSL + Windows \`relay.exe\` 时用 \`["mcp", "--exe_in_wsl"]\`）
+- **\u81ea\u5b9a\u4e49\u6307\u4ee4** \u8d34\u89c4\u5219\u5168\u6587\uff1bMCP \u7684 \`command\` \u987b\u4e3a relay **\u7edd\u5bf9\u8def\u5f84**\uff0c\`args\`\uff1a\`["mcp-claude_code"]\`
+- **WSL**\uff1a\u82e5\u5728 WSL \u5185\u4f7f\u7528 Windows relay.exe\uff0c\u8bf7\u5728 \`args\` \u4e2d\u52a0 \`"--exe_in_wsl"\`\u3002\u5141\u8bb8 \`relay_interactive_feedback\`\u3002`,
+  rulePromptsIdeGuideOther: `**\u5728\u5176\u4ed6 IDE \u4e2d\u4f7f\u7528**
 
-### Claude Desktop
-- **自定义指令** 贴英文；MCP 的 \`command\` 须为 relay **绝对路径**，\`args\`：\`["mcp"]\`（同上 WSL 场景加 \`"--exe_in_wsl"\`）
-
-### 其他 IDE
-支持 MCP + 系统/项目级规则即可：贴规则全文，并注册工具 \`relay_interactive_feedback\`；\`args\` 规则与上表一致。`,
+\u652f\u6301 MCP + \u7cfb\u7edf/\u9879\u76ee\u7ea7\u89c4\u5219\u5373\u53ef\uff1a\u8d34\u89c4\u5219\u5168\u6587\uff0c\u5e76\u6ce8\u518c\u5de5\u5177 \`relay_interactive_feedback\`\u3002
+- MCP\uff1a\`command\` = \`relay\`\uff08\u5efa\u8bae\u7edd\u5bf9\u8def\u5f84\uff09\uff1b\`args\` = \`["mcp-other"]\`
+- **WSL**\uff1a\u82e5\u5728 WSL \u5185\u4f7f\u7528 Windows relay.exe\uff0c\u8bf7\u5728 \`args\` \u4e2d\u52a0 \`"--exe_in_wsl"\`\u3002`,
 
   setupTitle: "本机环境",
   setupLead:
-    "未就绪：点右侧「一键安装」（PATH + Cursor / Windsurf MCP）。就绪后：下方绿框可复制 MCP JSON，或只动某一个 IDE。",
+    "未就绪：点右侧「一键安装」（PATH + {ide} MCP）。就绪后：下方绿框可复制 MCP JSON；要还原请点「一键卸载」。",
   setupAllReadyLead:
-    "PATH 与两编辑器 MCP 已就绪。绿框内可复制 JSON、做单 IDE 操作；要还原请点「一键卸载」。",
+    "PATH 与 {ide} MCP 已就绪。绿框内可复制 JSON；要还原请点「一键卸载」。",
   setupStatus: "配置详情",
   setupChipPath: "终端 PATH",
   setupPathExplain: "relay 可执行文件所在目录已加入当前用户 PATH",
-  setupChipCursor: "Cursor MCP",
-  setupCursorExplain: "mcp.json 内已包含 relay-mcp",
-  setupChipWindsurf: "Windsurf MCP",
-  setupWindsurfExplain: "mcp_config.json 内已包含 relay-mcp",
+  setupMcpExplain: "relay-mcp 已配置到 {ide} MCP 配置中",
+  setupRuleExplain: "规则提示词已安装到 {ide} 规则目录",
   setupConfigFile: "配置文件",
   setupBinDir: "可执行目录",
   setupOn: "已配置",
   setupOff: "未配置",
-  setupBtnInstall: "一键安装",
-  setupBtnUninstall: "一键卸载",
-  setupInstallHint:
-    "写入用户 PATH，并向 Cursor、Windsurf 的 MCP 配置合并 relay-mcp（完成后请重启两 IDE，并新开终端）。",
-  setupUninstallHint:
-    "从 Cursor、Windsurf 移除 relay-mcp，并撤销 Relay 写入的 PATH。",
-  setupNoInstallNeeded: "已全部配置，无需再安装。",
-  setupActionsStripNeedInstall:
-    "点击右侧「一键安装」写入 PATH 与 Cursor / Windsurf 的 MCP。",
-  setupActionsAria: "安装与卸载",
-  setupUninstallOnlyHint: "至少一项已配置时可一键卸载还原。",
+  setupBtnPublicInstall: "安装 PATH",
+  setupBtnPublicUninstall: "移除 PATH",
+  setupBtnIdeInstall: "安装 {ide} 配置",
+  setupBtnIdeUninstall: "移除 {ide} 配置",
+  setupSectionPublic: "公共配置（PATH）",
+  setupSectionIde: "IDE 配置（MCP + 规则）",
   setupToolParamsTitle: "人机回路与本机 MCP",
   setupToolParamsLead:
-    "本页：绿框内为合并后的 MCP JSON（默认可复制）；默认 `args` 为 `[\"mcp\"]`。若 **WSL 内 IDE + Windows relay.exe**，请把 `args` 改成 `[\"mcp\", \"--exe_in_wsl\"]` 再保存/合并。下方可做 Cursor / Windsurf 单 IDE 写入。",
+    "本页：绿框内为 {ide} 合并后的 MCP JSON（默认可复制）；默认 `args` 为 `[\"mcp-{ideCliId}\"]`。若 **WSL 内 IDE + Windows relay.exe**，请把 `args` 改成 `[\"mcp-{ideCliId}\", \"--exe_in_wsl\"]` 再保存/合并。",
   mcpCopy: "复制 MCP JSON",
   mcpCopied: "已复制到剪贴板。",
   mcpCopyErr: "复制失败。",
   setupAdvanced:
-    "高级选项（PATH / JSON 等排障；Cursor·Windsurf 单 IDE 已在上方「人机回路」绿框内）",
+    "高级选项（PATH / JSON 等排障）",
   setupAdvPathTitle: "只补写 PATH",
   setupAdvPathLead:
     "若一键安装时 PATH 未成功（例如未找到 relay 可执行文件），可单独写入。新开终端或 fish 新会话后生效。",
@@ -117,40 +104,18 @@ export default {
   pathEnvDoneOther: "已完成。请新开终端。",
   pathEnvAlready: "已在用户 PATH 中。",
   pathEnvErrPrefix: "无法写入 PATH：",
-  setupAdvSingle: "只操作某一个 IDE",
-  mcpCursorFile: "Cursor",
-  mcpInCursor: "已配置 relay-mcp",
-  mcpNotInCursor: "未配置 relay-mcp",
-  mcpInstallCursorOnly: "仅写入 Cursor",
-  mcpUninstallCursorOnly: "仅从 Cursor 移除",
-  mcpWindsurfFile: "Windsurf",
-  mcpInWindsurf: "已配置 relay-mcp",
-  mcpNotInWindsurf: "未配置 relay-mcp",
-  mcpInstallWindsurfOnly: "仅写入 Windsurf",
-  mcpUninstallWindsurfOnly: "仅从 Windsurf 移除",
-  mcpBusyInstallingAll: "正在安装…",
-  mcpBusyUninstallingAll: "正在卸载…",
-  mcpBusyCursorMcp: "正在保存 Cursor MCP…",
-  mcpBusyWindsurfMcp: "正在保存 Windsurf MCP…",
-  setupJsonPreview: "查看 MCP JSON",
-  mcpJsonTitle: "生成的配置",
-  setupIdeGuide: "各 IDE 配置路径说明",
-  mcpFullInstallOk:
-    "已完成。请重启 Cursor、Windsurf；PATH 需新开终端（或 fish 新会话）后生效。",
-  mcpFullUninstallOk: "已卸载：MCP 与 Relay 写入的 PATH 均已撤销。",
-  mcpFullUninstallConfirm:
-    "将移除 Cursor、Windsurf 中的 relay-mcp，并撤销 Relay 写入的用户 PATH。",
+  setupIdeGuide: "IDE 配置说明",
+  publicInstallOk: "PATH 已配置，请打开新终端使其生效。",
+  publicUninstallOk: "PATH 配置已移除。",
+  ideInstallOk: "已为 {ide} 安装 MCP 配置和规则提示词，请重启 {ide}。",
+  ideUninstallOk: "已从 {ide} 移除 MCP 配置和规则提示词。",
+  publicUninstallConfirm: "将撤销 Relay 写入的用户 PATH。",
+  ideUninstallConfirm:
+    "将从 {ide} 中移除 relay-mcp 配置和规则提示词。",
   setupUninstallConfirmBtn: "确认卸载",
   setupUninstallCancel: "取消",
   mcpFullErr: "失败：",
-  mcpPathSkippedNote:
-    "（PATH 未写入：未在应用旁找到 relay；MCP 仍已写入。可在高级中单独补 PATH。）",
-  mcpCursorInstallOk: "已更新 Cursor MCP，请重启 Cursor。",
-  mcpCursorUninstallOk: "已从 Cursor 移除 relay-mcp。",
-  mcpWindsurfInstallOk: "已更新 Windsurf MCP，请重启 Windsurf。",
-  mcpWindsurfUninstallOk: "已从 Windsurf 移除 relay-mcp。",
-
-  windowDockAria: "窗口在屏幕上的水平位置",
+  windowDockAria: "窗口水平位置",
   windowDockLeft: "靠左",
   windowDockCenter: "居中",
   windowDockRight: "靠右",
@@ -168,7 +133,6 @@ export default {
   releaseBadgeCurrent: "v{current}",
 
   appTitle: "Relay MCP",
-  brand: "Relay",
   statusAwaiting: "ME 回合",
   statusHubWaiting: "Hub · 未连IDE",
   ideBlockingHint:
@@ -182,21 +146,15 @@ export default {
   mcpPauseStatusOff: "当前：正常",
   mcpPauseUpdateErr: "无法更新暂停状态，请检查权限后重试。",
 
-  setupInstallChangesNote:
-    "上述安装/卸载会动到：用户 PATH、两 IDE 的 MCP 配置、以及 Relay 数据目录（日志、附件、本机 HTTP）。",
   statusIdle: "AI 回合",
   statusTimedOut: "已超时",
   statusCancelled: "已取消",
   mainHintPreview:
     "有待回复的标签时在此输入。Enter 发送 · ⌘/Ctrl+Enter 发送并关闭该标签。",
-  mainSummaryReadonly: "只读 · 左：AI（retell）· 右：我（Answer）",
   tabStripAria: "反馈标签",
   tabCloseAria: "关闭此标签",
   tabCloseTitle: "关闭标签（悬停本标签后显示）",
-  tabStripHub: "Hub",
   qaHistoryTitle: "对话",
-  qaRetell: "本轮回复",
-  qaRetellHint: "本轮AI对用户可见内容（MCP：`retell`）",
   qaAssistantTurn: "AI",
   qaUserTurnMe: "我",
   qaNoRetellYet: "本轮尚无AI消息。",
@@ -230,9 +188,6 @@ export default {
   slashDropdownHint: "↑↓ 选择 · Enter 或 Tab 插入",
   slashCategoryAgentSkill: "技能",
   noteExpired: "该请求已超时或已被取消。内容仅可本地查看，无法再提交。",
-  submit: "提交（Enter）",
-  submitClose: "关闭此条",
-  submitCloseTab: "提交并关标签页（⌘/Ctrl+Enter）",
   loading: "加载中…",
   noLaunch: "无启动数据。",
 
@@ -328,6 +283,21 @@ export default {
   usageRefreshing: "正在刷新…",
   usageRefreshErr: "刷新用量失败：",
   usageRefreshBtn: "立即刷新",
+  usagePlanCustom: "自定义",
   usageLastRefreshed: "上次刷新",
   usageNever: "从未",
+
+  // IDE selection
+  ideSelectionTitle: "选择 IDE 模式",
+  ideSelectionSubtitle: "选择后进入对应模式，启用该 IDE 的专属功能",
+  ideCursor: "Cursor",
+  ideCursorDesc: "支持 MCP 注入、规则提示词、Usage 监控",
+  ideClaudeCode: "Claude Code",
+  ideClaudeCodeDesc: "支持 MCP 注入、规则提示词",
+  ideWindsurf: "Windsurf",
+  ideWindsurfDesc: "支持 MCP 注入",
+  ideOther: "其他",
+  ideOtherDesc: "手动配置 MCP",
+  ideSettingsChangeBtn: "切换 IDE",
+  ideSelectPlaceholder: "选择 IDE",
 };
