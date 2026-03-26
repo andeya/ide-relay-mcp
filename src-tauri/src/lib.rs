@@ -1,4 +1,4 @@
-//! MCP server (`relay mcp`), GUI (`relay` / `relay gui`). Vocabulary: `docs/TERMINOLOGY.md`.
+//! MCP server (`relay mcp-<ide>`), GUI (`relay gui-<ide>`). Vocabulary: `docs/TERMINOLOGY.md`.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{Local, TimeZone, Utc};
@@ -15,6 +15,7 @@ pub mod config;
 pub mod cursor_usage;
 pub mod dock_edge_hide;
 pub mod gui_http;
+pub mod ide;
 pub mod mcp_http;
 pub mod mcp_setup;
 mod mcp_wsl_paths;
@@ -30,9 +31,16 @@ pub const APP_DATA_DIR: &str = "relay-mcp";
 pub const TOOL_NAME: &str = "relay_interactive_feedback";
 pub const LOG_FILE: &str = "feedback_log.txt";
 
-pub const GUI_ALIVE_MARKER: &str = "relay_gui_alive.marker";
+/// Per-IDE marker file name. Falls back to generic name when no IDE is set.
+pub fn gui_alive_marker_name() -> String {
+    if let Some(ide) = ide::get_process_ide() {
+        format!("relay_gui_{}_alive.marker", ide.cli_id())
+    } else {
+        "relay_gui_alive.marker".to_string()
+    }
+}
 
-/// When true, MCP tool results rewrite `attachments[].path` to WSL `/mnt/...` form (`relay mcp --exe_in_wsl`).
+/// When true, MCP tool results rewrite `attachments[].path` to WSL `/mnt/...` form (`relay mcp-<ide> --exe_in_wsl`).
 pub fn set_mcp_wsl_path_rewrite_enabled(enabled: bool) {
     mcp_wsl_paths::set_mcp_wsl_path_rewrite_enabled(enabled);
 }
@@ -54,7 +62,7 @@ pub use path_persistence::{
 pub use server::{run_feedback_cli, run_feedback_server};
 pub use storage::{
     clear_relay_attachments_cache, clear_relay_log_cache, feedback_log_pairs_for_session,
-    log_write, make_temp_path, new_tab_id, normalize_logged_user_reply, parse_feedback_log_mcp,
+    log_write, new_tab_id, normalize_logged_user_reply, parse_feedback_log_mcp,
     prepare_user_data_dir, purge_attachment_retention_bundled, purge_attachments_older_than_days,
     read_attachment_retention_days, read_control_status, read_text_file,
     refresh_gui_presence_marker, relay_cache_stats, remove_gui_presence_marker,
@@ -334,17 +342,6 @@ pub fn apply_hydration_bundle(g: &mut FeedbackTabsState, bundle: &QaHydrationBun
     any_changed
 }
 
-/// Merge `qa_rounds` from caller-provided parsed log + `qa_archive` (see `hydration_bundle_per_tab`).
-pub fn hydrate_qa_rounds_from_parsed(
-    g: &mut FeedbackTabsState,
-    parse: &crate::storage::McpFeedbackLogParse,
-    tabs: &[LaunchState],
-    dir: &Path,
-) -> bool {
-    let bundle = hydration_bundle_per_tab(parse, tabs, dir);
-    apply_hydration_bundle(g, &bundle)
-}
-
 pub fn push_qa_round(
     g: &mut FeedbackTabsState,
     retell: &str,
@@ -453,7 +450,7 @@ pub fn cmd_skill_count(tab: &LaunchState) -> usize {
 
 /// JSON string for MCP / HTTP wait completion.
 /// When `attachments` is non-empty, an `attachments` array is included (no `<<<RELAY_FEEDBACK_JSON>>>`).
-/// WSL path rewrite for `attachments` runs in `relay mcp` via [`crate::mcp_http::feedback_round`].
+/// WSL path rewrite for `attachments` runs in `relay mcp-<ide>` via [`crate::mcp_http::feedback_round`].
 pub fn feedback_tool_result_string(
     tab: &LaunchState,
     human: &str,
@@ -529,7 +526,7 @@ pub fn user_data_dir() -> Result<PathBuf> {
 /// Returned to the IDE when MCP is user-paused (Settings).
 pub const MCP_PAUSED_TOOL_REPLY: &str = "<<<RELAY_MCP_PAUSED>>>\nRelay MCP is paused in the Relay app (Settings). Do not call relay_interactive_feedback again unless the user has resumed. Tell the user to open Relay → Settings and turn off “Pause MCP”.\n（用户在 Relay 设置中已暂停 MCP；请勿再次调用本工具，请用户先在设置中恢复。）";
 
-/// Single `relay` binary: `relay mcp`, `relay feedback` (terminal), `relay` / `relay gui` (hub + HTTP IPC).
+/// Single `relay` binary: `relay mcp-<ide>`, `relay feedback`, `relay gui-<ide>` (hub + HTTP IPC).
 pub fn gui_binary_name() -> &'static str {
     if cfg!(windows) {
         "relay.exe"
