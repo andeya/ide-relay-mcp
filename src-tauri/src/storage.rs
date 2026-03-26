@@ -389,9 +389,61 @@ pub fn refresh_gui_presence_marker() -> Result<()> {
         .truncate(true)
         .open(&path)
         .context("gui presence marker")?;
-    f.write_all(b"1")?;
+    write!(f, "{}", std::process::id())?;
     f.flush()?;
     Ok(())
+}
+
+/// Read the PID from a per-IDE alive marker file and check if that process is still running.
+pub fn is_gui_marker_alive_for_ide(ide: crate::ide::IdeKind) -> bool {
+    let dir = match user_data_dir() {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    let marker = dir.join(format!("relay_gui_{}_alive.marker", ide.cli_id()));
+    let Ok(text) = fs::read_to_string(&marker) else {
+        return false;
+    };
+    let Ok(pid) = text.trim().parse::<u32>() else {
+        return false;
+    };
+    if pid == 0 {
+        return false;
+    }
+    process_is_running(pid)
+}
+
+fn process_is_running(pid: u32) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        Path::new(&format!("/proc/{}", pid)).exists()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        unsafe {
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if h == 0 {
+                false
+            } else {
+                CloseHandle(h);
+                true
+            }
+        }
+    }
 }
 
 pub fn remove_gui_presence_marker() {

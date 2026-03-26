@@ -832,6 +832,7 @@ fn run_gui_with_ide(ide: relay_mcp::ide::IdeKind) {
         std::process::exit(1);
     }
     relay_mcp::ide::set_process_ide(ide);
+    let _ = relay_mcp::refresh_gui_presence_marker();
     let state = relay_mcp::dev_preview_launch_state();
     run_tauri(state);
 }

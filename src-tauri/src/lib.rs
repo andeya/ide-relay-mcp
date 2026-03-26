@@ -62,10 +62,10 @@ pub use path_persistence::{
 pub use server::{run_feedback_cli, run_feedback_server};
 pub use storage::{
     clear_relay_attachments_cache, clear_relay_log_cache, feedback_log_pairs_for_session,
-    log_write, new_tab_id, normalize_logged_user_reply, parse_feedback_log_mcp,
-    prepare_user_data_dir, purge_attachment_retention_bundled, purge_attachments_older_than_days,
-    read_attachment_retention_days, read_control_status, read_text_file,
-    refresh_gui_presence_marker, relay_cache_stats, remove_gui_presence_marker,
+    is_gui_marker_alive_for_ide, log_write, new_tab_id, normalize_logged_user_reply,
+    parse_feedback_log_mcp, prepare_user_data_dir, purge_attachment_retention_bundled,
+    purge_attachments_older_than_days, read_attachment_retention_days, read_control_status,
+    read_text_file, refresh_gui_presence_marker, relay_cache_stats, remove_gui_presence_marker,
     run_attachment_retention_purge, save_feedback_attachment, write_attachment_retention_days,
     write_control_status, write_text_file, McpFeedbackLogParse, RelayCacheStats,
     DEFAULT_ATTACHMENT_RETENTION_DAYS,

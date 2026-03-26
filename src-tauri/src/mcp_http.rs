@@ -45,9 +45,12 @@ pub fn read_gui_endpoint() -> Result<Option<GuiEndpoint>> {
     Ok(serde_json::from_str(&text).ok())
 }
 
-/// Check whether a GUI process for a specific IDE is alive
-/// (by reading its endpoint file and hitting health).
+/// Check whether a GUI process for a specific IDE is alive.
+/// First checks the PID-based marker file (instant, no network); falls back to HTTP health.
 pub fn is_ide_gui_alive(ide: crate::ide::IdeKind) -> bool {
+    if crate::is_gui_marker_alive_for_ide(ide) {
+        return true;
+    }
     let Ok(dir) = user_data_dir() else {
         return false;
     };
