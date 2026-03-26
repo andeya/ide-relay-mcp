@@ -1,10 +1,12 @@
 /**
- * Settings: full install/uninstall, copy JSON, optional PATH-only and per-IDE actions.
+ * Settings: public install (PATH), IDE-specific install (MCP + rule), copy JSON.
  */
-import { computed, ref } from "vue";
+import { computed, ref, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { locale, t } from "../i18n";
-import type { McpStatus, PathEnvStatus } from "../types/relay-app";
+import type { LocaleKey } from "../i18n";
+import { getRelayRulePromptBilingual } from "../ideRulesTemplates";
+import type { IdeKind, PathEnvStatus } from "../types/relay-app";
 
 export type RefreshHubResult = {
   ok: boolean;
@@ -12,20 +14,18 @@ export type RefreshHubResult = {
   fatalError?: string;
 };
 
-export function useMcpAndPathSettings() {
+export function useMcpAndPathSettings(
+  ideLabel: Ref<string>,
+  ideKind: Ref<IdeKind | null>,
+) {
   const mcpJson = ref("");
-  const mcpCursorInstalled = ref(false);
-  const mcpCursorReason = ref<string | null>(null);
-  const cursorMcpPath = ref("");
-  const mcpWindsurfInstalled = ref(false);
-  const mcpWindsurfReason = ref<string | null>(null);
-  const windsurfMcpPath = ref("");
-  const mcpWindsurfBusy = ref(false);
+  const ideMcpInstalled = ref(false);
+  const ideRuleInstalled = ref(false);
+  const ideMcpPath = ref("");
   const hubMsg = ref("");
   const hubErr = ref("");
   const hubInstallBusy = ref(false);
   const hubUninstallBusy = ref(false);
-  const mcpCursorBusy = ref(false);
   const copyToast = ref("");
 
   const pathEnv = ref<PathEnvStatus | null>(null);
@@ -33,17 +33,28 @@ export function useMcpAndPathSettings() {
   const pathEnvErr = ref("");
   const pathEnvBusy = ref(false);
 
+  const IDE_HINT_KEYS: Record<IdeKind, LocaleKey> = {
+    cursor: "ideHintCursor",
+    claude_code: "ideHintClaude",
+    windsurf: "ideHintWindsurf",
+    other: "ideHintVscode",
+  };
+
   const ideHintsBlock = computed(() => {
     void locale.value;
-    return [
-      t("ideHintCursor", { cursorPath: cursorMcpPath.value || "~/.cursor/mcp.json" }),
-      t("ideHintVscode"),
-      t("ideHintWindsurf", {
+    const kind = ideKind.value;
+    if (!kind) return "";
+    const key = IDE_HINT_KEYS[kind];
+    if (kind === "cursor") {
+      return t(key, { cursorPath: ideMcpPath.value || "~/.cursor/mcp.json" });
+    }
+    if (kind === "windsurf") {
+      return t(key, {
         windsurfPath:
-          windsurfMcpPath.value || "~/.codeium/windsurf/mcp_config.json",
-      }),
-      t("ideHintClaude"),
-    ].join("\n\n———\n\n");
+          ideMcpPath.value || "~/.codeium/windsurf/mcp_config.json",
+      });
+    }
+    return t(key);
   });
 
   async function refreshPathEnv() {
@@ -63,25 +74,20 @@ export function useMcpAndPathSettings() {
       mcpJson.value = "// " + (e instanceof Error ? e.message : String(e));
     }
     try {
-      const [cursorStatus, windsurfStatus] = await Promise.all([
-        invoke<McpStatus>("get_mcp_cursor_status"),
-        invoke<McpStatus>("get_mcp_windsurf_status"),
-      ]);
-      mcpCursorInstalled.value = cursorStatus.installed;
-      mcpCursorReason.value = cursorStatus.reason ?? null;
-      mcpWindsurfInstalled.value = windsurfStatus.installed;
-      mcpWindsurfReason.value = windsurfStatus.reason ?? null;
       try {
-        cursorMcpPath.value = await invoke<string>("get_cursor_mcp_json_path");
+        ideMcpInstalled.value = await invoke<boolean>("ide_has_relay_mcp");
       } catch {
-        cursorMcpPath.value = "~/.cursor/mcp.json";
+        ideMcpInstalled.value = false;
       }
       try {
-        windsurfMcpPath.value = await invoke<string>(
-          "get_windsurf_mcp_json_path",
-        );
+        ideRuleInstalled.value = await invoke<boolean>("ide_rule_installed");
       } catch {
-        windsurfMcpPath.value = "~/.codeium/windsurf/mcp_config.json";
+        ideRuleInstalled.value = false;
+      }
+      try {
+        ideMcpPath.value = await invoke<string>("ide_mcp_json_path");
+      } catch {
+        ideMcpPath.value = "";
       }
       await refreshPathEnv();
       return { ok: true, mcpConfigReadFailed };
@@ -107,19 +113,16 @@ export function useMcpAndPathSettings() {
     }, 2500);
   }
 
-  async function doFullInstall() {
+  const ideInstallBusy = ref(false);
+  const ideUninstallBusy = ref(false);
+
+  async function doPublicInstall() {
     hubInstallBusy.value = true;
     hubErr.value = "";
     hubMsg.value = "";
     try {
-      const r = await invoke<Record<string, unknown>>("relay_full_install");
-      hubMsg.value = t("mcpFullInstallOk");
-      const pErr = r.pathError;
-      const hasPathErr =
-        pErr != null && typeof pErr === "string" && pErr.length > 0;
-      if (r.pathAction === "skipped" && hasPathErr) {
-        hubMsg.value += " " + t("mcpPathSkippedNote");
-      }
+      await invoke<string>("configure_relay_path_env_permanent");
+      hubMsg.value = t("publicInstallOk");
       await refreshMcpHub();
     } catch (e) {
       hubErr.value =
@@ -129,14 +132,13 @@ export function useMcpAndPathSettings() {
     }
   }
 
-  /** No browser confirm — Tauri webview often blocks it; use in-app UI before calling. */
-  async function runFullUninstall() {
+  async function runPublicUninstall() {
     hubUninstallBusy.value = true;
     hubErr.value = "";
     hubMsg.value = "";
     try {
-      await invoke("relay_full_uninstall");
-      hubMsg.value = t("mcpFullUninstallOk");
+      await invoke("remove_relay_path_env");
+      hubMsg.value = t("publicUninstallOk");
       await refreshMcpHub();
     } catch (e) {
       hubErr.value =
@@ -146,63 +148,38 @@ export function useMcpAndPathSettings() {
     }
   }
 
-  async function installCursorMcpOnly() {
-    mcpCursorBusy.value = true;
+  async function doIdeInstall() {
+    ideInstallBusy.value = true;
     hubErr.value = "";
+    hubMsg.value = "";
     try {
-      await invoke("install_mcp_to_cursor");
-      hubMsg.value = t("mcpCursorInstallOk");
+      await invoke("ide_install_relay_mcp");
+      const ruleContent = getRelayRulePromptBilingual("loop", ideKind.value || undefined);
+      await invoke("ide_install_rule", { content: ruleContent });
+      hubMsg.value = t("ideInstallOk", { ide: ideLabel.value || "IDE" });
       await refreshMcpHub();
     } catch (e) {
       hubErr.value =
         t("mcpFullErr") + " " + (e instanceof Error ? e.message : String(e));
     } finally {
-      mcpCursorBusy.value = false;
+      ideInstallBusy.value = false;
     }
   }
 
-  async function uninstallCursorMcpOnly() {
-    mcpCursorBusy.value = true;
+  async function runIdeUninstall() {
+    ideUninstallBusy.value = true;
     hubErr.value = "";
+    hubMsg.value = "";
     try {
-      await invoke("uninstall_mcp_from_cursor");
-      hubMsg.value = t("mcpCursorUninstallOk");
+      await invoke("ide_uninstall_relay_mcp");
+      try { await invoke("ide_uninstall_rule"); } catch { /* best effort */ }
+      hubMsg.value = t("ideUninstallOk", { ide: ideLabel.value || "IDE" });
       await refreshMcpHub();
     } catch (e) {
       hubErr.value =
         t("mcpFullErr") + " " + (e instanceof Error ? e.message : String(e));
     } finally {
-      mcpCursorBusy.value = false;
-    }
-  }
-
-  async function installWindsurfMcpOnly() {
-    mcpWindsurfBusy.value = true;
-    hubErr.value = "";
-    try {
-      await invoke("install_mcp_to_windsurf");
-      hubMsg.value = t("mcpWindsurfInstallOk");
-      await refreshMcpHub();
-    } catch (e) {
-      hubErr.value =
-        t("mcpFullErr") + " " + (e instanceof Error ? e.message : String(e));
-    } finally {
-      mcpWindsurfBusy.value = false;
-    }
-  }
-
-  async function uninstallWindsurfMcpOnly() {
-    mcpWindsurfBusy.value = true;
-    hubErr.value = "";
-    try {
-      await invoke("uninstall_mcp_from_windsurf");
-      hubMsg.value = t("mcpWindsurfUninstallOk");
-      await refreshMcpHub();
-    } catch (e) {
-      hubErr.value =
-        t("mcpFullErr") + " " + (e instanceof Error ? e.message : String(e));
-    } finally {
-      mcpWindsurfBusy.value = false;
+      ideUninstallBusy.value = false;
     }
   }
 
@@ -240,19 +217,16 @@ export function useMcpAndPathSettings() {
 
   return {
     mcpJson,
-    mcpCursorInstalled,
-    cursorMcpPath,
-    mcpWindsurfInstalled,
-    windsurfMcpPath,
-    mcpWindsurfBusy,
+    ideMcpInstalled,
+    ideRuleInstalled,
+    ideMcpPath,
     hubMsg,
     hubErr,
     hubInstallBusy,
     hubUninstallBusy,
-    mcpCursorBusy,
+    ideInstallBusy,
+    ideUninstallBusy,
     copyToast,
-    mcpCursorReason,
-    mcpWindsurfReason,
     pathEnv,
     pathEnvMsg,
     pathEnvErr,
@@ -260,12 +234,10 @@ export function useMcpAndPathSettings() {
     ideHintsBlock,
     refreshMcpHub,
     copyMcpJson,
-    doFullInstall,
-    runFullUninstall,
-    installCursorMcpOnly,
-    uninstallCursorMcpOnly,
-    installWindsurfMcpOnly,
-    uninstallWindsurfMcpOnly,
+    doPublicInstall,
+    runPublicUninstall,
+    doIdeInstall,
+    runIdeUninstall,
     configureRelayPath,
   };
 }
