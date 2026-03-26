@@ -296,20 +296,17 @@ pub fn cursor_rule_installed() -> bool {
 pub fn install_cursor_rule(content: &str) -> Result<()> {
     let dir = cursor_rules_dir()?;
     if !dir.exists() {
-        fs::create_dir_all(&dir)
-            .with_context(|| format!("create {}", dir.display()))?;
+        fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
     }
     let path = dir.join(CURSOR_RULE_FILENAME);
-    fs::write(&path, content)
-        .with_context(|| format!("write {}", path.display()))?;
+    fs::write(&path, content).with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 
 pub fn uninstall_cursor_rule() -> Result<()> {
     let path = cursor_rule_file_path()?;
     if path.exists() {
-        fs::remove_file(&path)
-            .with_context(|| format!("remove {}", path.display()))?;
+        fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
     }
     Ok(())
 }
@@ -319,6 +316,5 @@ pub fn read_cursor_rule() -> Result<String> {
     if !path.exists() {
         anyhow::bail!("rule file not found at {}", path.display());
     }
-    fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))
+    fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))
 }

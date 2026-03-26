@@ -602,12 +602,12 @@ async fn fetch_cursor_usage_events(
 
 /// Fetch usage via IDE's api2.cursor.sh (auto-reads token from IDE database).
 #[tauri::command]
-async fn fetch_cursor_usage_via_ide() -> Result<relay_mcp::cursor_usage::CursorUsageSummary, String> {
+async fn fetch_cursor_usage_via_ide() -> Result<relay_mcp::cursor_usage::CursorUsageSummary, String>
+{
     tokio::task::spawn_blocking(|| {
-        let token = relay_mcp::cursor_usage::auto_detect_cursor_token()
-            .map_err(|e| e.to_string())?;
-        relay_mcp::cursor_usage::fetch_usage_via_ide_api(&token)
-            .map_err(|e| e.to_string())
+        let token =
+            relay_mcp::cursor_usage::auto_detect_cursor_token().map_err(|e| e.to_string())?;
+        relay_mcp::cursor_usage::fetch_usage_via_ide_api(&token).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("task join error: {e}"))?

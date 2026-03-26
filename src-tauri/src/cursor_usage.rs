@@ -122,14 +122,12 @@ fn cursor_state_vscdb_path() -> Result<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let appdata = std::env::var("APPDATA").context("APPDATA not set")?;
-        Ok(PathBuf::from(appdata)
-            .join("Cursor/User/globalStorage/state.vscdb"))
+        Ok(PathBuf::from(appdata).join("Cursor/User/globalStorage/state.vscdb"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let home = std::env::var("HOME").context("HOME not set")?;
-        Ok(PathBuf::from(home)
-            .join(".config/Cursor/User/globalStorage/state.vscdb"))
+        Ok(PathBuf::from(home).join(".config/Cursor/User/globalStorage/state.vscdb"))
     }
 }
 
@@ -138,10 +136,7 @@ fn cursor_state_vscdb_path() -> Result<PathBuf> {
 pub fn auto_detect_cursor_token() -> Result<String> {
     let db_path = cursor_state_vscdb_path()?;
     if !db_path.exists() {
-        anyhow::bail!(
-            "Cursor IDE database not found at {}",
-            db_path.display()
-        );
+        anyhow::bail!("Cursor IDE database not found at {}", db_path.display());
     }
     let conn = rusqlite::Connection::open_with_flags(
         &db_path,
@@ -385,8 +380,9 @@ pub fn fetch_usage_via_ide_api(token: &str) -> Result<CursorUsageSummary> {
     let usage_resp = build_bearer_request(&usage_url, token)
         .call()
         .context("api2 auth/usage request failed")?;
-    let ide_usage: IdeUsageResponse =
-        usage_resp.into_json().context("parse api2 auth/usage JSON")?;
+    let ide_usage: IdeUsageResponse = usage_resp
+        .into_json()
+        .context("parse api2 auth/usage JSON")?;
 
     let profile_resp = build_bearer_request(&profile_url, token)
         .call()
@@ -404,13 +400,17 @@ pub fn fetch_usage_via_ide_api(token: &str) -> Result<CursorUsageSummary> {
         .hard_spending_limit_cents
         .or(profile.soft_spending_limit_cents)
         .unwrap_or(0.0);
-    let on_demand_enabled = on_demand_limit_cents > 0.0
-        || profile.usage_spending_limit_enabled.unwrap_or(false);
+    let on_demand_enabled =
+        on_demand_limit_cents > 0.0 || profile.usage_spending_limit_enabled.unwrap_or(false);
 
-    let is_yearly = profile.extra.get("isYearlyPlan")
+    let is_yearly = profile
+        .extra
+        .get("isYearlyPlan")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let on_demand_auto = profile.extra.get("isOnBillableAuto")
+    let on_demand_auto = profile
+        .extra
+        .get("isOnBillableAuto")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
@@ -439,18 +439,21 @@ pub fn fetch_usage_via_ide_api(token: &str) -> Result<CursorUsageSummary> {
 
     let web_token = get_web_session_token();
 
-    let try_web_summary = |cookie: &str| -> Option<CursorUsageSummary> {
-        fetch_usage_summary(cookie).ok()
-    };
+    let try_web_summary =
+        |cookie: &str| -> Option<CursorUsageSummary> { fetch_usage_summary(cookie).ok() };
 
     let web_result = if let Some(ref cookie) = web_token {
         try_web_summary(cookie).or_else(|| {
             invalidate_ext_cookie_cache();
             let _ = clear_cursor_session_token();
-            read_cursor_usage_ext_cookie().ok().and_then(|c| try_web_summary(&c))
+            read_cursor_usage_ext_cookie()
+                .ok()
+                .and_then(|c| try_web_summary(&c))
         })
     } else {
-        read_cursor_usage_ext_cookie().ok().and_then(|c| try_web_summary(&c))
+        read_cursor_usage_ext_cookie()
+            .ok()
+            .and_then(|c| try_web_summary(&c))
     };
 
     if let Some(web_summary) = web_result {
@@ -496,9 +499,34 @@ fn iso_to_epoch_ms(iso: &str) -> String {
         ) {
             let days_from_epoch = {
                 let mut total: i64 = 0;
-                for yr in 1970..y { total += if yr % 4 == 0 && (yr % 100 != 0 || yr % 400 == 0) { 366 } else { 365 }; }
-                let month_days = [31, if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-                for mi in 0..(m as usize - 1).min(12) { total += month_days[mi] as i64; }
+                for yr in 1970..y {
+                    total += if yr % 4 == 0 && (yr % 100 != 0 || yr % 400 == 0) {
+                        366
+                    } else {
+                        365
+                    };
+                }
+                let month_days = [
+                    31,
+                    if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+                        29
+                    } else {
+                        28
+                    },
+                    31,
+                    30,
+                    31,
+                    30,
+                    31,
+                    31,
+                    30,
+                    31,
+                    30,
+                    31,
+                ];
+                for mi in 0..(m as usize - 1).min(12) {
+                    total += month_days[mi] as i64;
+                }
                 total + d as i64 - 1
             };
             return (days_from_epoch * 86400 * 1000).to_string();
@@ -586,11 +614,9 @@ fn invalidate_ext_cookie_cache() {
 /// Read encrypted cookie JSON blob from state.vscdb.
 fn read_encrypted_cookie_blob() -> Result<Vec<u8>> {
     let db_path = cursor_state_vscdb_path()?;
-    let conn = rusqlite::Connection::open_with_flags(
-        &db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .with_context(|| format!("open state.vscdb: {}", db_path.display()))?;
+    let conn =
+        rusqlite::Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .with_context(|| format!("open state.vscdb: {}", db_path.display()))?;
 
     let secret_key = r#"secret://{"extensionId":"yossisa.cursor-usage","key":"cursor.cookie"}"#;
     let raw: String = conn
@@ -647,10 +673,8 @@ fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
 /// Windows: Electron SafeStorage v10 — DPAPI CryptUnprotectData.
 #[cfg(target_os = "windows")]
 fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
-    use windows_sys::Win32::Security::Cryptography::{
-        CryptUnprotectData, CRYPT_INTEGER_BLOB,
-    };
     use std::ptr;
+    use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
     let encrypted = read_encrypted_cookie_blob()?;
     if encrypted.len() < 3 || &encrypted[..3] != b"v10" {
