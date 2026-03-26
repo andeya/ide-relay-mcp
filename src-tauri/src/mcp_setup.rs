@@ -1,6 +1,6 @@
-//! MCP client configuration for **Cursor** (`~/.cursor/mcp.json`) and **Windsurf**
-//! (`~/.codeium/windsurf/mcp_config.json`): merge `relay-mcp` (`command` = `relay`, `args` = `["mcp"]` or `["mcp", "--exe_in_wsl"]` for WSL, …).
-//! See `docs/TERMINOLOGY.md`. Tool `relay_interactive_feedback` requires non-empty `retell` (this turn's assistant reply).
+//! MCP client configuration for IDEs: merge `relay-mcp` into each IDE's config.
+//! `args` uses per-IDE subcommand: `["mcp-cursor"]`, `["mcp-claudecode"]`, etc.
+//! See `docs/TERMINOLOGY.md`. Tool `relay_interactive_feedback` requires non-empty `retell`.
 //! Full install may also update user `PATH`.
 
 use crate::{gui_binary_name, relay_cli_directory};
@@ -18,7 +18,7 @@ fn config_path_error_hint() -> String {
     .to_string()
 }
 
-fn home_dir() -> Result<PathBuf> {
+pub fn home_dir() -> Result<PathBuf> {
     if cfg!(windows) {
         std::env::var_os("USERPROFILE")
             .map(PathBuf::from)
@@ -31,19 +31,25 @@ fn home_dir() -> Result<PathBuf> {
 }
 
 /// Absolute path to `relay` and argv for MCP stdio server.
-/// Default args: `["mcp"]`; WSL users add `"--exe_in_wsl"` to get `/mnt/...` paths.
+/// Args use IDE-specific subcommand: `["mcp-cursor"]`, `["mcp-claudecode"]`, etc.
+/// WSL users add `"--exe_in_wsl"` to get `/mnt/...` paths.
 pub fn relay_mcp_command_and_args() -> Result<(String, Vec<String>)> {
     let dir = relay_cli_directory()?;
     let exe = dir.join(gui_binary_name());
     if !exe.exists() {
         anyhow::bail!("relay not found at {}", exe.display());
     }
-    Ok((exe.to_string_lossy().into_owned(), vec!["mcp".to_string()]))
+    let ide = crate::ide::get_process_ide();
+    let subcmd = match ide {
+        Some(k) => format!("mcp-{}", k.cli_id()),
+        None => "mcp-cursor".to_string(),
+    };
+    Ok((exe.to_string_lossy().into_owned(), vec![subcmd]))
 }
 
-/// `command`, `args`, and `autoApprove` for `relay-mcp` (Cursor / Windsurf one-click install).
-/// Default `args`: `["mcp"]`. For WSL-hosted agents with Windows `relay.exe`, use `["mcp", "--exe_in_wsl"]`.
-fn relay_mcp_entry() -> Result<Value> {
+/// `command`, `args`, and `autoApprove` for `relay-mcp` (one-click install).
+/// `args` uses IDE-specific subcommand: `["mcp-cursor"]`, `["mcp-claudecode"]`, etc.
+pub fn relay_mcp_entry() -> Result<Value> {
     let (command, args) = relay_mcp_command_and_args()?;
     Ok(json!({
         "command": command,
@@ -52,34 +58,39 @@ fn relay_mcp_entry() -> Result<Value> {
     }))
 }
 
-/// Merge `mcpServers.relay-mcp`: keep values from the user file, fill only missing keys from [`relay_mcp_entry`].
+/// Merge `mcpServers.relay-mcp`: start from defaults, then layer user extras on top.
+/// `command` and `args` always come from defaults (current IDE); user extras (e.g. `env`) are kept.
 fn merge_relay_mcp_entry(user: Option<&Value>) -> Result<Value> {
     let defaults = relay_mcp_entry()?;
-    let def_obj = defaults
+    let mut map = defaults
         .as_object()
+        .cloned()
         .ok_or_else(|| anyhow::anyhow!("relay defaults not object"))?;
-    let mut map: serde_json::Map<String, Value> = user
-        .and_then(|v| v.as_object().cloned())
-        .unwrap_or_default();
-    for (k, v) in def_obj {
-        map.entry(k.clone()).or_insert_with(|| v.clone());
+    if let Some(user_obj) = user.and_then(|v| v.as_object()) {
+        for (k, v) in user_obj {
+            if k == "command" || k == "args" {
+                continue;
+            }
+            map.entry(k.clone()).or_insert_with(|| v.clone());
+        }
     }
     Ok(Value::Object(map))
 }
 
-/// Pretty JSON for Settings → Copy MCP: reads `mcpServers.relay-mcp` from real `~/.cursor/mcp.json` when present,
-/// merges missing keys from [`relay_mcp_entry`], and returns **only** `{ "mcpServers": { "relay-mcp": … } }` (no other servers).
+/// Pretty JSON for Settings → Copy MCP: reads `mcpServers.relay-mcp` from the **current IDE's**
+/// MCP config file when present, merges missing keys from [`relay_mcp_entry`], and returns
+/// **only** `{ "mcpServers": { "relay-mcp": … } }` (no other servers).
 pub fn mcp_config_json_pretty() -> Result<String> {
-    let path = cursor_mcp_json_path()?;
-    let user_relay = if path.exists() {
-        let text = fs::read_to_string(&path).unwrap_or_default();
-        let root: Value = serde_json::from_str(&text).unwrap_or_else(|_| json!({}));
-        root.get("mcpServers")
-            .and_then(|s| s.get("relay-mcp"))
-            .cloned()
-    } else {
-        None
-    };
+    let user_relay = crate::ide::get_process_ide()
+        .and_then(|ide| crate::ide::mcp_json_path(ide).ok())
+        .filter(|p| p.exists())
+        .and_then(|path| {
+            let text = fs::read_to_string(&path).unwrap_or_default();
+            let root: Value = serde_json::from_str(&text).unwrap_or_else(|_| json!({}));
+            root.get("mcpServers")
+                .and_then(|s| s.get("relay-mcp"))
+                .cloned()
+        });
     let merged = merge_relay_mcp_entry(user_relay.as_ref())?;
     let root = json!({
         "mcpServers": {
@@ -249,31 +260,6 @@ pub fn uninstall_relay_mcp_windsurf() -> Result<()> {
     uninstall_relay_mcp_at(&windsurf_mcp_json_path()?)
 }
 
-/// Permanent PATH (if possible) + Cursor + Windsurf MCP files.
-pub fn full_install_integrated() -> Result<serde_json::Value> {
-    let (path_action, path_error) = match crate::persist_relay_cli_path() {
-        Ok(s) => (s.to_string(), serde_json::Value::Null),
-        Err(e) => (
-            "skipped".to_string(),
-            serde_json::Value::String(e.to_string()),
-        ),
-    };
-    install_relay_mcp_cursor()?;
-    install_relay_mcp_windsurf()?;
-    Ok(json!({
-        "pathAction": path_action,
-        "pathError": path_error,
-        "mcpInstalled": true
-    }))
-}
-
-pub fn full_uninstall_integrated() -> Result<()> {
-    uninstall_relay_mcp_cursor()?;
-    uninstall_relay_mcp_windsurf()?;
-    crate::remove_relay_cli_path_persistent()?;
-    Ok(())
-}
-
 // --- Cursor rule prompt sync: ~/.cursor/rules/ ---
 
 const CURSOR_RULE_FILENAME: &str = "relay-interactive-feedback.mdc";
@@ -309,12 +295,4 @@ pub fn uninstall_cursor_rule() -> Result<()> {
         fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
     }
     Ok(())
-}
-
-pub fn read_cursor_rule() -> Result<String> {
-    let path = cursor_rule_file_path()?;
-    if !path.exists() {
-        anyhow::bail!("rule file not found at {}", path.display());
-    }
-    fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))
 }
