@@ -23,7 +23,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run version:check
-      - run: npm run lint
+      - name: eslint
+        run: npx eslint "src/**/*.vue" "src/**/*.ts" --max-warnings 0
       - run: npm run typecheck
       - run: npm run build
 
