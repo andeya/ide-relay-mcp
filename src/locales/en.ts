@@ -18,12 +18,8 @@ export default {
   rulePromptsTitle: "Rule prompts",
   rulePromptsLead:
     "Bilingual (中英合本) rule for relay_interactive_feedback. Copy pastes the **whole** block; paste it **at the top** of IDE rules or use a rule file that loads first (e.g. `00-relay-mcp.mdc`). Tool: relay_interactive_feedback — wire MCP under Environment & MCP.",
-  rulePromptsSectionPreview: "Prompt preview",
-  rulePromptsSectionIde: "Where to paste (by IDE)",
-  rulePromptsModeMild: "Standard (recommended)",
-  rulePromptsModeMildDesc:
-    "Call once at end of each turn; call again as needed when you get human or attachments. Does not force an infinite loop. Suited for most use cases.",
-  rulePromptsModeLoop: "Strict loop",
+  rulePromptsSectionIde: "How to configure in {ide}",
+  rulePromptsModeLoop: "Default (strict loop)",
   rulePromptsModeLoopDesc:
     "Every turn must end with a call; back off and retry on transport failure. Ensures the tool is never skipped.",
   rulePromptsModeTool: "Tool spec only",
@@ -36,75 +32,67 @@ export default {
   rulePromptsLabelBilingual: "Rule (中文 + English)",
   rulePromptsCopied: "Copied.",
   rulePromptsCopyErr: "Copy failed.",
-  rulePromptsInstallCursor: "Install to Cursor",
-  rulePromptsUpdateCursor: "Update in Cursor",
-  rulePromptsRemoveCursor: "Remove from Cursor",
-  rulePromptsInstallOk: "Rule installed to ~/.cursor/rules/",
-  rulePromptsUpdateOk: "Rule updated in ~/.cursor/rules/",
-  rulePromptsRemoveOk: "Rule removed from Cursor",
+  rulePromptsInstallCursor: "Install to {ide}",
+  rulePromptsUpdateCursor: "Update in {ide}",
+  rulePromptsRemoveCursor: "Remove from {ide}",
+  rulePromptsInstallOk: "Rule installed to {ide}.",
+  rulePromptsUpdateOk: "Rule updated in {ide}.",
+  rulePromptsRemoveOk: "Rule removed from {ide}.",
   rulePromptsInstallErr: "Install failed:",
   rulePromptsRemoveErr: "Remove failed:",
   rulePromptsInstalledBadge: "Installed",
-  rulePromptsLoopRisk:
-    "Strict loop may run until you stop the session. Sub-agents (e.g. Task): parent owns the tool per the prompt.",
 
-  rulePromptsIdeMd: `**How to use** **Paste in IDE** above copies the **bilingual rule** (中文 + English). Then match each editor’s **rules area** and **MCP** below (you need both).
+  rulePromptsIdeGuideCursor: `**How to use in Cursor**
 
-### Cursor
-- **Rules**: Settings → **Rules** → User or Project → paste the rule block **at the top** (or use \`.cursor/rules/00-relay-mcp.mdc\` so it loads first). The rule declares highest priority for relay_interactive_feedback.  
-- **MCP file** \`{cursorPath}\`  
-- \`command\` = local \`relay\` (absolute path); \`args\` = \`["mcp"]\`; suggest \`autoApprove\`: \`relay_interactive_feedback\`  
-- **WSL**: If the IDE/agent runs **inside WSL** and \`command\` points at **Windows** \`relay.exe\` (e.g. \`/mnt/c/.../relay.exe\`), set \`args\` to \`["mcp", "--exe_in_wsl"]\` so attachment \`path\` values in tool results become \`/mnt/...\` (otherwise they stay \`C:\\...\`).
+- **Rules**: Settings \u2192 **Rules** \u2192 User or Project \u2192 paste the rule block **at the top** (or use \`.cursor/rules/00-relay-mcp.mdc\` so it loads first). The rule declares highest priority for relay_interactive_feedback.
+- **MCP file** \`{mcpPath}\`
+- \`command\` = local \`relay\` (absolute path); \`args\` = \`["mcp-cursor"]\`; suggest \`autoApprove\`: \`relay_interactive_feedback\`
+- **WSL**: If the IDE/agent runs **inside WSL** and \`command\` points at **Windows** \`relay.exe\`, set \`args\` to \`["mcp-cursor", "--exe_in_wsl"]\` so attachment paths become \`/mnt/...\`.`,
+  rulePromptsIdeGuideWindsurf: `**How to use in Windsurf**
 
-### Windsurf
-- **Instructions**: paste the same rule block in Agent / MCP custom text (UI varies by version)  
-- **MCP file** \`{windsurfPath}\`
+- **Instructions**: paste the rule block in Agent / MCP custom text (UI varies by version)
+- **MCP file** \`{mcpPath}\`
+- \`command\` = local \`relay\` (absolute path); \`args\` = \`["mcp-windsurf"]\`
+- **WSL**: add \`"--exe_in_wsl"\` to \`args\` if running inside WSL with Windows relay.exe.`,
+  rulePromptsIdeGuideClaude: `**How to use in Claude Code / Claude Desktop**
 
-### VS Code
-- Put the English prompt where your MCP extension expects **Rules / custom instructions**  
-- MCP: \`command\` = \`relay\` (full path recommended), \`args\` = \`["mcp"]\` (WSL + Windows \`relay.exe\`: \`["mcp", "--exe_in_wsl"]\`)
+- **Custom instructions**: paste the rule block
+- MCP \`command\` = **full path** to relay; \`args\` = \`["mcp-claude_code"]\`
+- **WSL**: add \`"--exe_in_wsl"\` to \`args\` if running inside WSL with Windows relay.exe. Approve \`relay_interactive_feedback\` if prompted.`,
+  rulePromptsIdeGuideOther: `**How to use in other IDEs**
 
-### Claude Desktop
-- **Custom instructions** + MCP \`command\` = **full path** to relay, \`args\` = \`["mcp"]\` (same WSL case: add \`"--exe_in_wsl"\`)
-
-### Other IDEs
-Any MCP + rules-capable client: paste the rule block and register \`relay_interactive_feedback\`; \`args\` follow the table above.`,
+Any MCP + rules-capable client: paste the rule block and register \`relay_interactive_feedback\`.
+- MCP: \`command\` = \`relay\` (full path recommended); \`args\` = \`["mcp-other"]\`
+- **WSL**: add \`"--exe_in_wsl"\` to \`args\` if running inside WSL with Windows relay.exe.`,
 
   setupTitle: "This machine",
   setupLead:
-    "Not ready: Install all (PATH + Cursor & Windsurf MCP). When ready: copy MCP JSON in the green card below, or use per-IDE actions.",
+    "Not ready: Install all (PATH + {ide} MCP). When ready: copy MCP JSON in the green card below; Uninstall all to revert.",
   setupAllReadyLead:
-    "PATH and both IDEs are set. JSON copy and per-IDE actions live in the green card; Uninstall all to revert.",
+    "PATH and {ide} MCP are set. JSON copy lives in the green card; Uninstall all to revert.",
   setupStatus: "Configuration detail",
   setupChipPath: "Terminal PATH",
   setupPathExplain: "Folder containing the relay binary is on your user PATH",
-  setupChipCursor: "Cursor MCP",
-  setupCursorExplain: "relay-mcp is present in mcp.json",
-  setupChipWindsurf: "Windsurf MCP",
-  setupWindsurfExplain: "relay-mcp is present in mcp_config.json",
+  setupMcpExplain: "relay-mcp is present in {ide} MCP config",
+  setupRuleExplain: "Rule prompt installed in {ide} rules directory",
   setupConfigFile: "Config file",
   setupBinDir: "Binary folder",
   setupOn: "Ready",
   setupOff: "Not set",
-  setupBtnInstall: "Install all",
-  setupBtnUninstall: "Uninstall all",
-  setupInstallHint:
-    "Writes user PATH and merges relay-mcp into Cursor and Windsurf (restart both IDEs and open a new terminal afterward).",
-  setupUninstallHint:
-    "Removes relay-mcp from Cursor & Windsurf and undoes Relay’s PATH changes.",
-  setupNoInstallNeeded: "Everything is already configured.",
-  setupActionsStripNeedInstall:
-    "Use Install all on the right to write PATH and Cursor / Windsurf MCP.",
-  setupActionsAria: "Install and uninstall",
-  setupUninstallOnlyHint: "Uninstall is available when at least one item above is configured.",
+  setupBtnPublicInstall: "Install PATH",
+  setupBtnPublicUninstall: "Remove PATH",
+  setupBtnIdeInstall: "Install {ide} config",
+  setupBtnIdeUninstall: "Remove {ide} config",
+  setupSectionPublic: "Public config (PATH)",
+  setupSectionIde: "IDE config (MCP + Rule)",
   setupToolParamsTitle: "Human-in-the-loop & MCP on this machine",
   setupToolParamsLead:
-    "Green card: merged MCP JSON (ready to copy). Default `args` is `[\"mcp\"]`. For **WSL-hosted IDE + Windows relay.exe**, change `args` to `[\"mcp\", \"--exe_in_wsl\"]` before saving/merging. Use the panels below for Cursor / Windsurf-only install or remove.",
+    "Green card: merged MCP JSON for {ide} (ready to copy). Default `args` is `[\"mcp-{ideCliId}\"]`. For **WSL-hosted IDE + Windows relay.exe**, change `args` to `[\"mcp-{ideCliId}\", \"--exe_in_wsl\"]` before saving/merging.",
   mcpCopy: "Copy MCP JSON",
   mcpCopied: "Copied to clipboard.",
   mcpCopyErr: "Copy failed.",
   setupAdvanced:
-    "Advanced (PATH, JSON preview… — per-IDE Cursor/Windsurf is in the green card above)",
+    "Advanced (PATH, JSON preview…)",
   setupAdvPathTitle: "PATH only",
   setupAdvPathLead:
     "If full install skipped PATH (e.g. relay binary not found beside the app), add it here. Open a new terminal or fish session afterward.",
@@ -116,43 +104,17 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   pathEnvDoneOther: "Done. Open a new terminal.",
   pathEnvAlready: "Already on user PATH.",
   pathEnvErrPrefix: "Could not update PATH:",
-  setupAdvSingle: "One IDE at a time",
-  mcpCursorFile: "Cursor",
-  mcpInCursor: "relay-mcp present",
-  mcpNotInCursor: "relay-mcp not present",
-  mcpInstallCursorOnly: "Install Cursor only",
-  mcpUninstallCursorOnly: "Remove from Cursor only",
-  mcpWindsurfFile: "Windsurf",
-  mcpInWindsurf: "relay-mcp present",
-  mcpNotInWindsurf: "relay-mcp not present",
-  mcpInstallWindsurfOnly: "Install Windsurf only",
-  mcpUninstallWindsurfOnly: "Remove from Windsurf only",
-  /** Full install (PATH + both IDEs) in progress */
-  mcpBusyInstallingAll: "Installing…",
-  /** Full uninstall in progress */
-  mcpBusyUninstallingAll: "Uninstalling…",
-  /** Cursor-only MCP install/uninstall in progress */
-  mcpBusyCursorMcp: "Saving Cursor MCP…",
-  /** Windsurf-only MCP install/uninstall in progress */
-  mcpBusyWindsurfMcp: "Saving Windsurf MCP…",
-  setupJsonPreview: "Show MCP JSON",
-  mcpJsonTitle: "Generated config",
-  setupIdeGuide: "IDE config paths",
-  mcpFullInstallOk:
-    "Done. Restart Cursor & Windsurf; PATH applies in a new terminal (or new fish session).",
-  mcpFullUninstallOk: "Uninstalled: MCP entries and Relay PATH changes removed.",
-  mcpFullUninstallConfirm:
-    "This removes relay-mcp from Cursor & Windsurf and undoes Relay user PATH changes.",
+  setupIdeGuide: "IDE config guide",
+  publicInstallOk: "PATH configured. Open a new terminal for it to take effect.",
+  publicUninstallOk: "PATH configuration removed.",
+  ideInstallOk: "MCP config and rule prompt installed for {ide}. Please restart {ide}.",
+  ideUninstallOk: "MCP config and rule prompt removed from {ide}.",
+  publicUninstallConfirm: "This removes Relay from your shell PATH.",
+  ideUninstallConfirm:
+    "This removes relay-mcp config and rule prompt from {ide}.",
   setupUninstallConfirmBtn: "Uninstall",
   setupUninstallCancel: "Cancel",
   mcpFullErr: "Failed:",
-  mcpPathSkippedNote:
-    "(PATH skipped: relay not found beside app — MCP still installed. Add PATH in Advanced.)",
-  mcpCursorInstallOk: "Cursor MCP updated. Restart Cursor.",
-  mcpCursorUninstallOk: "Removed relay-mcp from Cursor.",
-  mcpWindsurfInstallOk: "Windsurf MCP updated. Restart Windsurf.",
-  mcpWindsurfUninstallOk: "Removed relay-mcp from Windsurf.",
-
   windowDockAria: "Window horizontal position on screen",
   windowDockLeft: "Dock left",
   windowDockCenter: "Center horizontally",
@@ -171,7 +133,6 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   releaseBadgeCurrent: "v{current}",
 
   appTitle: "Relay MCP",
-  brand: "Relay",
   statusAwaiting: "ME turn",
   statusHubWaiting: "Hub · no IDE",
   ideBlockingHint:
@@ -185,22 +146,15 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   mcpPauseStatusOff: "Status: active",
   mcpPauseUpdateErr: "Could not update pause. Check permissions and try again.",
 
-  setupInstallChangesNote:
-    "Install/uninstall touches: user PATH, both IDEs’ MCP config, and Relay app data (logs, attachments, local HTTP).",
   statusIdle: "AI turn",
   statusTimedOut: "Timed out",
   statusCancelled: "Cancelled",
   mainHintPreview:
     "When a tab is waiting for your reply, type here. Enter to send · ⌘/Ctrl+Enter to send and close the tab.",
-  mainSummaryReadonly:
-    "Read-only · Left: AI (retell) · Right: ME (Answer)",
   tabStripAria: "Feedback tabs",
   tabCloseAria: "Close this tab",
   tabCloseTitle: "Close tab (shown when hovering this tab)",
-  tabStripHub: "Hub",
   qaHistoryTitle: "Thread",
-  qaRetell: "Retell",
-  qaRetellHint: "This turn's AI reply (MCP: retell)",
   qaAssistantTurn: "AI",
   /** Thread bubble label for the user side (composer still says “Answer”). */
   qaUserTurnMe: "ME",
@@ -241,9 +195,6 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   slashCategoryAgentSkill: "Skill",
   noteExpired:
     "This request has already timed out or been cancelled. Your text can be reviewed locally, but it can no longer be submitted.",
-  submit: "Submit (Enter)",
-  submitClose: "Dismiss",
-  submitCloseTab: "Submit & close tab (⌘/Ctrl+Enter)",
   loading: "Loading…",
   noLaunch: "No launch data available.",
 
@@ -339,6 +290,21 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   usageRefreshing: "Refreshing…",
   usageRefreshErr: "Failed to refresh usage:",
   usageRefreshBtn: "Refresh now",
+  usagePlanCustom: "Custom",
   usageLastRefreshed: "Last refreshed",
   usageNever: "Never",
+
+  // IDE selection
+  ideSelectionTitle: "Select IDE Mode",
+  ideSelectionSubtitle: "Select an IDE to enter and enable its features",
+  ideCursor: "Cursor",
+  ideCursorDesc: "MCP injection, rule prompts, usage monitoring",
+  ideClaudeCode: "Claude Code",
+  ideClaudeCodeDesc: "MCP injection, rule prompts",
+  ideWindsurf: "Windsurf",
+  ideWindsurfDesc: "MCP injection",
+  ideOther: "Other",
+  ideOtherDesc: "Manual MCP configuration",
+  ideSettingsChangeBtn: "Switch IDE",
+  ideSelectPlaceholder: "Select IDE",
 };
