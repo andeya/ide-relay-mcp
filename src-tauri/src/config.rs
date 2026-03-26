@@ -342,7 +342,7 @@ pub fn position_main_window_for_dock(
     Ok(())
 }
 
-/// When true, `relay mcp` skips GUI/auto-reply and returns a sentinel tool result immediately.
+/// When true, `relay mcp-<ide>` skips GUI/auto-reply and returns a sentinel tool result immediately.
 pub fn read_mcp_paused() -> bool {
     let Ok(dir) = user_data_dir() else {
         return false;
