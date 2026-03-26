@@ -77,6 +77,7 @@ struct RelayGuiInner {
     wait_tx: Mutex<HashMap<String, oneshot::Sender<String>>>,
     wait_rx: Mutex<HashMap<String, oneshot::Receiver<String>>>,
     token: String,
+    port: Mutex<Option<u16>>,
     app: tauri::AppHandle,
 }
 
@@ -270,11 +271,12 @@ impl RelayGuiRuntime {
             wait_tx: Mutex::new(HashMap::new()),
             wait_rx: Mutex::new(HashMap::new()),
             token: random_token(),
+            port: Mutex::new(None),
             app,
         }))
     }
 
-    /// Binds `127.0.0.1:0`, writes `gui_endpoint.json`, serves until process exit.
+    /// Binds `127.0.0.1:0`, writes endpoint file if IDE is set, serves until process exit.
     pub fn spawn_http_server(&self) -> anyhow::Result<u16> {
         let inner = self.0.clone();
         let token = inner.token.clone();
@@ -289,10 +291,13 @@ impl RelayGuiRuntime {
                     return;
                 }
             };
-            if let Err(msg) = gui_http_write_endpoint_file(port, &token) {
-                eprintln!("relay gui_http: {}", msg);
-                let _ = tx_port.send(Err(msg));
-                return;
+            if let Ok(mut p) = inner.port.lock() {
+                *p = Some(port);
+            }
+            if crate::ide::get_process_ide().is_some() {
+                if let Err(msg) = gui_http_write_endpoint_file(port, &token) {
+                    eprintln!("relay gui_http: endpoint file: {}", msg);
+                }
             }
             if tx_port.send(Ok(port)).is_err() {
                 return;
@@ -308,6 +313,18 @@ impl RelayGuiRuntime {
                 "gui_http: HTTP server did not start within 20s (see stderr)"
             )),
         }
+    }
+
+    /// (Re-)write the per-IDE endpoint file so MCP processes can discover this GUI.
+    /// Called when IDE mode is set/switched at runtime.
+    pub fn write_endpoint_file(&self) -> Result<(), String> {
+        let port = self
+            .0
+            .port
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .ok_or_else(|| "HTTP server not yet started".to_string())?;
+        gui_http_write_endpoint_file(port, &self.0.token)
     }
 
     pub fn tabs_snapshot(&self) -> FeedbackTabsState {
@@ -670,6 +687,9 @@ struct PostFeedbackBody {
     commands: Option<Vec<CommandItem>>,
     #[serde(default)]
     skills: Option<Vec<CommandItem>>,
+    /// IDE cli_id that the MCP process was launched with (e.g. "cursor").
+    #[serde(default)]
+    ide_mode: Option<String>,
 }
 
 async fn post_feedback(
@@ -686,6 +706,22 @@ async fn post_feedback(
             "retell is required and must be non-empty",
         )
             .into_response();
+    }
+    if let Some(ref mcp_ide) = body.ide_mode {
+        if let Some(gui_ide) = crate::ide::get_process_ide() {
+            if mcp_ide != gui_ide.cli_id() {
+                return (
+                    StatusCode::CONFLICT,
+                    format!(
+                        "IDE mode mismatch: MCP is '{}' but GUI is '{}' ({})",
+                        mcp_ide,
+                        gui_ide.cli_id(),
+                        gui_ide.label()
+                    ),
+                )
+                    .into_response();
+            }
+        }
     }
     let inner = st.inner.clone();
     let retell = body.retell;
