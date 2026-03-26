@@ -1,6 +1,6 @@
 //! MCP-only: optional `attachments[].path` rewrite for WSL-hosted agents calling Windows `relay.exe`.
 //!
-//! Enable with **`relay mcp --exe_in_wsl`**. Each `attachments[].path` in the MCP `tools/call` result is
+//! Enable with **`relay mcp-<ide> --exe_in_wsl`**. Each `attachments[].path` in the MCP `tools/call` result is
 //! rewritten from a Windows path to `/mnt/<drive>/...`. GUI HTTP payloads and on-disk history stay Windows paths.
 #![cfg_attr(not(windows), allow(dead_code))] // Non-Windows builds omit MCP path transform; helpers still run in unit tests.
 
@@ -8,12 +8,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 static MCP_WSL_PATH_REWRITE_ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// Called from `relay mcp` after CLI parse, before the stdio loop.
+/// Called from `relay mcp-<ide>` after CLI parse, before the stdio loop.
 pub(crate) fn set_mcp_wsl_path_rewrite_enabled(enabled: bool) {
     MCP_WSL_PATH_REWRITE_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
-/// True when `relay mcp` was started with `--exe_in_wsl`.
+/// True when `relay mcp-<ide>` was started with `--exe_in_wsl`.
 fn mcp_wsl_path_rewrite_enabled() -> bool {
     MCP_WSL_PATH_REWRITE_ENABLED.load(Ordering::Relaxed)
 }
