@@ -1,0 +1,369 @@
+//! IDE mode abstraction: Cursor, Claude Code, Windsurf, Other.
+//! Each IDE variant knows its MCP config path, rule file path, and whether
+//! it supports usage monitoring. The active IDE is process-global (no file
+//! persistence) — determined by CLI subcommand or user selection at startup.
+
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::RwLock;
+
+use crate::mcp_setup;
+use crate::prepare_user_data_dir;
+
+// ---------------------------------------------------------------------------
+// Process-global IDE mode (set by CLI subcommand, switchable at runtime)
+// ---------------------------------------------------------------------------
+
+static PROCESS_IDE: RwLock<Option<IdeKind>> = RwLock::new(None);
+
+pub fn set_process_ide(ide: IdeKind) {
+    if let Ok(mut w) = PROCESS_IDE.write() {
+        *w = Some(ide);
+    }
+}
+
+pub fn get_process_ide() -> Option<IdeKind> {
+    PROCESS_IDE.read().ok().and_then(|r| *r)
+}
+
+/// Window title based on current process IDE: `Relay-Cursor`, `Relay-Claude Code`, etc.
+pub fn window_title() -> String {
+    match get_process_ide() {
+        Some(ide) => format!("Relay-{}", ide.label()),
+        None => "Relay".to_string(),
+    }
+}
+
+const APP_VERSION_FILE: &str = "app_version.json";
+
+// ---------------------------------------------------------------------------
+// IdeKind enum
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IdeKind {
+    Cursor,
+    ClaudeCode,
+    Windsurf,
+    Other,
+}
+
+impl IdeKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Cursor => "Cursor",
+            Self::ClaudeCode => "Claude Code",
+            Self::Windsurf => "Windsurf",
+            Self::Other => "Other",
+        }
+    }
+
+    /// Lowercase identifier with no spaces, used in CLI subcommands and file names.
+    pub fn cli_id(self) -> &'static str {
+        match self {
+            Self::Cursor => "cursor",
+            Self::ClaudeCode => "claudecode",
+            Self::Windsurf => "windsurf",
+            Self::Other => "other",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// IDE capability queries
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdeCapabilities {
+    pub supports_mcp_inject: bool,
+    pub supports_rule_prompt: bool,
+    pub supports_usage: bool,
+}
+
+pub fn capabilities(ide: IdeKind) -> IdeCapabilities {
+    match ide {
+        IdeKind::Cursor => IdeCapabilities {
+            supports_mcp_inject: true,
+            supports_rule_prompt: true,
+            supports_usage: true,
+        },
+        IdeKind::ClaudeCode => IdeCapabilities {
+            supports_mcp_inject: true,
+            supports_rule_prompt: true,
+            supports_usage: false,
+        },
+        IdeKind::Windsurf => IdeCapabilities {
+            supports_mcp_inject: true,
+            supports_rule_prompt: false,
+            supports_usage: false,
+        },
+        IdeKind::Other => IdeCapabilities {
+            supports_mcp_inject: false,
+            supports_rule_prompt: false,
+            supports_usage: false,
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Version tracking
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AppVersionConfig {
+    version: String,
+}
+
+fn version_path() -> Result<PathBuf> {
+    Ok(prepare_user_data_dir()?.join(APP_VERSION_FILE))
+}
+
+pub fn read_stored_version() -> Option<String> {
+    let path = version_path().ok()?;
+    if !path.exists() {
+        return None;
+    }
+    let text = fs::read_to_string(&path).ok()?;
+    let cfg: AppVersionConfig = serde_json::from_str(&text).ok()?;
+    Some(cfg.version)
+}
+
+pub fn write_stored_version(version: &str) -> Result<()> {
+    let path = version_path()?;
+    let json = serde_json::to_string_pretty(&AppVersionConfig {
+        version: version.to_string(),
+    })
+    .context("serialize app version")?;
+    fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+pub fn current_binary_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+/// Returns true if the binary version differs from the stored version
+/// (i.e. the app was just upgraded/downgraded).
+pub fn version_changed() -> bool {
+    match read_stored_version() {
+        Some(stored) => stored != current_binary_version(),
+        None => true,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MCP inject — delegated to mcp_setup per IDE
+// ---------------------------------------------------------------------------
+
+pub fn mcp_json_path(ide: IdeKind) -> Result<PathBuf> {
+    match ide {
+        IdeKind::Cursor => mcp_setup::cursor_mcp_json_path(),
+        IdeKind::ClaudeCode => claude_code_mcp_json_path(),
+        IdeKind::Windsurf => mcp_setup::windsurf_mcp_json_path(),
+        IdeKind::Other => anyhow::bail!("MCP injection not supported for Other IDE"),
+    }
+}
+
+pub fn has_relay_mcp(ide: IdeKind) -> bool {
+    match ide {
+        IdeKind::Cursor => mcp_setup::cursor_has_relay_mcp(),
+        IdeKind::ClaudeCode => claude_code_has_relay_mcp(),
+        IdeKind::Windsurf => mcp_setup::windsurf_has_relay_mcp(),
+        IdeKind::Other => false,
+    }
+}
+
+pub fn install_relay_mcp(ide: IdeKind) -> Result<()> {
+    match ide {
+        IdeKind::Cursor => mcp_setup::install_relay_mcp_cursor(),
+        IdeKind::ClaudeCode => install_relay_mcp_claude_code(),
+        IdeKind::Windsurf => mcp_setup::install_relay_mcp_windsurf(),
+        IdeKind::Other => anyhow::bail!("MCP injection not supported for Other IDE"),
+    }
+}
+
+pub fn uninstall_relay_mcp(ide: IdeKind) -> Result<()> {
+    match ide {
+        IdeKind::Cursor => mcp_setup::uninstall_relay_mcp_cursor(),
+        IdeKind::ClaudeCode => uninstall_relay_mcp_claude_code(),
+        IdeKind::Windsurf => mcp_setup::uninstall_relay_mcp_windsurf(),
+        IdeKind::Other => anyhow::bail!("MCP injection not supported for Other IDE"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rule prompt inject — per IDE
+// ---------------------------------------------------------------------------
+
+pub fn rule_file_path(ide: IdeKind) -> Result<PathBuf> {
+    match ide {
+        IdeKind::Cursor => mcp_setup::cursor_rule_file_path(),
+        IdeKind::ClaudeCode => claude_code_rule_file_path(),
+        _ => anyhow::bail!("Rule prompts not supported for {}", ide.label()),
+    }
+}
+
+pub fn rule_installed(ide: IdeKind) -> bool {
+    match ide {
+        IdeKind::Cursor => mcp_setup::cursor_rule_installed(),
+        IdeKind::ClaudeCode => claude_code_rule_installed(),
+        _ => false,
+    }
+}
+
+pub fn install_rule(ide: IdeKind, content: &str) -> Result<()> {
+    match ide {
+        IdeKind::Cursor => mcp_setup::install_cursor_rule(content),
+        IdeKind::ClaudeCode => install_claude_code_rule(content),
+        _ => anyhow::bail!("Rule prompts not supported for {}", ide.label()),
+    }
+}
+
+pub fn uninstall_rule(ide: IdeKind) -> Result<()> {
+    match ide {
+        IdeKind::Cursor => mcp_setup::uninstall_cursor_rule(),
+        IdeKind::ClaudeCode => uninstall_claude_code_rule(),
+        _ => anyhow::bail!("Rule prompts not supported for {}", ide.label()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Claude Code specifics
+// ---------------------------------------------------------------------------
+
+fn claude_code_home_dir() -> Result<PathBuf> {
+    let home = mcp_setup::home_dir()?;
+    Ok(home.join(".claude"))
+}
+
+/// Claude Code MCP: user-level config at ~/.claude.json
+fn claude_code_mcp_json_path() -> Result<PathBuf> {
+    let home = mcp_setup::home_dir()?;
+    Ok(home.join(".claude.json"))
+}
+
+fn claude_code_has_relay_mcp() -> bool {
+    claude_code_mcp_json_path()
+        .ok()
+        .map(|p| {
+            if !p.exists() {
+                return false;
+            }
+            let Ok(text) = fs::read_to_string(&p) else {
+                return false;
+            };
+            let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) else {
+                return false;
+            };
+            root.get("mcpServers")
+                .and_then(|s| s.get("relay-mcp"))
+                .is_some()
+        })
+        .unwrap_or(false)
+}
+
+fn install_relay_mcp_claude_code() -> Result<()> {
+    let path = claude_code_mcp_json_path()?;
+    let entry = mcp_setup::relay_mcp_entry()?;
+
+    let mut root: serde_json::Value = if path.exists() {
+        let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        serde_json::from_str(&text)
+            .with_context(|| "~/.claude.json is not valid JSON — fix or rename before installing")?
+    } else {
+        serde_json::json!({})
+    };
+
+    let servers = root
+        .as_object_mut()
+        .context("root is not an object")?
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    servers
+        .as_object_mut()
+        .context("mcpServers is not an object")?
+        .insert("relay-mcp".to_string(), entry);
+
+    let json = serde_json::to_string_pretty(&root).context("serialize")?;
+    fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+fn uninstall_relay_mcp_claude_code() -> Result<()> {
+    let path = claude_code_mcp_json_path()?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let mut root: serde_json::Value =
+        serde_json::from_str(&text).with_context(|| "parse ~/.claude.json")?;
+    if let Some(servers) = root.get_mut("mcpServers").and_then(|s| s.as_object_mut()) {
+        servers.remove("relay-mcp");
+    }
+    let json = serde_json::to_string_pretty(&root).context("serialize")?;
+    fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+// Claude Code rules: ~/.claude/CLAUDE.md (user-level global)
+const CLAUDE_CODE_RULE_FILENAME: &str = "CLAUDE.md";
+
+fn claude_code_rule_file_path() -> Result<PathBuf> {
+    Ok(claude_code_home_dir()?.join(CLAUDE_CODE_RULE_FILENAME))
+}
+
+fn claude_code_rule_installed() -> bool {
+    claude_code_rule_file_path()
+        .ok()
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
+fn install_claude_code_rule(content: &str) -> Result<()> {
+    let dir = claude_code_home_dir()?;
+    if !dir.exists() {
+        fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+    }
+    let path = claude_code_rule_file_path()?;
+    fs::write(&path, content).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+fn uninstall_claude_code_rule() -> Result<()> {
+    let path = claude_code_rule_file_path()?;
+    if path.exists() {
+        fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Startup version check + auto-update rules
+// ---------------------------------------------------------------------------
+
+/// Called from the frontend after the IDE mode is known.
+/// If the binary version differs from the stored version, writes the new
+/// version and auto-updates rule prompts using the content supplied by
+/// the TypeScript template (single source of truth).
+pub fn check_and_upgrade_version(rule_content: &str) {
+    if !version_changed() {
+        return;
+    }
+
+    let Some(ide) = get_process_ide() else {
+        let _ = write_stored_version(current_binary_version());
+        return;
+    };
+    let caps = capabilities(ide);
+    if !caps.supports_rule_prompt || !rule_installed(ide) {
+        let _ = write_stored_version(current_binary_version());
+        return;
+    }
+    if install_rule(ide, rule_content).is_ok() {
+        let _ = write_stored_version(current_binary_version());
+    }
+}
