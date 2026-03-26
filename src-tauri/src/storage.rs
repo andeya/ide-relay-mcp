@@ -161,6 +161,10 @@ struct QaArchiveLine {
     skipped: bool,
     #[serde(default)]
     attachments: Vec<QaAttachmentRef>,
+    #[serde(default)]
+    retell_at: String,
+    #[serde(default)]
+    reply_at: String,
 }
 
 fn qa_archive_file_path(config_dir: &Path, session_id: &str) -> Option<PathBuf> {
@@ -183,6 +187,8 @@ pub fn qa_archive_append(
     reply: &str,
     skipped: bool,
     attachments: &[QaAttachmentRef],
+    retell_at: &str,
+    reply_at: &str,
 ) -> Result<()> {
     let Some(path) = qa_archive_file_path(config_dir, session_id) else {
         return Ok(());
@@ -195,6 +201,8 @@ pub fn qa_archive_append(
         reply: reply.to_string(),
         skipped,
         attachments: attachments.to_vec(),
+        retell_at: retell_at.to_string(),
+        reply_at: reply_at.to_string(),
     };
     let mut line = serde_json::to_string(&row).context("qa_archive json")?;
     line.push('\n');
@@ -209,10 +217,11 @@ pub fn qa_archive_append(
 }
 
 /// Read archived rounds in order; malformed lines are skipped.
+/// Returns (retell, reply, skipped, attachments, retell_at, reply_at).
 pub fn qa_archive_load_session(
     config_dir: &Path,
     session_id: &str,
-) -> Vec<(String, String, bool, Vec<QaAttachmentRef>)> {
+) -> Vec<(String, String, bool, Vec<QaAttachmentRef>, String, String)> {
     let Some(path) = qa_archive_file_path(config_dir, session_id) else {
         return vec![];
     };
@@ -226,7 +235,14 @@ pub fn qa_archive_load_session(
             continue;
         }
         if let Ok(row) = serde_json::from_str::<QaArchiveLine>(t) {
-            out.push((row.retell, row.reply, row.skipped, row.attachments));
+            out.push((
+                row.retell,
+                row.reply,
+                row.skipped,
+                row.attachments,
+                row.retell_at,
+                row.reply_at,
+            ));
         }
     }
     out
@@ -794,13 +810,35 @@ mod feedback_log_parse_tests {
     #[test]
     fn qa_archive_append_and_load_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        qa_archive_append(dir.path(), "42", "r1", "a1", false, &[]).unwrap();
-        qa_archive_append(dir.path(), "42", "r2", "", true, &[]).unwrap();
+        qa_archive_append(
+            dir.path(),
+            "42",
+            "r1",
+            "a1",
+            false,
+            &[],
+            "2025-01-01 10:00:00",
+            "2025-01-01 10:01:00",
+        )
+        .unwrap();
+        qa_archive_append(
+            dir.path(),
+            "42",
+            "r2",
+            "",
+            true,
+            &[],
+            "2025-01-01 10:02:00",
+            "",
+        )
+        .unwrap();
         let rows = qa_archive_load_session(dir.path(), "42");
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].0, "r1");
         assert_eq!(rows[0].1, "a1");
         assert!(!rows[0].2);
+        assert_eq!(rows[0].4, "2025-01-01 10:00:00");
+        assert_eq!(rows[0].5, "2025-01-01 10:01:00");
         assert_eq!(rows[1].0, "r2");
         assert!(rows[1].2);
     }
