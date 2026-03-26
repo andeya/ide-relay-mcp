@@ -714,13 +714,12 @@ fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
 #[cfg(target_os = "linux")]
 fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
     let encrypted = read_encrypted_cookie_blob()?;
-    let (ciphertext, iterations) = if encrypted.len() >= 3 && &encrypted[..3] == b"v11" {
-        (&encrypted[3..], 1u32)
-    } else if encrypted.len() >= 3 && &encrypted[..3] == b"v10" {
-        (&encrypted[3..], 1u32)
-    } else {
-        anyhow::bail!("unexpected encryption version prefix");
-    };
+    let (ciphertext, iterations) =
+        if encrypted.len() >= 3 && (encrypted[..3] == *b"v11" || encrypted[..3] == *b"v10") {
+            (&encrypted[3..], 1u32)
+        } else {
+            anyhow::bail!("unexpected encryption version prefix");
+        };
 
     let password = linux_get_safe_storage_password()?;
 
