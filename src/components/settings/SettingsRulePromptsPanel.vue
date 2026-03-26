@@ -16,7 +16,7 @@ const props = defineProps<{
   strings: Record<string, string>;
   cursorMcpPath: string;
   windsurfMcpPath: string;
-  pushToast: (p: SettingsToastPayload) => void;
+  pushToast: (_p: SettingsToastPayload) => void;
 }>();
 
 const rulePromptMode = ref<RulePromptMode>("mild");
