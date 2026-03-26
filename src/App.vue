@@ -16,10 +16,12 @@ import { useAppStrings } from "./composables/useAppStrings";
 import { useFeedbackWindow } from "./composables/useFeedbackWindow";
 import { useReleaseBadge } from "./composables/useReleaseBadge";
 import { useMcpAndPathSettings } from "./composables/useMcpAndPathSettings";
-import type { CommandItem, SettingsSegment } from "./types/relay-app";
+import type { CommandItem, CursorUsageEvent, SettingsSegment } from "./types/relay-app";
 import type { SettingsToastPayload } from "./composables/useRelayCacheSettings";
+import { useCursorUsage } from "./composables/useCursorUsage";
 import SettingsCachePanel from "./components/settings/SettingsCachePanel.vue";
 import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsPanel.vue";
+import SettingsUsagePanel from "./components/settings/SettingsUsagePanel.vue";
 import relayLogoUrl from "./assets/relay-logo.svg?url";
 import QaAssistantRetellMd from "./components/QaAssistantRetellMd.vue";
 import QaUserSubmittedBubble from "./components/QaUserSubmittedBubble.vue";
@@ -29,6 +31,14 @@ import {
   slashItemDetailPreview,
 } from "./composables/feedbackComposerUtils";
 import { qaRoundHasRenderableUserContent } from "./utils/parseRelayFeedbackReply";
+
+/** Extract `HH:mm` from a `YYYY-MM-DD HH:MM:SS` timestamp; empty input → empty output. */
+function formatTime(ts: string | undefined): string {
+  if (!ts) return "";
+  const t = ts.trim();
+  if (t.length >= 16) return t.slice(11, 16);
+  return "";
+}
 
 const lightboxSrc = ref<string | null>(null);
 const windowDock = ref<"left" | "center" | "right">("left");
@@ -72,13 +82,6 @@ const showReleaseBadge = computed(
   () => !releaseLoading.value && releasePayload.value !== null,
 );
 
-/** Room for wider "update" release pill: nudge status pill left by 1.5ch. */
-const shiftStatusPillForUpdateBadge = computed(
-  () =>
-    showReleaseBadge.value &&
-    Boolean(releasePayload.value?.update_available),
-);
-
 function openLightbox(src: string) {
   lightboxSrc.value = src;
 }
@@ -120,8 +123,6 @@ const {
   composerSwallowPlainEnter,
   hasPendingFileDropErrors,
   status,
-  statusLabel,
-  statusPillUi,
   submit,
   requestCloseTab,
   onDragOver,
@@ -145,6 +146,7 @@ const {
   addAttachedFilesFromPicker,
   removePendingImage,
   removePendingFileDrop,
+  tabHue,
 } = useFeedbackWindow();
 
 /** One `slashCommandSecondaryLine` eval per row (description, or non-redundant name). */
@@ -373,6 +375,74 @@ function pushSettingsToast(p: SettingsToastPayload) {
 }
 
 const cacheSegmentActive = computed(() => settingsSeg.value === "cache");
+const usageSegmentActive = computed(() => settingsSeg.value === "usage");
+
+const {
+  usageSummary,
+  loading: usageLoading,
+  usageCapsuleLabel,
+  usageCapsuleWarn,
+  popoverOpen: usagePopoverOpen,
+  usageEvents,
+  usageEventsTotal,
+  usageEventsPage,
+  loadingEvents: usageLoadingEvents,
+  planProgressPct,
+  cycleResetDate,
+  daysUntilReset,
+  avgRequestsPerDay,
+  daysUntilExhausted,
+  planPriceLabel,
+  refreshUsage,
+  loadEvents: loadUsageEvents,
+} = useCursorUsage(usageSegmentActive, pushSettingsToast);
+
+function formatEventTime(ts: string): string {
+  const n = Number(ts);
+  if (!isNaN(n) && n > 1e12) {
+    const d = new Date(n);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${mm}-${dd} ${hh}:${mi}`;
+  }
+  return ts?.slice(5, 16)?.replace("T", " ") ?? "";
+}
+
+const hoveredEvent = ref<CursorUsageEvent | null>(null);
+const hoverTooltipStyle = ref<Record<string, string>>({});
+
+function onEventMouseEnter(ev: CursorUsageEvent, e: MouseEvent) {
+  hoveredEvent.value = ev;
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  hoverTooltipStyle.value = {
+    top: `${rect.bottom + 4}px`,
+    left: `${rect.left}px`,
+  };
+}
+
+function onEventMouseLeave() {
+  hoveredEvent.value = null;
+}
+
+function openDashboard() {
+  invoke("open_url", { url: "https://cursor.com/dashboard/usage" }).catch(() => {});
+}
+
+function toggleUsagePopover() {
+  const opening = !usagePopoverOpen.value;
+  usagePopoverOpen.value = opening;
+  if (opening) {
+    if (!usageEvents.value.length && usageSummary.value) {
+      void loadUsageEvents(1);
+    }
+  }
+}
+
+function closeUsagePopover() {
+  usagePopoverOpen.value = false;
+}
 
 async function openSettings() {
   uiView.value = "settings";
@@ -467,6 +537,10 @@ function onGlobalKeydown(e: KeyboardEvent) {
   if (e.key === "Escape") {
     if (lightboxSrc.value) {
       closeLightbox();
+      return;
+    }
+    if (usagePopoverOpen.value) {
+      closeUsagePopover();
       return;
     }
     if (uiView.value === "settings") {
@@ -637,25 +711,23 @@ onBeforeUnmount(() => {
               </span>
               <h1 class="mainTitle">{{ strings.appTitle }}</h1>
             </div>
-            <span
-              class="statusPill mainTopBarStatusPill"
-              :class="[
-                { 'mainTopBarStatusPill--waiting': statusPillUi.indeterminate },
-                { 'mainTopBarStatusPill--shiftForUpdateBadge': shiftStatusPillForUpdateBadge },
-                statusPillUi.hue !== 'default'
-                  ? 'mainTopBarStatusPill--hue-' + statusPillUi.hue
-                  : '',
-              ]"
-              role="status"
-              :aria-busy="statusPillUi.indeterminate"
-              :title="statusLabel"
+            <button
+              v-if="usageSummary"
+              type="button"
+              class="usageCapsule"
+              :class="{ 'usageCapsule--warn': usageCapsuleWarn }"
+              :title="strings.usageCapsuleTitle"
+              @click="toggleUsagePopover"
             >
-              <span
-                v-if="statusPillUi.indeterminate && statusPillUi.hue !== 'hub'"
-                class="statusPillWaitRing"
-                aria-hidden="true"
-              />
-              <span class="mainTopBarStatusPillText">{{ statusLabel }}</span>
+              <span class="usageCapsuleDot usageCapsuleDot--plan" />
+              {{ usageCapsuleLabel }}
+            </button>
+            <span
+              v-else-if="usageLoading"
+              class="usageCapsule usageCapsule--loading"
+              :title="strings.usageCapsuleTitle"
+            >
+              <span class="usageCapsuleSpinner" />
             </span>
           </div>
         </div>
@@ -811,6 +883,7 @@ onBeforeUnmount(() => {
             :class="{
               active: tab.tab_id === activeTabId,
               tabBtnFlash: flashingTabIds.has(tab.tab_id),
+              ['tabBtn--hue-' + tabHue(tab)]: !flashingTabIds.has(tab.tab_id) && tabHue(tab) !== 'default',
             }"
             :aria-selected="tab.tab_id === activeTabId"
             @click="selectTab(tab.tab_id)"
@@ -861,7 +934,7 @@ onBeforeUnmount(() => {
                 <div class="qaChatStack qaChatStack--ai">
                   <span class="qaChatRole qaChatRole--ai">{{
                     strings.qaAssistantTurn
-                  }}</span>
+                  }}<span v-if="formatTime(round.retell_at)" class="qaChatTimestamp">{{ formatTime(round.retell_at) }}</span></span>
                   <div
                     class="qaChatBubble qaChatBubble--ai"
                     :class="{
@@ -887,7 +960,7 @@ onBeforeUnmount(() => {
                 class="qaChatRow qaChatRow--me"
               >
                 <div class="qaChatStack qaChatStack--me">
-                  <span class="qaChatRole qaChatRole--me">{{
+                  <span class="qaChatRole qaChatRole--me"><span v-if="formatTime(round.reply_at)" class="qaChatTimestamp">{{ formatTime(round.reply_at) }}</span>{{
                     strings.qaUserTurnMe
                   }}</span>
                   <div class="qaChatBubble qaChatBubble--me qaChatBubble--meMuted">
@@ -900,7 +973,7 @@ onBeforeUnmount(() => {
                 class="qaChatRow qaChatRow--me"
               >
                 <div class="qaChatStack qaChatStack--me">
-                  <span class="qaChatRole qaChatRole--me">{{
+                  <span class="qaChatRole qaChatRole--me"><span v-if="formatTime(round.reply_at)" class="qaChatTimestamp">{{ formatTime(round.reply_at) }}</span>{{
                     strings.qaUserTurnMe
                   }}</span>
                   <div class="qaChatBubble qaChatBubble--me">
@@ -917,7 +990,7 @@ onBeforeUnmount(() => {
                 class="qaChatRow qaChatRow--me"
               >
                 <div class="qaChatStack qaChatStack--me">
-                  <span class="qaChatRole qaChatRole--me">{{
+                  <span class="qaChatRole qaChatRole--me"><span v-if="formatTime(round.reply_at)" class="qaChatTimestamp">{{ formatTime(round.reply_at) }}</span>{{
                     strings.qaUserTurnMe
                   }}</span>
                   <div class="qaChatBubble qaChatBubble--me qaChatBubble--meMuted">
@@ -1322,6 +1395,16 @@ onBeforeUnmount(() => {
           @click="settingsSeg = 'cache'"
         >
           {{ strings.segCache }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="segTab"
+          :class="{ active: settingsSeg === 'usage' }"
+          :aria-selected="settingsSeg === 'usage'"
+          @click="settingsSeg = 'usage'"
+        >
+          {{ strings.segUsage }}
         </button>
       </nav>
 
@@ -1811,10 +1894,17 @@ onBeforeUnmount(() => {
           :strings="strings"
           :cursor-mcp-path="cursorMcpPath || ''"
           :windsurf-mcp-path="windsurfMcpPath || ''"
+          :push-toast="pushSettingsToast"
         />
 
         <SettingsCachePanel
           :cache-segment-active="cacheSegmentActive"
+          :strings="strings"
+          :push-toast="pushSettingsToast"
+        />
+
+        <SettingsUsagePanel
+          :usage-segment-active="usageSegmentActive"
           :strings="strings"
           :push-toast="pushSettingsToast"
         />
@@ -1832,6 +1922,162 @@ onBeforeUnmount(() => {
         </footer>
       </div>
     </section>
+
+    <!-- Usage detail popover -->
+    <div
+      v-if="usagePopoverOpen"
+      class="usagePopoverBackdrop"
+      @click.self="closeUsagePopover"
+    >
+      <aside class="usagePopover" role="dialog" :aria-label="strings.usagePopoverTitle">
+        <header class="usagePopoverHeader">
+          <h3 class="usagePopoverTitle">{{ strings.usagePopoverTitle }}</h3>
+          <button
+            type="button"
+            class="usagePopoverClose"
+            :aria-label="strings.settingsBack"
+            @click="closeUsagePopover"
+          >
+            ✕
+          </button>
+        </header>
+        <div v-if="usageSummary" class="usagePopoverBody">
+          <!-- Progress bar -->
+          <div class="usageProgressSection">
+            <div class="usageProgressLabelRow">
+              <span class="usageProgressLabel">
+                {{ Math.round(usageSummary.individualUsage.plan.used) }} / {{ Math.round(usageSummary.individualUsage.plan.limit) }}
+                <span class="usageProgressPct">({{ planProgressPct.toFixed(1) }}%)</span>
+              </span>
+              <span class="usageProgressRemaining">
+                {{ Math.round(usageSummary.individualUsage.plan.remaining) }} {{ strings.usagePlanRemaining }}
+              </span>
+            </div>
+            <div class="usageProgressTrack">
+              <div
+                class="usageProgressBar"
+                :class="{
+                  'usageProgressBar--warn': planProgressPct > 80,
+                  'usageProgressBar--danger': planProgressPct > 95,
+                }"
+                :style="{ width: planProgressPct + '%' }"
+              />
+            </div>
+          </div>
+
+          <!-- Insights row -->
+          <div class="usageInsights">
+            <div v-if="daysUntilReset !== null" class="usageInsightItem">
+              <span class="usageInsightIcon">⏱</span>
+              <span>{{ strings.usageResetsIn }} <strong>{{ daysUntilReset }}</strong> {{ strings.usageDays }}</span>
+              <span v-if="cycleResetDate" class="usageInsightSub">({{ cycleResetDate.toISOString().slice(0, 10) }})</span>
+            </div>
+            <div class="usageInsightItem">
+              <span class="usageInsightIcon">📊</span>
+              <span>{{ strings.usageDailyAvg }}: <strong>{{ avgRequestsPerDay.toFixed(1) }}</strong> {{ strings.usageReqPerDay }}</span>
+            </div>
+            <div v-if="daysUntilExhausted !== null && daysUntilExhausted <= (daysUntilReset ?? 999)" class="usageInsightItem usageInsightItem--warn">
+              <span class="usageInsightIcon">⚠️</span>
+              <span>{{ strings.usageExhaustedIn }} <strong>~{{ daysUntilExhausted }}</strong> {{ strings.usageExhaustedDays }}</span>
+            </div>
+          </div>
+
+          <!-- Details card -->
+          <div class="usagePopoverSummaryCard">
+            <div class="usagePopoverRow">
+              <span class="usagePopoverRowLabel">{{ strings.usageMembership }}</span>
+              <span class="usagePopoverRowValue usagePopoverRowValue--badge">
+                {{ usageSummary.membershipType }}
+              </span>
+            </div>
+            <div v-if="planPriceLabel" class="usagePopoverRow">
+              <span class="usagePopoverRowLabel">{{ strings.usagePlanCost }}</span>
+              <span class="usagePopoverRowValue">{{ planPriceLabel }}</span>
+            </div>
+            <div class="usagePopoverRow">
+              <span class="usagePopoverRowLabel">{{ strings.usageBillingCycle }}</span>
+              <span class="usagePopoverRowValue">
+                {{ usageSummary.billingCycleStart?.slice(0, 10) }}
+                <template v-if="usageSummary.billingCycleEnd"> → {{ usageSummary.billingCycleEnd.slice(0, 10) }}</template>
+              </span>
+            </div>
+            <div class="usagePopoverRow">
+              <span class="usagePopoverRowLabel">{{ strings.usageOnDemandUsed }}</span>
+              <span class="usagePopoverRowValue">
+                ${{ (usageSummary.individualUsage.onDemand.used / 100).toFixed(2) }}
+                <template v-if="usageSummary.individualUsage.onDemand.limit > 0">
+                  / ${{ (usageSummary.individualUsage.onDemand.limit / 100).toFixed(2) }}
+                </template>
+              </span>
+            </div>
+            <div class="usagePopoverRow">
+              <span class="usagePopoverRowLabel">{{ strings.usageOnDemandCap }}</span>
+              <span class="usagePopoverRowValue">
+                <template v-if="usageSummary.individualUsage.onDemand.limit > 0">
+                  ${{ (usageSummary.individualUsage.onDemand.limit / 100).toFixed(2) }}
+                </template>
+                <template v-else-if="usageSummary.onDemandAutoEnabled">
+                  <a
+                    href="#"
+                    class="usagePopoverLink"
+                    @click.prevent="openDashboard"
+                  >{{ strings.usageOnDemandViewDashboard }}</a>
+                </template>
+                <template v-else>
+                  {{ strings.usageOnDemandDisabled }}
+                </template>
+              </span>
+            </div>
+            <div v-if="usageSummary.teamUsage" class="usagePopoverRow">
+              <span class="usagePopoverRowLabel">{{ strings.usageTeamOnDemand }}</span>
+              <span class="usagePopoverRowValue">${{ (usageSummary.teamUsage.onDemand.used / 100).toFixed(2) }}</span>
+            </div>
+          </div>
+          <div class="usagePopoverEventsSection">
+            <h4 class="usagePopoverEventsTitle">{{ strings.usageRecentTitle }}</h4>
+            <div v-if="usageEvents.length" class="usagePopoverEventsTable">
+              <div
+                v-for="(ev, idx) in usageEvents"
+                :key="idx"
+                class="usagePopoverEventRow"
+                @mouseenter="onEventMouseEnter(ev, $event)"
+                @mouseleave="onEventMouseLeave"
+              >
+                <span class="usagePopoverEventTime">{{ formatEventTime(ev.timestamp) }}</span>
+                <span class="usagePopoverEventModel">{{ ev.model }}</span>
+                <span class="usagePopoverEventKind">{{ ev.kind }}</span>
+                <span class="usagePopoverEventCost">
+                  {{ ev.tokenUsage ? `${Math.round(ev.tokenUsage.inputTokens + ev.tokenUsage.outputTokens)} tok` : '' }}
+                </span>
+                <span class="usagePopoverEventCents">
+                  {{ ev.chargedCents > 0 ? `$${(ev.chargedCents / 100).toFixed(3)}` : ev.requestsCosts ? `${ev.requestsCosts} req` : '—' }}
+                </span>
+              </div>
+            </div>
+            <p v-else class="usagePopoverNoEvents">{{ strings.usageNoEvents }}</p>
+            <button
+              v-if="usageEvents.length < usageEventsTotal"
+              type="button"
+              class="usagePopoverLoadMore"
+              :disabled="usageLoadingEvents"
+              @click="loadUsageEvents(usageEventsPage + 1)"
+            >
+              {{ usageLoadingEvents ? strings.usageRefreshing : strings.usageLoadMore }}
+            </button>
+          </div>
+        </div>
+        <footer class="usagePopoverFooter">
+          <button
+            type="button"
+            class="usagePopoverRefreshBtn"
+            :disabled="usageLoading"
+            @click="refreshUsage"
+          >
+            {{ usageLoading ? strings.usageRefreshing : strings.usageRefreshBtn }}
+          </button>
+        </footer>
+      </aside>
+    </div>
 
     <div
       v-if="lightboxSrc"
@@ -1877,5 +2123,26 @@ onBeforeUnmount(() => {
     >
       {{ settingsRefreshToast.text }}
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="hoveredEvent"
+        class="eventTooltip"
+        :style="hoverTooltipStyle"
+      >
+        <div class="eventTooltipRow"><span class="eventTooltipLabel">Time</span><span>{{ formatEventTime(hoveredEvent.timestamp) }}</span></div>
+        <div class="eventTooltipRow"><span class="eventTooltipLabel">Model</span><span>{{ hoveredEvent.model }}</span></div>
+        <div class="eventTooltipRow"><span class="eventTooltipLabel">Kind</span><span>{{ hoveredEvent.kind.replace('USAGE_EVENT_KIND_', '') }}</span></div>
+        <div v-if="hoveredEvent.requestsCosts" class="eventTooltipRow"><span class="eventTooltipLabel">Requests</span><span>{{ hoveredEvent.requestsCosts }}</span></div>
+        <template v-if="hoveredEvent.tokenUsage">
+          <div class="eventTooltipRow"><span class="eventTooltipLabel">Input</span><span>{{ hoveredEvent.tokenUsage.inputTokens.toLocaleString() }} tok</span></div>
+          <div class="eventTooltipRow"><span class="eventTooltipLabel">Output</span><span>{{ hoveredEvent.tokenUsage.outputTokens.toLocaleString() }} tok</span></div>
+          <div v-if="hoveredEvent.tokenUsage.cacheReadTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache read</span><span>{{ hoveredEvent.tokenUsage.cacheReadTokens.toLocaleString() }} tok</span></div>
+          <div v-if="hoveredEvent.tokenUsage.cacheWriteTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache write</span><span>{{ hoveredEvent.tokenUsage.cacheWriteTokens.toLocaleString() }} tok</span></div>
+          <div class="eventTooltipRow"><span class="eventTooltipLabel">Cost</span><span>${{ (hoveredEvent.tokenUsage.totalCents / 100).toFixed(4) }}</span></div>
+        </template>
+        <div v-if="hoveredEvent.chargedCents > 0" class="eventTooltipRow eventTooltipRow--highlight"><span class="eventTooltipLabel">Charged</span><span>${{ (hoveredEvent.chargedCents / 100).toFixed(3) }}</span></div>
+      </div>
+    </Teleport>
   </main>
 </template>
