@@ -683,7 +683,7 @@ fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
     let ciphertext = &encrypted[3..];
 
     unsafe {
-        let mut input = CRYPT_INTEGER_BLOB {
+        let input = CRYPT_INTEGER_BLOB {
             cbData: ciphertext.len() as u32,
             pbData: ciphertext.as_ptr() as *mut u8,
         };
@@ -692,7 +692,7 @@ fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
             pbData: ptr::null_mut(),
         };
         let ret = CryptUnprotectData(
-            &mut input,
+            &input,
             ptr::null_mut(),
             ptr::null_mut(),
             ptr::null_mut(),
