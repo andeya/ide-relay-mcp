@@ -803,20 +803,22 @@ fn run_tauri(initial: LaunchState) {
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Relay");
-    app.run(|app, event| match event {
-        tauri::RunEvent::Reopen { .. } => {
+    app.run(|app, event| {
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = &event {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.set_focus();
             }
         }
-        tauri::RunEvent::Exit => {
+        if let tauri::RunEvent::Exit = event {
             relay_mcp::remove_gui_presence_marker();
             if let Ok(p) = relay_mcp::mcp_http::gui_endpoint_path() {
                 let _ = std::fs::remove_file(p);
             }
         }
-        _ => {}
+        #[cfg(not(target_os = "macos"))]
+        let _ = app;
     });
 }
 
