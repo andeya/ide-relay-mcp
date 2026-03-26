@@ -1,5 +1,5 @@
 //! MCP process: discover GUI HTTP endpoint and call feedback API.
-//! Tool-result bodies from `GET /v1/feedback/wait` pass through [`crate::mcp_wsl_paths::transform_tool_result_json_for_mcp_host`] here (WSL attachment paths when `relay mcp --exe_in_wsl`).
+//! Tool-result bodies from `GET /v1/feedback/wait` pass through [`crate::mcp_wsl_paths::transform_tool_result_json_for_mcp_host`] here (WSL attachment paths when `relay mcp-<ide> --exe_in_wsl`).
 //!
 //! ## Timeouts
 //! - `GET /v1/feedback/wait/:id` is **completed by the GUI** (submit, dismiss, supersede,
@@ -16,7 +16,14 @@ use std::time::{Duration, Instant};
 
 use crate::user_data_dir;
 
-pub const GUI_ENDPOINT_FILE: &str = "gui_endpoint.json";
+/// Per-IDE endpoint file name. Falls back to generic when no IDE is set.
+pub fn gui_endpoint_file_name() -> String {
+    if let Some(ide) = crate::ide::get_process_ide() {
+        format!("gui_endpoint_{}.json", ide.cli_id())
+    } else {
+        "gui_endpoint.json".to_string()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuiEndpoint {
@@ -27,7 +34,7 @@ pub struct GuiEndpoint {
 }
 
 pub fn gui_endpoint_path() -> Result<PathBuf> {
-    Ok(user_data_dir()?.join(GUI_ENDPOINT_FILE))
+    Ok(user_data_dir()?.join(gui_endpoint_file_name()))
 }
 
 pub fn read_gui_endpoint() -> Result<Option<GuiEndpoint>> {
@@ -36,6 +43,22 @@ pub fn read_gui_endpoint() -> Result<Option<GuiEndpoint>> {
         return Ok(None);
     };
     Ok(serde_json::from_str(&text).ok())
+}
+
+/// Check whether a GUI process for a specific IDE is alive
+/// (by reading its endpoint file and hitting health).
+pub fn is_ide_gui_alive(ide: crate::ide::IdeKind) -> bool {
+    let Ok(dir) = user_data_dir() else {
+        return false;
+    };
+    let ep_path = dir.join(format!("gui_endpoint_{}.json", ide.cli_id()));
+    let Ok(text) = fs::read_to_string(&ep_path) else {
+        return false;
+    };
+    let Ok(ep) = serde_json::from_str::<GuiEndpoint>(&text) else {
+        return false;
+    };
+    health_ok(&ep)
 }
 
 fn health_ok(ep: &GuiEndpoint) -> bool {
@@ -48,27 +71,62 @@ fn health_ok(ep: &GuiEndpoint) -> bool {
         .unwrap_or(false)
 }
 
+/// Scan all IDE-specific endpoint files for a healthy GUI (used by `relay feedback`
+/// which runs without a specific IDE mode).
+fn find_any_healthy_gui_endpoint() -> Option<GuiEndpoint> {
+    let dir = user_data_dir().ok()?;
+    for ide in &[
+        crate::ide::IdeKind::Cursor,
+        crate::ide::IdeKind::ClaudeCode,
+        crate::ide::IdeKind::Windsurf,
+        crate::ide::IdeKind::Other,
+    ] {
+        let ep_path = dir.join(format!("gui_endpoint_{}.json", ide.cli_id()));
+        if let Ok(text) = fs::read_to_string(&ep_path) {
+            if let Ok(ep) = serde_json::from_str::<GuiEndpoint>(&text) {
+                if health_ok(&ep) {
+                    return Some(ep);
+                }
+            }
+        }
+    }
+    // Also try the generic endpoint file (bare `relay` hub mode)
+    let generic = dir.join("gui_endpoint.json");
+    if let Ok(text) = fs::read_to_string(&generic) {
+        if let Ok(ep) = serde_json::from_str::<GuiEndpoint>(&text) {
+            if health_ok(&ep) {
+                return Some(ep);
+            }
+        }
+    }
+    None
+}
+
 fn spawn_gui() -> Result<()> {
     let exe = std::env::current_exe().context("current_exe")?;
+    let ide = crate::ide::get_process_ide()
+        .context("cannot spawn GUI: no IDE mode set for this MCP process")?;
+    let gui_subcmd = format!("gui-{}", ide.cli_id());
     let mut cmd = Command::new(exe);
-    cmd.arg("gui")
+    cmd.arg(&gui_subcmd)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    // Windows: without this, spawning `relay gui` from `relay mcp` often opens a blank console window.
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    cmd.spawn().context("spawn relay gui")?;
+    cmd.spawn().context("spawn relay gui-<ide>")?;
     Ok(())
 }
 
 /// Wait until GUI exposes a healthy HTTP endpoint (spawn GUI if needed).
+/// When no IDE is set (e.g. `relay feedback`), scans all IDE endpoint files.
 pub fn ensure_gui_endpoint(max_wait: Duration) -> Result<GuiEndpoint> {
     let deadline = Instant::now() + max_wait;
+    let has_ide = crate::ide::get_process_ide().is_some();
     let mut spawned = false;
 
     loop {
@@ -76,14 +134,26 @@ pub fn ensure_gui_endpoint(max_wait: Duration) -> Result<GuiEndpoint> {
             anyhow::bail!("Relay GUI did not become ready within {:?}", max_wait);
         }
 
-        if let Some(ref ep) = read_gui_endpoint()? {
-            if health_ok(ep) {
-                return Ok(ep.clone());
+        if has_ide {
+            if let Some(ref ep) = read_gui_endpoint()? {
+                if health_ok(ep) {
+                    return Ok(ep.clone());
+                }
             }
+        } else if let Some(ep) = find_any_healthy_gui_endpoint() {
+            return Ok(ep);
         }
 
-        if !spawned {
+        if !spawned && has_ide {
             let _ = spawn_gui();
+            spawned = true;
+        }
+
+        if !has_ide && spawned {
+            anyhow::bail!("No running Relay GUI found. Start a GUI with `relay gui-<ide>` first.");
+        }
+
+        if !has_ide {
             spawned = true;
         }
 
@@ -105,6 +175,9 @@ pub fn feedback_round(
         "retell": retell,
         "relay_mcp_session_id": relay_mcp_session_id,
     });
+    if let Some(ide) = crate::ide::get_process_ide() {
+        body["ide_mode"] = serde_json::json!(ide.cli_id());
+    }
     if let Some(cmd_list) = commands {
         body["commands"] = serde_json::to_value(cmd_list).unwrap_or(serde_json::json!([]));
     }
