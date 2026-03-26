@@ -12,6 +12,7 @@ use tauri::Manager;
 
 pub mod auto_reply;
 pub mod config;
+pub mod cursor_usage;
 pub mod dock_edge_hide;
 pub mod gui_http;
 pub mod mcp_http;
@@ -186,6 +187,12 @@ pub struct QaRound {
     pub relay_mcp_session_id: String,
     #[serde(default)]
     pub reply_attachments: Vec<QaAttachmentRef>,
+    /// Wall-clock when the AI retell arrived (`YYYY-MM-DD HH:MM:SS` local).
+    #[serde(default)]
+    pub retell_at: String,
+    /// Wall-clock when the user submitted their reply (`YYYY-MM-DD HH:MM:SS` local).
+    #[serde(default)]
+    pub reply_at: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -242,9 +249,10 @@ pub fn reconcile_qa_rounds_when_tabs_empty_after_preview_strip(
 }
 
 /// One tab's merge input: log/archive rows ready to apply (built **without** holding `tabs` lock).
+/// Tuple: (retell, reply, skipped, attachments, retell_at, reply_at)
 pub type QaHydrationBundle = Vec<(
     LaunchState,
-    Vec<(String, String, bool, Vec<QaAttachmentRef>)>,
+    Vec<(String, String, bool, Vec<QaAttachmentRef>, String, String)>,
 )>;
 
 /// Read `qa_archive` and pair log rows per tab — may touch disk; do **not** call while holding `tabs`.
@@ -258,13 +266,13 @@ pub fn hydration_bundle_per_tab(
         let sid = tab.relay_mcp_session_id.trim();
         let from_log_pairs = crate::storage::feedback_log_pairs_for_session(parse, sid);
         let from_arch = crate::storage::qa_archive_load_session(dir, sid);
-        let source: Vec<(String, String, bool, Vec<QaAttachmentRef>)> =
+        let source: Vec<(String, String, bool, Vec<QaAttachmentRef>, String, String)> =
             if from_arch.len() > from_log_pairs.len() {
                 from_arch
             } else {
                 from_log_pairs
                     .into_iter()
-                    .map(|(r, p)| (r, p, false, vec![]))
+                    .map(|(r, p)| (r, p, false, vec![], String::new(), String::new()))
                     .collect()
             };
         out.push((tab, source));
@@ -295,7 +303,7 @@ pub fn apply_hydration_bundle(g: &mut FeedbackTabsState, bundle: &QaHydrationBun
         any_changed = true;
         g.qa_rounds.retain(|r| r.relay_mcp_session_id.trim() != sid);
 
-        for (retell, reply, skipped_flag, att) in source.iter() {
+        for (retell, reply, skipped_flag, att, r_at, p_at) in source.iter() {
             g.qa_rounds.push(QaRound {
                 retell: retell.clone(),
                 reply: reply.clone(),
@@ -304,12 +312,14 @@ pub fn apply_hydration_bundle(g: &mut FeedbackTabsState, bundle: &QaHydrationBun
                 tab_id: tab.tab_id.clone(),
                 relay_mcp_session_id: sid.to_string(),
                 reply_attachments: att.clone(),
+                retell_at: r_at.clone(),
+                reply_at: p_at.clone(),
             });
         }
 
         for r in mem.iter() {
             if !r.submitted {
-                let already_in_source = source.iter().any(|(t, _, _, _)| t == &r.retell);
+                let already_in_source = source.iter().any(|(t, _, _, _, _, _)| t == &r.retell);
                 if already_in_source {
                     continue;
                 }
@@ -353,6 +363,8 @@ pub fn push_qa_round(
         tab_id: tab_id.to_string(),
         relay_mcp_session_id: relay_mcp_session_id.to_string(),
         reply_attachments: vec![],
+        retell_at: crate::storage::timestamp_string(),
+        reply_at: String::new(),
     });
     trim_qa_rounds(g);
 }
@@ -365,9 +377,16 @@ pub fn skip_open_round_for_tab(g: &mut FeedbackTabsState, tab_id: &str) {
             let sid = r.relay_mcp_session_id.trim();
             if !sid.is_empty() {
                 if let Ok(dir) = prepare_user_data_dir() {
-                    if let Err(e) =
-                        crate::storage::qa_archive_append(&dir, sid, &r.retell, "", true, &[])
-                    {
+                    if let Err(e) = crate::storage::qa_archive_append(
+                        &dir,
+                        sid,
+                        &r.retell,
+                        "",
+                        true,
+                        &[],
+                        &r.retell_at,
+                        "",
+                    ) {
                         #[cfg(debug_assertions)]
                         eprintln!("relay: qa_archive_append: {e:#}");
                         #[cfg(not(debug_assertions))]
@@ -390,6 +409,7 @@ pub fn apply_reply_for_tab(
     for r in g.qa_rounds.iter_mut().rev() {
         if r.tab_id == tab_id && !r.submitted {
             r.submitted = true;
+            r.reply_at = crate::storage::timestamp_string();
             if skipped {
                 r.skipped = true;
                 r.reply.clear();
@@ -403,9 +423,16 @@ pub fn apply_reply_for_tab(
                 if let Ok(dir) = prepare_user_data_dir() {
                     let rep = if skipped { "" } else { reply };
                     let att = if skipped { &[][..] } else { attachments };
-                    if let Err(e) =
-                        crate::storage::qa_archive_append(&dir, sid, &r.retell, rep, skipped, att)
-                    {
+                    if let Err(e) = crate::storage::qa_archive_append(
+                        &dir,
+                        sid,
+                        &r.retell,
+                        rep,
+                        skipped,
+                        att,
+                        &r.retell_at,
+                        &r.reply_at,
+                    ) {
                         #[cfg(debug_assertions)]
                         eprintln!("relay: qa_archive_append: {e:#}");
                         #[cfg(not(debug_assertions))]
@@ -623,6 +650,8 @@ mod reconcile_qa_rounds_tests {
                 tab_id: "old".into(),
                 relay_mcp_session_id: sid.into(),
                 reply_attachments: vec![],
+                retell_at: String::new(),
+                reply_at: String::new(),
             }],
             persist_hub: false,
         }
@@ -672,6 +701,8 @@ mod reconcile_qa_rounds_tests {
                 tab_id: "t".into(),
                 relay_mcp_session_id: "".into(),
                 reply_attachments: vec![],
+                retell_at: String::new(),
+                reply_at: String::new(),
             }],
             persist_hub: false,
         };
