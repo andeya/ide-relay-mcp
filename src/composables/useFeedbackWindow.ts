@@ -19,7 +19,7 @@ import type {
 } from "../types/relay-app";
 import type { RelayComposerEditorExpose } from "../types/composer-cm";
 import {
-  feedbackTabLabel as tabLabel,
+  feedbackTabLabel,
   fileUrlToPath,
   filterAndSortSlashCommands,
   looksLikeSingleFilePath,
@@ -219,6 +219,15 @@ export function useFeedbackWindow() {
 
     const s = tab.retell?.trim();
     if (list.length === 0 && s) {
+      let retellAt = "";
+      const sid = (tab.relay_mcp_session_id || "").trim();
+      if (sid) {
+        const ms = Number(sid);
+        if (ms > 0) {
+          const d = new Date(ms);
+          retellAt = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+        }
+      }
       return [
         {
           retell: s,
@@ -227,6 +236,7 @@ export function useFeedbackWindow() {
           submitted: false,
           tab_id: tab.tab_id,
           relay_mcp_session_id: tab.relay_mcp_session_id || "",
+          retell_at: retellAt,
         },
       ];
     }
@@ -304,6 +314,53 @@ export function useFeedbackWindow() {
     }
     return { indeterminate: false, hue: "default" as const };
   });
+
+  const tabStatuses = ref<Map<string, ControlStatus | null>>(new Map());
+
+  async function refreshAllTabStatuses() {
+    const ts = tabs.value;
+    if (!ts.length) {
+      tabStatuses.value = new Map();
+      return;
+    }
+    const next = new Map<string, ControlStatus | null>();
+    for (const tab of ts) {
+      if (tab.tab_id === activeTabId.value) {
+        next.set(tab.tab_id, status.value);
+        continue;
+      }
+      try {
+        const st = await invoke<ControlStatus | null>("read_tab_status", { tabId: tab.tab_id });
+        next.set(tab.tab_id, st ?? null);
+      } catch {
+        next.set(tab.tab_id, null);
+      }
+    }
+    tabStatuses.value = next;
+  }
+
+  const tabTurnCounts = computed(() => {
+    const m = new Map<string, number>();
+    const raw = tabsState.value?.qa_rounds;
+    if (!Array.isArray(raw)) return m;
+    for (const tab of tabs.value) {
+      const sid = (tab.relay_mcp_session_id || "").trim();
+      if (!sid) continue;
+      const count = raw.filter((r) => (r.relay_mcp_session_id || "").trim() === sid).length;
+      if (count > 0) m.set(tab.tab_id, count);
+    }
+    return m;
+  });
+
+  function tabHue(tab: LaunchState): "hub" | "active" | "idle" | "expired" | "loading" | "default" {
+    if (tab.is_preview) return "hub";
+    const st = tab.tab_id === activeTabId.value ? status.value : (tabStatuses.value.get(tab.tab_id) ?? null);
+    if (st === "timed_out" || st === "cancelled") return "expired";
+    if (st === "idle") return "idle";
+    if (st === "active") return "active";
+    if (st === null && tab.tab_id) return "loading";
+    return "default";
+  }
 
   function revokeAllPreviews() {
     for (const p of pendingImages.value) {
@@ -465,6 +522,7 @@ export function useFeedbackWindow() {
           status.value = "active";
           await setWindowTitle();
         }
+        void refreshAllTabStatuses();
         return;
       }
       if (next === "idle") {
@@ -472,13 +530,21 @@ export function useFeedbackWindow() {
           status.value = "idle";
           await setWindowTitle();
         }
+        void refreshAllTabStatuses();
         return;
       }
-      if (next === undefined || next === null) return;
-      if (next === status.value) return;
+      if (next === undefined || next === null) {
+        void refreshAllTabStatuses();
+        return;
+      }
+      if (next === status.value) {
+        void refreshAllTabStatuses();
+        return;
+      }
       status.value = next;
       dragActive.value = false;
       await setWindowTitle();
+      void refreshAllTabStatuses();
     } catch {
       /* ignore */
     }
@@ -1076,6 +1142,7 @@ export function useFeedbackWindow() {
       for (const id of tabsState.value?.tabs.map((t) => t.tab_id) ?? []) {
         if (!before.has(id) && id !== cur) startFlash(id);
       }
+      void refreshAllTabStatuses();
     });
     unlistenDragDrop = await getCurrentWebview().onDragDropEvent((event) => {
       if (expired.value || closing) return;
@@ -1130,7 +1197,6 @@ export function useFeedbackWindow() {
     tabs,
     activeTabId,
     hasRealTabs,
-    tabLabel,
     selectTab,
     flashingTabIds,
     feedback,
@@ -1172,5 +1238,12 @@ export function useFeedbackWindow() {
     addAttachedFilesFromPicker,
     removePendingImage,
     removePendingFileDrop,
+    tabStatuses,
+    tabTurnCounts,
+    tabHue,
+    tabLabel: (tab: LaunchState) => {
+      void locale.value;
+      return feedbackTabLabel(tab);
+    },
   };
 }
