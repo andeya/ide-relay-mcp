@@ -56,6 +56,10 @@ export type QaRound = {
   relay_mcp_session_id?: string;
   /** Structured attachments for this Answer; prefer over `reply` marker parsing. */
   reply_attachments?: QaAttachmentRef[];
+  /** Wall-clock when the AI retell arrived (YYYY-MM-DD HH:MM:SS local). */
+  retell_at?: string;
+  /** Wall-clock when the user submitted their reply (YYYY-MM-DD HH:MM:SS local). */
+  reply_at?: string;
 };
 
 export type FeedbackTabsState = {
@@ -77,7 +81,64 @@ export type McpStatus = {
   reason?: string;
 };
 
-export type SettingsSegment = "setup" | "rulePrompts" | "cache";
+export type SettingsSegment = "setup" | "rulePrompts" | "cache" | "usage";
+
+export type CursorUsagePlanBlock = {
+  enabled: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+};
+
+export type CursorUsageOnDemandBlock = {
+  enabled: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+};
+
+export type CursorUsageSummary = {
+  billingCycleStart: string;
+  billingCycleEnd: string;
+  membershipType: string;
+  isYearlyPlan: boolean;
+  onDemandAutoEnabled: boolean;
+  individualUsage: {
+    plan: CursorUsagePlanBlock;
+    onDemand: CursorUsageOnDemandBlock;
+  };
+  teamUsage?: {
+    onDemand: CursorUsageOnDemandBlock;
+  };
+};
+
+export type CursorTokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  totalCents: number;
+};
+
+export type CursorUsageEvent = {
+  timestamp: string;
+  model: string;
+  kind: string;
+  requestsCosts?: number;
+  chargedCents: number;
+  isChargeable: boolean;
+  tokenUsage?: CursorTokenUsage;
+};
+
+export type CursorUsageEventsPage = {
+  totalUsageEventsCount: number;
+  usageEventsDisplay: CursorUsageEvent[];
+};
+
+export type CursorUsageSettings = {
+  refresh_on_new_session: boolean;
+  refresh_interval_minutes: number;
+};
 
 export type RelayCacheStats = {
   attachments_bytes: number;
