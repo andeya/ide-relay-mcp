@@ -2,18 +2,21 @@
 /**
  * Settings → Rule prompts: bilingual (中英合本) preview and copy, IDE snippet.
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import {
   getRelayRulePromptBilingual,
   type RulePromptMode,
 } from "../../ideRulesTemplates";
 import { locale, t } from "../../i18n";
 import { safeMarkdownToHtml } from "../../utils/safeMarkdown";
+import type { SettingsToastPayload } from "../../composables/useRelayCacheSettings";
 
 const props = defineProps<{
   strings: Record<string, string>;
   cursorMcpPath: string;
   windsurfMcpPath: string;
+  pushToast: (p: SettingsToastPayload) => void;
 }>();
 
 const rulePromptMode = ref<RulePromptMode>("mild");
@@ -25,6 +28,53 @@ const rulePromptView = ref<"md" | "src">("md");
 const rulePromptBilingualHtml = computed(() =>
   safeMarkdownToHtml(rulePromptBilingual.value),
 );
+
+const cursorRuleInstalled = ref(false);
+const cursorRuleBusy = ref(false);
+
+async function checkCursorRuleInstalled() {
+  try {
+    cursorRuleInstalled.value = await invoke<boolean>("get_cursor_rule_installed");
+  } catch {
+    cursorRuleInstalled.value = false;
+  }
+}
+
+async function installOrUpdateCursorRule() {
+  if (cursorRuleBusy.value) return;
+  const wasInstalled = cursorRuleInstalled.value;
+  cursorRuleBusy.value = true;
+  try {
+    await invoke("install_cursor_rule", { content: rulePromptBilingual.value });
+    cursorRuleInstalled.value = true;
+    const msg = wasInstalled ? t("rulePromptsUpdateOk") : t("rulePromptsInstallOk");
+    props.pushToast({ type: "ok", text: msg, durationMs: 3000 });
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    props.pushToast({ type: "err", text: `${t("rulePromptsInstallErr")} ${detail}`, durationMs: 4000 });
+  } finally {
+    cursorRuleBusy.value = false;
+  }
+}
+
+async function removeCursorRule() {
+  if (cursorRuleBusy.value) return;
+  cursorRuleBusy.value = true;
+  try {
+    await invoke("uninstall_cursor_rule");
+    cursorRuleInstalled.value = false;
+    props.pushToast({ type: "ok", text: t("rulePromptsRemoveOk"), durationMs: 3000 });
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    props.pushToast({ type: "err", text: `${t("rulePromptsRemoveErr")} ${detail}`, durationMs: 4000 });
+  } finally {
+    cursorRuleBusy.value = false;
+  }
+}
+
+onMounted(() => {
+  void checkCursorRuleInstalled();
+});
 
 function setRulePromptView(mode: "md" | "src") {
   rulePromptView.value = mode;
@@ -179,6 +229,27 @@ async function copyRulePrompt() {
               >
                 {{ S.rulePromptsCopy }}
               </button>
+              <button
+                type="button"
+                class="usageBtn usageBtn--primary rulePromptsCursorBtn"
+                :disabled="cursorRuleBusy"
+                @click="installOrUpdateCursorRule"
+              >
+                {{ cursorRuleInstalled ? S.rulePromptsUpdateCursor : S.rulePromptsInstallCursor }}
+              </button>
+              <button
+                v-if="cursorRuleInstalled"
+                type="button"
+                class="usageBtn usageBtn--ghost rulePromptsCursorBtn"
+                :disabled="cursorRuleBusy"
+                @click="removeCursorRule"
+              >
+                {{ S.rulePromptsRemoveCursor }}
+              </button>
+              <span
+                v-if="cursorRuleInstalled"
+                class="rulePromptsInstalledBadge"
+              >{{ S.rulePromptsInstalledBadge }}</span>
             </div>
           </div>
         </div>
