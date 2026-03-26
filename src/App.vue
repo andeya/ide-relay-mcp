@@ -16,9 +16,11 @@ import { useAppStrings } from "./composables/useAppStrings";
 import { useFeedbackWindow } from "./composables/useFeedbackWindow";
 import { useReleaseBadge } from "./composables/useReleaseBadge";
 import { useMcpAndPathSettings } from "./composables/useMcpAndPathSettings";
-import type { CommandItem, CursorUsageEvent, SettingsSegment } from "./types/relay-app";
+import type { CommandItem, CursorUsageEvent, IdeKind, SettingsSegment } from "./types/relay-app";
 import type { SettingsToastPayload } from "./composables/useRelayCacheSettings";
 import { useCursorUsage } from "./composables/useCursorUsage";
+import { useIdeBinding } from "./composables/useIdeBinding";
+import IdeSelectionPage from "./components/IdeSelectionPage.vue";
 import SettingsCachePanel from "./components/settings/SettingsCachePanel.vue";
 import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsPanel.vue";
 import SettingsUsagePanel from "./components/settings/SettingsUsagePanel.vue";
@@ -40,6 +42,31 @@ function formatTime(ts: string | undefined): string {
   return "";
 }
 
+const {
+  ideKind,
+  loaded: ideLoaded,
+  supportsMcpInject: ideSupportsMcpInject,
+  supportsUsage: ideSupportsUsage,
+  supportsRulePrompt: ideSupportsRulePrompt,
+  ideLabel,
+  switchIde: ideSwitchIde,
+} = useIdeBinding();
+
+const ideNeedsSelection = computed(() => ideLoaded.value && ideKind.value === null);
+const ideSwitchError = ref("");
+
+async function doSwitchIde(ide: IdeKind) {
+  ideSwitchError.value = "";
+  try {
+    await ideSwitchIde(ide);
+    showIdeSelectionOverlay.value = false;
+    window.location.reload();
+  } catch (e) {
+    ideSwitchError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+const showIdeSelectionOverlay = ref(false);
 const lightboxSrc = ref<string | null>(null);
 const windowDock = ref<"left" | "center" | "right">("left");
 const dockEdgeHide = ref(false);
@@ -288,18 +315,15 @@ watch(
 
 const {
   mcpJson,
-  mcpCursorInstalled,
-  mcpCursorReason,
-  cursorMcpPath,
-  mcpWindsurfInstalled,
-  mcpWindsurfReason,
-  windsurfMcpPath,
-  mcpWindsurfBusy,
+  ideMcpInstalled,
+  ideRuleInstalled,
+  ideMcpPath,
   hubMsg,
   hubErr,
   hubInstallBusy,
   hubUninstallBusy,
-  mcpCursorBusy,
+  ideInstallBusy,
+  ideUninstallBusy,
   copyToast,
   pathEnv,
   pathEnvMsg,
@@ -308,50 +332,47 @@ const {
   ideHintsBlock,
   refreshMcpHub,
   copyMcpJson,
-  doFullInstall,
-  runFullUninstall,
-  installCursorMcpOnly,
-  uninstallCursorMcpOnly,
-  installWindsurfMcpOnly,
-  uninstallWindsurfMcpOnly,
+  doPublicInstall,
+  runPublicUninstall,
+  doIdeInstall,
+  runIdeUninstall,
   configureRelayPath,
-} = useMcpAndPathSettings();
+} = useMcpAndPathSettings(ideLabel, ideKind);
 
-const { strings } = useAppStrings();
+const { strings } = useAppStrings(ideLabel, ideKind);
 
 const showUninstallConfirm = ref(false);
+const showIdeUninstallConfirm = ref(false);
 
-function onUninstallClick() {
+function onPublicUninstallClick() {
   showUninstallConfirm.value = true;
+}
+function onIdeUninstallClick() {
+  showIdeUninstallConfirm.value = true;
 }
 
 function cancelUninstallConfirm() {
   showUninstallConfirm.value = false;
 }
-
-async function confirmAndRunUninstall() {
-  showUninstallConfirm.value = false;
-  await runFullUninstall();
+function cancelIdeUninstallConfirm() {
+  showIdeUninstallConfirm.value = false;
 }
 
-/** PATH + Cursor MCP + Windsurf MCP all OK — hide primary install. */
-const setupAllConfigured = computed(
-  () =>
-    Boolean(
-      pathEnv.value?.configured &&
-        mcpCursorInstalled.value &&
-        mcpWindsurfInstalled.value,
-    ),
-);
+async function confirmAndRunPublicUninstall() {
+  showUninstallConfirm.value = false;
+  await runPublicUninstall();
+}
 
-const setupAnythingInstalled = computed(() =>
-  Boolean(
-    pathEnv.value &&
-      (pathEnv.value.configured ||
-        mcpCursorInstalled.value ||
-        mcpWindsurfInstalled.value),
-  ),
-);
+async function confirmAndRunIdeUninstall() {
+  showIdeUninstallConfirm.value = false;
+  await runIdeUninstall();
+}
+
+const publicConfigured = computed(() => Boolean(pathEnv.value?.configured));
+const ideConfigured = computed(() => ideMcpInstalled.value && ideRuleInstalled.value);
+
+/** PATH + bound IDE MCP + rule OK — hide primary install. */
+const setupAllConfigured = computed(() => publicConfigured.value && ideConfigured.value);
 
 const uiView = ref<"main" | "settings">("main");
 watch(hasRealTabs, (v) => {
@@ -377,6 +398,7 @@ function pushSettingsToast(p: SettingsToastPayload) {
 const cacheSegmentActive = computed(() => settingsSeg.value === "cache");
 const usageSegmentActive = computed(() => settingsSeg.value === "usage");
 
+const cursorUsage = useCursorUsage(usageSegmentActive, pushSettingsToast);
 const {
   usageSummary,
   loading: usageLoading,
@@ -395,7 +417,7 @@ const {
   planPriceLabel,
   refreshUsage,
   loadEvents: loadUsageEvents,
-} = useCursorUsage(usageSegmentActive, pushSettingsToast);
+} = cursorUsage;
 
 function formatEventTime(ts: string): string {
   const n = Number(ts);
@@ -680,7 +702,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <IdeSelectionPage
+    v-if="ideNeedsSelection"
+    :strings="strings"
+    :error="ideSwitchError"
+    @select="doSwitchIde"
+  />
   <main
+    v-else
     class="shell"
     :class="{
       dragActive,
@@ -712,7 +741,7 @@ onBeforeUnmount(() => {
               <h1 class="mainTitle">{{ strings.appTitle }}</h1>
             </div>
             <button
-              v-if="usageSummary"
+              v-if="ideSupportsUsage && usageSummary"
               type="button"
               class="usageCapsule"
               :class="{ 'usageCapsule--warn': usageCapsuleWarn }"
@@ -723,7 +752,7 @@ onBeforeUnmount(() => {
               {{ usageCapsuleLabel }}
             </button>
             <span
-              v-else-if="usageLoading"
+              v-else-if="ideSupportsUsage && usageLoading"
               class="usageCapsule usageCapsule--loading"
               :title="strings.usageCapsuleTitle"
             >
@@ -1346,6 +1375,14 @@ onBeforeUnmount(() => {
           </div>
           <button
             type="button"
+            class="langBtn ideModeBtnHeader"
+            :title="strings.ideSettingsChangeBtn"
+            @click="showIdeSelectionOverlay = true"
+          >
+            {{ ideLabel || strings.ideSelectPlaceholder }}
+          </button>
+          <button
+            type="button"
             class="secondary settingsCheckBtn settingsCheckBtn--icon"
             :class="{ 'settingsCheckBtn--busy': settingsCheckBusy }"
             :disabled="settingsCheckBusy"
@@ -1374,6 +1411,7 @@ onBeforeUnmount(() => {
           {{ strings.segSetup }}
         </button>
         <button
+          v-if="ideSupportsRulePrompt"
           type="button"
           role="tab"
           class="segTab"
@@ -1397,6 +1435,7 @@ onBeforeUnmount(() => {
           {{ strings.segCache }}
         </button>
         <button
+          v-if="ideSupportsUsage"
           type="button"
           role="tab"
           class="segTab"
@@ -1425,75 +1464,42 @@ onBeforeUnmount(() => {
               </p>
             </header>
 
+            <!-- Public config (PATH) -->
             <section
               v-if="pathEnv"
               class="setupActionsStrip"
-              :aria-label="strings.setupActionsAria"
+              :aria-label="strings.setupSectionPublic"
             >
               <div class="setupActionsStripHead">
                 <div class="setupActionsStripCopy">
-                  <p
-                    v-if="setupAllConfigured"
-                    class="setupActionsStripLead setupActionsStripLead--ok"
-                  >
-                    {{ strings.setupNoInstallNeeded }}
+                  <p class="setupActionsStripLead" :class="{ 'setupActionsStripLead--ok': publicConfigured }">
+                    {{ strings.setupSectionPublic }}
                   </p>
-                  <template v-else>
-                    <p class="setupActionsStripLead">
-                      {{ strings.setupActionsStripNeedInstall }}
-                    </p>
-                    <p
-                      v-if="!setupAnythingInstalled"
-                      class="setupActionsStripSub"
-                    >
-                      {{ strings.setupUninstallOnlyHint }}
-                    </p>
-                  </template>
                 </div>
                 <div class="setupActionsStripBtns">
                   <button
-                    v-if="!setupAllConfigured"
+                    v-if="!publicConfigured"
                     type="button"
                     class="primary setupInstallBtnCompact"
                     :class="{ btnWithWait: hubInstallBusy }"
-                    :disabled="hubInstallBusy || hubUninstallBusy"
+                    :disabled="hubInstallBusy"
                     :aria-busy="hubInstallBusy"
-                    @click="doFullInstall"
+                    @click="doPublicInstall"
                   >
-                    <span
-                      v-if="hubInstallBusy"
-                      class="btnInlineSpinner"
-                      aria-hidden="true"
-                    />
-                    {{
-                      hubInstallBusy
-                        ? strings.mcpBusyInstallingAll
-                        : strings.setupBtnInstall
-                    }}
+                    <span v-if="hubInstallBusy" class="btnInlineSpinner" aria-hidden="true" />
+                    {{ strings.setupBtnPublicInstall }}
                   </button>
                   <button
-                    v-if="setupAnythingInstalled"
+                    v-if="publicConfigured"
                     type="button"
                     class="setupUninstallBtnCompact"
                     :class="{ btnWithWait: hubUninstallBusy }"
-                    :disabled="
-                      hubInstallBusy ||
-                      hubUninstallBusy ||
-                      showUninstallConfirm
-                    "
+                    :disabled="hubUninstallBusy || showUninstallConfirm"
                     :aria-busy="hubUninstallBusy"
-                    @click="onUninstallClick"
+                    @click="onPublicUninstallClick"
                   >
-                    <span
-                      v-if="hubUninstallBusy"
-                      class="btnInlineSpinner"
-                      aria-hidden="true"
-                    />
-                    {{
-                      hubUninstallBusy
-                        ? strings.mcpBusyUninstallingAll
-                        : strings.setupBtnUninstall
-                    }}
+                    <span v-if="hubUninstallBusy" class="btnInlineSpinner" aria-hidden="true" />
+                    {{ strings.setupBtnPublicUninstall }}
                   </button>
                 </div>
               </div>
@@ -1502,48 +1508,74 @@ onBeforeUnmount(() => {
                 class="uninstallConfirmBar"
                 role="dialog"
                 aria-modal="true"
-                :aria-label="strings.setupBtnUninstall"
+                :aria-label="strings.setupBtnPublicUninstall"
               >
-                <p class="uninstallConfirmText">
-                  {{ strings.mcpFullUninstallConfirm }}
-                </p>
+                <p class="uninstallConfirmText">{{ strings.publicUninstallConfirm }}</p>
                 <div class="uninstallConfirmBtns">
+                  <button type="button" class="secondary" @click="cancelUninstallConfirm">{{ strings.setupUninstallCancel }}</button>
+                  <button type="button" class="primary btnDanger" @click="confirmAndRunPublicUninstall">{{ strings.setupUninstallConfirmBtn }}</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- IDE-specific config (MCP + Rule) -->
+            <section
+              v-if="pathEnv && ideSupportsMcpInject"
+              class="setupActionsStrip"
+              :aria-label="strings.setupSectionIde"
+            >
+              <div class="setupActionsStripHead">
+                <div class="setupActionsStripCopy">
+                  <p class="setupActionsStripLead" :class="{ 'setupActionsStripLead--ok': ideConfigured }">
+                    {{ strings.setupSectionIde }}
+                  </p>
+                </div>
+                <div class="setupActionsStripBtns">
                   <button
+                    v-if="!ideConfigured"
                     type="button"
-                    class="secondary"
-                    @click="cancelUninstallConfirm"
+                    class="primary setupInstallBtnCompact"
+                    :class="{ btnWithWait: ideInstallBusy }"
+                    :disabled="ideInstallBusy"
+                    :aria-busy="ideInstallBusy"
+                    @click="doIdeInstall"
                   >
-                    {{ strings.setupUninstallCancel }}
+                    <span v-if="ideInstallBusy" class="btnInlineSpinner" aria-hidden="true" />
+                    {{ strings.setupBtnIdeInstall }}
                   </button>
                   <button
+                    v-if="ideConfigured"
                     type="button"
-                    class="primary btnDanger"
-                    @click="confirmAndRunUninstall"
+                    class="setupUninstallBtnCompact"
+                    :class="{ btnWithWait: ideUninstallBusy }"
+                    :disabled="ideUninstallBusy || showIdeUninstallConfirm"
+                    :aria-busy="ideUninstallBusy"
+                    @click="onIdeUninstallClick"
                   >
-                    {{ strings.setupUninstallConfirmBtn }}
+                    <span v-if="ideUninstallBusy" class="btnInlineSpinner" aria-hidden="true" />
+                    {{ strings.setupBtnIdeUninstall }}
                   </button>
                 </div>
               </div>
-              <p
-                v-if="pathEnv && !setupAllConfigured"
-                class="setupActionsFoot"
+              <div
+                v-if="showIdeUninstallConfirm"
+                class="uninstallConfirmBar"
+                role="dialog"
+                aria-modal="true"
+                :aria-label="strings.setupBtnIdeUninstall"
               >
-                {{ strings.setupInstallHint }}
-              </p>
-              <p
-                v-if="pathEnv && setupAnythingInstalled"
-                class="setupActionsFoot setupActionsFoot--muted"
-              >
-                {{ strings.setupUninstallHint }}
-              </p>
+                <p class="uninstallConfirmText">{{ strings.ideUninstallConfirm }}</p>
+                <div class="uninstallConfirmBtns">
+                  <button type="button" class="secondary" @click="cancelIdeUninstallConfirm">{{ strings.setupUninstallCancel }}</button>
+                  <button type="button" class="primary btnDanger" @click="confirmAndRunIdeUninstall">{{ strings.setupUninstallConfirmBtn }}</button>
+                </div>
+              </div>
               <p v-if="hubMsg" class="note setupHubMsg">{{ hubMsg }}</p>
               <p v-if="hubErr" class="error setupHubErr">{{ hubErr }}</p>
-              <p class="setupInstallChangesNote setupInstallChangesNote--inStrip">
-                {{ strings.setupInstallChangesNote }}
-              </p>
             </section>
 
             <section
+              v-if="ideSupportsMcpInject"
               class="setupMcpPauseCard"
               :aria-label="strings.mcpPauseTitle"
             >
@@ -1579,7 +1611,7 @@ onBeforeUnmount(() => {
               </p>
             </section>
 
-            <section class="setupStatus" :aria-label="strings.setupStatus">
+            <section v-if="ideSupportsMcpInject" class="setupStatus" :aria-label="strings.setupStatus">
               <span class="setupStatusLabel">{{ strings.setupStatus }}</span>
               <ul v-if="pathEnv" class="setupStatusList">
                 <li class="setupStatusItem">
@@ -1609,56 +1641,40 @@ onBeforeUnmount(() => {
                 </li>
                 <li class="setupStatusItem">
                   <div class="setupStatusItemTop">
-                    <span class="setupStatusItemTitle">{{
-                      strings.setupChipCursor
-                    }}</span>
+                    <span class="setupStatusItemTitle">{{ ideLabel }} MCP</span>
                     <span
                       class="setupStatusBadge"
                       :class="{
-                        'setupStatusBadge--ok': mcpCursorInstalled,
+                        'setupStatusBadge--ok': ideMcpInstalled,
                       }"
                       >{{
-                        mcpCursorInstalled ? strings.setupOn : strings.setupOff
+                        ideMcpInstalled ? strings.setupOn : strings.setupOff
                       }}</span>
                   </div>
                   <p class="setupStatusExplain">
-                    {{ strings.setupCursorExplain }}
+                    {{ strings.setupMcpExplain }}
                   </p>
-                  <p v-if="!mcpCursorInstalled && mcpCursorReason" class="setupStatusReason">
-                    {{ mcpCursorReason }}
-                  </p>
-                  <p class="setupStatusMeta">
+                  <p v-if="ideMcpPath" class="setupStatusMeta">
                     <span class="setupStatusMetaKey">{{
                       strings.setupConfigFile
                     }}</span>
-                    <code class="setupStatusCode">{{ cursorMcpPath }}</code>
+                    <code class="setupStatusCode">{{ ideMcpPath }}</code>
                   </p>
                 </li>
                 <li class="setupStatusItem">
                   <div class="setupStatusItemTop">
-                    <span class="setupStatusItemTitle">{{
-                      strings.setupChipWindsurf
-                    }}</span>
+                    <span class="setupStatusItemTitle">{{ ideLabel }} Rule</span>
                     <span
                       class="setupStatusBadge"
                       :class="{
-                        'setupStatusBadge--ok': mcpWindsurfInstalled,
+                        'setupStatusBadge--ok': ideRuleInstalled,
                       }"
                       >{{
-                        mcpWindsurfInstalled ? strings.setupOn : strings.setupOff
+                        ideRuleInstalled ? strings.setupOn : strings.setupOff
                       }}</span>
                   </div>
                   <p class="setupStatusExplain">
-                    {{ strings.setupWindsurfExplain }}
-                  </p>
-                  <p v-if="!mcpWindsurfInstalled && mcpWindsurfReason" class="setupStatusReason">
-                    {{ mcpWindsurfReason }}
-                  </p>
-                  <p class="setupStatusMeta">
-                    <span class="setupStatusMetaKey">{{
-                      strings.setupConfigFile
-                    }}</span>
-                    <code class="setupStatusCode">{{ windsurfMcpPath }}</code>
+                    {{ strings.setupRuleExplain }}
                   </p>
                 </li>
               </ul>
@@ -1667,7 +1683,7 @@ onBeforeUnmount(() => {
 
             <section
               class="setupConfigFrame setupConfigFrame--tools"
-              :aria-label="`${strings.setupToolParamsTitle} · ${strings.setupAdvSingle}`"
+              :aria-label="strings.setupToolParamsTitle"
             >
               <div class="setupConfigFrameBody setupConfigFrameBody--center">
                 <h4 class="setupConfigFrameTitle">{{ strings.setupToolParamsTitle }}</h4>
@@ -1690,143 +1706,6 @@ onBeforeUnmount(() => {
                       class="mcpPreview mcpPreviewToolsEmbed"
                       tabindex="0"
                     >{{ mcpJson }}</pre>
-                  </div>
-                </div>
-                <div class="setupToolsIdeEmbed">
-                  <h5 class="setupToolsIdeEmbedTitle">{{ strings.setupAdvSingle }}</h5>
-                  <div class="advIdeGrid advIdeGrid--embed">
-                    <div class="setupConfigFrame advIdeFrame">
-                      <div class="setupConfigFrameBar">
-                        <div class="setupConfigFrameBarActions">
-                          <button
-                            v-if="!mcpCursorInstalled"
-                            type="button"
-                            class="secondary setupConfigFrameBtn"
-                            :class="{ btnWithWait: mcpCursorBusy }"
-                            :disabled="mcpCursorBusy || mcpWindsurfBusy"
-                            :aria-busy="mcpCursorBusy"
-                            @click="installCursorMcpOnly"
-                          >
-                            <span
-                              v-if="mcpCursorBusy"
-                              class="btnInlineSpinner"
-                              aria-hidden="true"
-                            />
-                            {{
-                              mcpCursorBusy
-                                ? strings.mcpBusyCursorMcp
-                                : strings.mcpInstallCursorOnly
-                            }}
-                          </button>
-                          <button
-                            v-if="mcpCursorInstalled"
-                            type="button"
-                            class="secondary setupConfigFrameBtn"
-                            :class="{ btnWithWait: mcpCursorBusy }"
-                            :disabled="mcpCursorBusy || mcpWindsurfBusy"
-                            :aria-busy="mcpCursorBusy"
-                            @click="uninstallCursorMcpOnly"
-                          >
-                            <span
-                              v-if="mcpCursorBusy"
-                              class="btnInlineSpinner"
-                              aria-hidden="true"
-                            />
-                            {{
-                              mcpCursorBusy
-                                ? strings.mcpBusyCursorMcp
-                                : strings.mcpUninstallCursorOnly
-                            }}
-                          </button>
-                        </div>
-                      </div>
-                      <div class="setupConfigFrameBody setupConfigFrameBody--ideCard">
-                        <p class="advIdeLine">
-                          <span class="advIdeProduct">{{
-                            strings.mcpCursorFile
-                          }}</span>
-                          <span
-                            class="advIdeState"
-                            :class="{ ok: mcpCursorInstalled }"
-                          >
-                            {{
-                              mcpCursorInstalled
-                                ? strings.mcpInCursor
-                                : strings.mcpNotInCursor
-                            }}
-                          </span>
-                        </p>
-                        <code class="advIdePath advIdePath--inCard">{{
-                          cursorMcpPath
-                        }}</code>
-                      </div>
-                    </div>
-                    <div class="setupConfigFrame advIdeFrame">
-                      <div class="setupConfigFrameBar">
-                        <div class="setupConfigFrameBarActions">
-                          <button
-                            v-if="!mcpWindsurfInstalled"
-                            type="button"
-                            class="secondary setupConfigFrameBtn"
-                            :class="{ btnWithWait: mcpWindsurfBusy }"
-                            :disabled="mcpWindsurfBusy || mcpCursorBusy"
-                            :aria-busy="mcpWindsurfBusy"
-                            @click="installWindsurfMcpOnly"
-                          >
-                            <span
-                              v-if="mcpWindsurfBusy"
-                              class="btnInlineSpinner"
-                              aria-hidden="true"
-                            />
-                            {{
-                              mcpWindsurfBusy
-                                ? strings.mcpBusyWindsurfMcp
-                                : strings.mcpInstallWindsurfOnly
-                            }}
-                          </button>
-                          <button
-                            v-if="mcpWindsurfInstalled"
-                            type="button"
-                            class="secondary setupConfigFrameBtn"
-                            :class="{ btnWithWait: mcpWindsurfBusy }"
-                            :disabled="mcpWindsurfBusy || mcpCursorBusy"
-                            :aria-busy="mcpWindsurfBusy"
-                            @click="uninstallWindsurfMcpOnly"
-                          >
-                            <span
-                              v-if="mcpWindsurfBusy"
-                              class="btnInlineSpinner"
-                              aria-hidden="true"
-                            />
-                            {{
-                              mcpWindsurfBusy
-                                ? strings.mcpBusyWindsurfMcp
-                                : strings.mcpUninstallWindsurfOnly
-                            }}
-                          </button>
-                        </div>
-                      </div>
-                      <div class="setupConfigFrameBody setupConfigFrameBody--ideCard">
-                        <p class="advIdeLine">
-                          <span class="advIdeProduct">{{
-                            strings.mcpWindsurfFile
-                          }}</span>
-                          <span
-                            class="advIdeState"
-                            :class="{ ok: mcpWindsurfInstalled }"
-                          >
-                            {{
-                              mcpWindsurfInstalled
-                                ? strings.mcpInWindsurf
-                                : strings.mcpNotInWindsurf
-                            }}
-                          </span>
-                        </p>
-                        <code class="advIdePath advIdePath--inCard">{{
-                          windsurfMcpPath
-                        }}</code>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -1873,14 +1752,7 @@ onBeforeUnmount(() => {
                   </p>
                 </div>
 
-                <details class="setupNested">
-                  <summary>{{ strings.setupJsonPreview }}</summary>
-                  <p class="advJsonCaption">{{ strings.mcpJsonTitle }}</p>
-                  <pre class="mcpPreview mcpPreviewAdv" tabindex="0">{{
-                    mcpJson
-                  }}</pre>
-                </details>
-                <details class="setupNested">
+                <details v-if="ideHintsBlock" class="setupNested">
                   <summary>{{ strings.setupIdeGuide }}</summary>
                   <pre class="ideHintsPre ideHintsAdv">{{ ideHintsBlock }}</pre>
                 </details>
@@ -1890,10 +1762,13 @@ onBeforeUnmount(() => {
         </div>
 
         <SettingsRulePromptsPanel
+          v-if="ideSupportsRulePrompt"
           v-show="settingsSeg === 'rulePrompts'"
           :strings="strings"
-          :cursor-mcp-path="cursorMcpPath || ''"
-          :windsurf-mcp-path="windsurfMcpPath || ''"
+          :ide-label="ideLabel"
+          :ide-kind="ideKind"
+          :ide-mcp-path="ideMcpPath"
+          :active="settingsSeg === 'rulePrompts'"
           :push-toast="pushSettingsToast"
         />
 
@@ -1904,9 +1779,10 @@ onBeforeUnmount(() => {
         />
 
         <SettingsUsagePanel
+          v-if="ideSupportsUsage"
           :usage-segment-active="usageSegmentActive"
           :strings="strings"
-          :push-toast="pushSettingsToast"
+          :usage="cursorUsage"
         />
 
         <footer class="settingsAppFooter">
@@ -2142,6 +2018,16 @@ onBeforeUnmount(() => {
           <div class="eventTooltipRow"><span class="eventTooltipLabel">Cost</span><span>${{ (hoveredEvent.tokenUsage.totalCents / 100).toFixed(4) }}</span></div>
         </template>
         <div v-if="hoveredEvent.chargedCents > 0" class="eventTooltipRow eventTooltipRow--highlight"><span class="eventTooltipLabel">Charged</span><span>${{ (hoveredEvent.chargedCents / 100).toFixed(3) }}</span></div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showIdeSelectionOverlay" class="ideOverlayBackdrop" @click.self="showIdeSelectionOverlay = false">
+        <IdeSelectionPage
+          :strings="strings"
+          :error="ideSwitchError"
+          @select="doSwitchIde"
+        />
       </div>
     </Teleport>
   </main>
