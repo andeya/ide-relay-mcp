@@ -332,6 +332,21 @@ fn uninstall_mcp_from_cursor() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_cursor_rule_installed() -> bool {
+    relay_mcp::mcp_setup::cursor_rule_installed()
+}
+
+#[tauri::command]
+fn install_cursor_rule(content: String) -> Result<(), String> {
+    relay_mcp::mcp_setup::install_cursor_rule(&content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn uninstall_cursor_rule() -> Result<(), String> {
+    relay_mcp::mcp_setup::uninstall_cursor_rule().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_mcp_windsurf_installed() -> bool {
     relay_mcp::mcp_setup::windsurf_has_relay_mcp()
 }
@@ -529,6 +544,80 @@ fn read_local_file_bytes_b64(path: String) -> Result<String, String> {
     Ok(STANDARD.encode(&bytes))
 }
 
+// ---------------------------------------------------------------------------
+// Cursor Usage commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn get_cursor_usage_settings() -> relay_mcp::cursor_usage::CursorUsageSettings {
+    relay_mcp::cursor_usage::read_cursor_usage_settings()
+}
+
+#[tauri::command]
+fn set_cursor_usage_settings(
+    settings: relay_mcp::cursor_usage::CursorUsageSettings,
+) -> Result<(), String> {
+    relay_mcp::cursor_usage::write_cursor_usage_settings(&settings).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_cursor_session_token(token: String) -> Result<(), String> {
+    relay_mcp::cursor_usage::write_cursor_session_token(&token).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_cursor_session_token() -> Result<String, String> {
+    relay_mcp::cursor_usage::read_cursor_session_token().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_cursor_session_token() -> Result<(), String> {
+    relay_mcp::cursor_usage::clear_cursor_session_token().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn fetch_cursor_usage_events(
+    start_date: String,
+    end_date: String,
+    page: u32,
+    page_size: u32,
+) -> Result<relay_mcp::cursor_usage::CursorUsageEventsPage, String> {
+    tokio::task::spawn_blocking(move || {
+        let token = relay_mcp::cursor_usage::get_web_session_token()
+            .ok_or_else(|| "no cursor session token available".to_string())?;
+        relay_mcp::cursor_usage::fetch_usage_events(
+            &token,
+            None,
+            None,
+            &start_date,
+            &end_date,
+            page,
+            page_size,
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("task join error: {e}"))?
+}
+
+/// Fetch usage via IDE's api2.cursor.sh (auto-reads token from IDE database).
+#[tauri::command]
+async fn fetch_cursor_usage_via_ide() -> Result<relay_mcp::cursor_usage::CursorUsageSummary, String> {
+    tokio::task::spawn_blocking(|| {
+        let token = relay_mcp::cursor_usage::auto_detect_cursor_token()
+            .map_err(|e| e.to_string())?;
+        relay_mcp::cursor_usage::fetch_usage_via_ide_api(&token)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("task join error: {e}"))?
+}
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    opener::open(&url).map_err(|e| e.to_string())
+}
+
 fn run_tauri(initial: LaunchState) {
     let _ = refresh_gui_presence_marker();
     let persist_hub = true;
@@ -545,6 +634,8 @@ fn run_tauri(initial: LaunchState) {
             tab_id: tid,
             relay_mcp_session_id: String::new(),
             reply_attachments: vec![],
+            retell_at: relay_mcp::storage::timestamp_string(),
+            reply_at: String::new(),
         }]
     };
     let initial_state = FeedbackTabsState {
@@ -658,7 +749,18 @@ fn run_tauri(initial: LaunchState) {
             save_feedback_attachment,
             read_dragged_image_preview,
             validate_feedback_attachment_path,
-            read_local_file_bytes_b64
+            read_local_file_bytes_b64,
+            get_cursor_usage_settings,
+            set_cursor_usage_settings,
+            set_cursor_session_token,
+            get_cursor_session_token,
+            clear_cursor_session_token,
+            fetch_cursor_usage_events,
+            fetch_cursor_usage_via_ide,
+            open_url,
+            get_cursor_rule_installed,
+            install_cursor_rule,
+            uninstall_cursor_rule
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Relay");
