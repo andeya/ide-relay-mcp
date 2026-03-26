@@ -429,7 +429,12 @@ export function useFeedbackWindow() {
 
   async function setWindowTitle() {
     const window = getCurrentWindow();
-    await window.setTitle("Relay");
+    try {
+      const title = await invoke<string>("get_window_title");
+      await window.setTitle(title);
+    } catch {
+      await window.setTitle("Relay");
+    }
   }
 
   async function reloadTabs(depth = 0) {
