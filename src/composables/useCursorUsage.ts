@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { t } from "../i18n";
 import type {
   CursorUsageSummary,
   CursorUsageEventsPage,
@@ -13,6 +14,8 @@ export type UsageToastPayload = {
   text: string;
   durationMs?: number;
 };
+
+export type CursorUsageState = ReturnType<typeof useCursorUsage>;
 
 /**
  * Cursor Usage composable: token state, usage summary, events, refresh logic.
@@ -128,7 +131,7 @@ export function useCursorUsage(
     const key = s.membershipType.toLowerCase();
     const monthly = PLAN_PRICE_MONTHLY[key];
     if (monthly === undefined) return null;
-    if (monthly === null) return "Custom";
+    if (monthly === null) return t("usagePlanCustom");
     if (s.isYearlyPlan) return `$${monthly * 12}/yr`;
     return `$${monthly}/mo`;
   });
