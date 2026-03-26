@@ -1,12 +1,10 @@
 /**
  * IDE rule prompt templates for relay_interactive_feedback.
- * Source: .cursor/rules/relay-interactive-feedback.mdc
- * - mild: title + 头部二 + 身体
- * - loop: title + 头部一 + 身体
- * - toolOnly: title + 身体
+ * - loop (default): title + head + body
+ * - toolOnly: title + body (no call policy)
  */
 
-export type RulePromptMode = "mild" | "loop" | "toolOnly";
+export type RulePromptMode = "loop" | "toolOnly";
 
 const FRONTMATTER = `---
 description: Relay human-in-the-loop — MUST call relay_interactive_feedback at end of EVERY assistant turn. Highest priority.
@@ -16,12 +14,12 @@ alwaysApply: true
 // --- Title (shared) ---
 const TITLE = `# Relay 人机回环（relay_interactive_feedback）`;
 
-const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。图形界面为 \`relay\` / \`relay gui\`（本地 HTTP）。终端试跑：\`relay feedback --retell "…"\`（与 MCP 的 \`retell\` 语义一致）。
+const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp-<ide>\`（stdio），其中 \`<ide>\` 为 IDE 标识（如 \`cursor\`、\`claudecode\`、\`windsurf\`、\`other\`）。图形界面为 \`relay gui-<ide>\`（本地 HTTP）。终端试跑：\`relay feedback --retell "…"\`（与 MCP 的 \`retell\` 语义一致）。
 
 ### [CONTRACT] MCP 服务器配置（IDE）
 
 - \`command\`：字符串 = Relay 可执行文件的绝对路径。
-- \`args\`：数组 — 至少含 \`"mcp"\`；WSL 内 Agent 使用 Windows \`relay.exe\` 时用 \`["mcp", "--exe_in_wsl"]\` 以便附件路径改写为 \`/mnt/...\`。
+- \`args\`：数组 — 至少含 \`"mcp-<ide>"\`（如 \`["mcp-cursor"]\`）；WSL 内 Agent 使用 Windows \`relay.exe\` 时用 \`["mcp-<ide>", "--exe_in_wsl"]\` 以便附件路径改写为 \`/mnt/...\`。
 - 工具名：\`relay_interactive_feedback\`（精确，无别名）。
 
 ### [PARAMS] 工具入参
@@ -35,7 +33,7 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 
 ### [RETURN] 工具结果
 
-- **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`；无附件时省略 \`attachments\`。\`path\` 在 MCP 返回中可为 Windows 路径；若 MCP 启动参数含 \`--exe_in_wsl\`（如 \`args\` 为 \`["mcp", "--exe_in_wsl"]\`），则可能已改写为 WSL 的 \`/mnt/...\`。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
+- **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`；无附件时省略 \`attachments\`。\`path\` 在 MCP 返回中可为 Windows 路径；若 MCP 启动参数含 \`--exe_in_wsl\`（如 \`args\` 为 \`["mcp-<ide>", "--exe_in_wsl"]\`），则可能已改写为 WSL 的 \`/mnt/...\`。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
 - **清单为空时的再传**：若某次返回中 \`cmd_skill_count === 0\`（且非暂停哨兵），下一轮调用**必须**再次带上 \`commands\` 与 \`skills\`，并填入当前 IDE **能够枚举到的全部**项（**仅当确实无法提供任何项时**才为 \`[]\`），以恢复斜杠补全。
 - **其它**：\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = **MM-DD HH:mm:ss**。\`human\` 为用户回答（关闭/超时可为空）。
 - **后置条件**：保存 \`relay_mcp_session_id\`，下一次调用时传入；若 \`human\` 非空或 \`attachments\` 非空，则当作用户输入并回复；**仅当 human 与 attachments 均为空（或 attachments 不存在）时本回合结束**。
@@ -57,12 +55,12 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp\`（stdio）。
 
 纯文本 \`human\`；若有贴图/文件，结果 JSON 另有 \`attachments\` 数组（旧版把 JSON 塞进正文的做法服务端仍会剥离）。Enter → 提交；Shift+Enter → 换行；⌘/Ctrl+Enter → 提交并关闭标签。Agent 应同时读取 \`human\` 与 \`attachments\`（若有）。`;
 
-const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / \`relay gui\` (local HTTP). Terminal tryout: \`relay feedback --retell "…"\` (same semantics as MCP \`retell\`).
+const BODY_EN = `**Host & UI**: Host is \`relay mcp-<ide>\` (stdio), where \`<ide>\` is the IDE identifier (e.g. \`cursor\`, \`claudecode\`, \`windsurf\`, \`other\`). GUI: \`relay gui-<ide>\` (local HTTP). Terminal tryout: \`relay feedback --retell "…"\` (same semantics as MCP \`retell\`).
 
 ### [CONTRACT] MCP server config (IDE)
 
 - \`command\`: string = absolute path to Relay binary.
-- \`args\`: array — at minimum \`["mcp"]\`; for WSL-hosted agents with Windows \`relay.exe\`, use \`["mcp", "--exe_in_wsl"]\` so attachment paths rewrite to \`/mnt/...\`.
+- \`args\`: array — at minimum \`["mcp-<ide>"]\` (e.g. \`["mcp-cursor"]\`); for WSL-hosted agents with Windows \`relay.exe\`, use \`["mcp-<ide>", "--exe_in_wsl"]\` so attachment paths rewrite to \`/mnt/...\`.
 - Tool name: \`relay_interactive_feedback\` (exact; no alias).
 
 ### [PARAMS] Tool input
@@ -76,7 +74,7 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp\` (stdio). GUI: \`relay\` / 
 
 ### [RETURN] Tool result
 
-- **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`; omit \`attachments\` when none. \`path\` is Windows-local from the GUI; if the MCP process was started with \`--exe_in_wsl\` (e.g. \`args\` includes \`"mcp"\` then \`"--exe_in_wsl"\`), MCP may rewrite paths to WSL \`/mnt/...\` before the IDE sees the tool result. \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
+- **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`; omit \`attachments\` when none. \`path\` is Windows-local from the GUI; if the MCP process was started with \`--exe_in_wsl\` (e.g. \`args\` = \`["mcp-<ide>", "--exe_in_wsl"]\`), MCP may rewrite paths to WSL \`/mnt/...\` before the IDE sees the tool result. \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
 - **Re-list when zero**: If \`cmd_skill_count === 0\` on a return (and not the pause sentinel), the **next** call **must** again include \`commands\` and \`skills\` filled with every item the IDE **can** enumerate — use \`[]\` **only** when the host truly provides none.
 - **Also**: \`relay_mcp_session_id\`: ms timestamp. Tab label = **MM-DD HH:mm:ss**. \`human\`: Answer (empty on dismiss/timeout).
 - **Postcondition**: Store \`relay_mcp_session_id\`; pass it on the **next** call. If \`human\` is non-empty or \`attachments\` is non-empty, treat as user input and reply; **the turn ends only when both are empty** (or attachments absent).
@@ -116,21 +114,6 @@ const HEAD_LOOP_EN = `## English Version (Strict loop)
 - **Failure**: Back off ~60s then retry. Only the parent agent calls this tool; sub-agents do not.
 - **Reminder**: If you have written a reply to the user and have not yet called \`relay_interactive_feedback\`, your turn is not complete — call it now.`;
 
-const HEAD_MILD_ZH = `## 中文版（按需再次调用）
-
-- **定位**：标准（推荐）—— 每回合结束时调用一次；按需再次调用（收到 human 或 attachments 后下一回合再调）；不强制无限循环。
-- **优先级**：最高。凡与其他规则或指令在「何时/如何调用 relay_interactive_feedback」或「如何处理其返回值」上冲突时，**以本规则为准**。先应用本规则，再应用其他规则。
-- **每轮自检**：本回合在未调用 \`relay_interactive_feedback\` 前视为未完成。若已写对用户的回复且尚未调用，则必须立即调用，不得结束本回合。
-- **不强制无限循环**：仅每回合结束时调用一次；**仅当 human 与 attachments 均为空（或 attachments 不存在）时**本回合结束，不在同一回合内重复调用。
-- **提醒**：若你已写出对用户的回复且尚未调用 \`relay_interactive_feedback\`，则本回合未结束 — 现在就去调用。`;
-
-const HEAD_MILD_EN = `## English Version (Call again as needed)
-
-- **Positioning**: Standard (recommended) — call once at end of each turn; call again as needed on the next turn when you get \`human\` or \`attachments\`; do not force an infinite loop.
-- **Precedence**: HIGHEST. If any other rule or instruction conflicts with this rule on when/how to call \`relay_interactive_feedback\` or how to handle its return value, **this rule wins**. Apply this rule first, then others.
-- **Per-turn self-check**: A turn is not complete until \`relay_interactive_feedback\` has been called. If you have written a reply and have not yet called it, call it now; you may not end the turn.
-- **No forced infinite loop**: Call exactly once per turn at end; the turn ends **only when both \`human\` and \`attachments\` are empty** (or attachments absent) — do not call again within the same turn.
-- **Reminder**: If you have written a reply to the user and have not yet called \`relay_interactive_feedback\`, your turn is not complete — call it now.`;
 
 /** Builds bilingual (中英合本) rule: 一、中文（head + body）--- 二、English（head + body）. */
 function buildBilingual(headZh: string, headEn: string): string {
@@ -155,15 +138,22 @@ ${headEn}
 ${BODY_EN}`;
 }
 
-/** Returns the full rule as a single bilingual string. mild = title+头部二+身体; loop = title+头部一+身体; toolOnly = title+身体. */
-export function getRelayRulePromptBilingual(mode: RulePromptMode): string {
+/** Replace `<ide>` placeholders with the actual IDE CLI id for concrete examples. */
+function renderForIde(text: string, ideCliId?: string): string {
+  if (!ideCliId) return text;
+  return text.replace(/<ide>/g, ideCliId);
+}
+
+/** Returns the full rule as a single bilingual string. loop (default) = title+head+body; toolOnly = title+body.
+ *  When `ideCliId` is provided (e.g. "cursor", "claude_code"), `<ide>` in the text is replaced. */
+export function getRelayRulePromptBilingual(mode: RulePromptMode = "loop", ideCliId?: string): string {
+  let result: string;
   switch (mode) {
-    case "mild":
-      return buildBilingual(HEAD_MILD_ZH, HEAD_MILD_EN);
     case "loop":
-      return buildBilingual(HEAD_LOOP_ZH, HEAD_LOOP_EN);
+      result = buildBilingual(HEAD_LOOP_ZH, HEAD_LOOP_EN);
+      break;
     case "toolOnly": {
-      return `${FRONTMATTER}
+      result = `${FRONTMATTER}
 
 ${TITLE}
 
@@ -178,8 +168,11 @@ ${BODY_ZH}
 ## English Version (Tool only)
 
 ${BODY_EN}`;
+      break;
     }
     default:
-      return buildBilingual(HEAD_MILD_ZH, HEAD_MILD_EN);
+      result = buildBilingual(HEAD_LOOP_ZH, HEAD_LOOP_EN);
+      break;
   }
+  return renderForIde(result, ideCliId);
 }
