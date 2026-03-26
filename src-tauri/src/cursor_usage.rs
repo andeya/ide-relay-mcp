@@ -524,8 +524,8 @@ fn iso_to_epoch_ms(iso: &str) -> String {
                     30,
                     31,
                 ];
-                for mi in 0..(m as usize - 1).min(12) {
-                    total += month_days[mi] as i64;
+                for &md in month_days.iter().take((m as usize - 1).min(12)) {
+                    total += md as i64;
                 }
                 total + d as i64 - 1
             };
