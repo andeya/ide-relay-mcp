@@ -15,15 +15,6 @@ export type QaAttachmentRef = {
   path: string;
 };
 
-/** MCP / HTTP wait payload for one relay_interactive_feedback round. */
-export type RelayFeedbackToolResult = {
-  relay_mcp_session_id: string;
-  human: string;
-  cmd_skill_count: number;
-  /** Present when the user submitted images/files; omit when empty. */
-  attachments?: QaAttachmentRef[];
-};
-
 export type LaunchState = {
   retell: string;
   /** Correlates with MCP HTTP wait; empty for hub preview. */
@@ -73,11 +64,6 @@ export type PathEnvStatus = {
   bin_dir: string;
   platform: string;
   /** When not configured, reason for the user to fix manually. */
-  reason?: string;
-};
-
-export type McpStatus = {
-  installed: boolean;
   reason?: string;
 };
 
@@ -138,6 +124,18 @@ export type CursorUsageEventsPage = {
 export type CursorUsageSettings = {
   refresh_on_new_session: boolean;
   refresh_interval_minutes: number;
+};
+
+// ---------------------------------------------------------------------------
+// IDE binding
+// ---------------------------------------------------------------------------
+
+export type IdeKind = "cursor" | "claude_code" | "windsurf" | "other";
+
+export type IdeCapabilities = {
+  supportsMcpInject: boolean;
+  supportsRulePrompt: boolean;
+  supportsUsage: boolean;
 };
 
 export type RelayCacheStats = {
