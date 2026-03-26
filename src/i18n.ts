@@ -7,6 +7,7 @@ import zh from "./locales/zh";
 
 export type Locale = "en" | "zh";
 type Messages = typeof en;
+export type LocaleKey = keyof Messages;
 
 const messages: Record<Locale, Messages> = { en, zh };
 
