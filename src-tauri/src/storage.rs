@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
-use crate::{user_data_dir, ControlStatus, QaAttachmentRef, GUI_ALIVE_MARKER, LOG_FILE};
+use crate::{gui_alive_marker_name, user_data_dir, ControlStatus, QaAttachmentRef, LOG_FILE};
 
 /// One JSON line per completed in-app round; complements `feedback_log.txt` when log pairing skips rows.
 const QA_ARCHIVE_DIR: &str = "qa_archive";
@@ -180,6 +180,7 @@ fn qa_archive_file_path(config_dir: &Path, session_id: &str) -> Option<PathBuf> 
 }
 
 /// Append one completed round for hydrate fallback (plain JSON lines, easy to trim or delete per session).
+#[allow(clippy::too_many_arguments)]
 pub fn qa_archive_append(
     config_dir: &Path,
     session_id: &str,
@@ -278,18 +279,6 @@ pub fn log_write(config_dir: &Path, source: &str, content: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn make_temp_path(prefix: &str, ext: &str) -> PathBuf {
-    let suffix = next_temp_suffix();
-    let mut path = std::env::temp_dir();
-    let file_name = if ext.is_empty() {
-        format!("{}_{}", prefix, suffix)
-    } else {
-        format!("{}_{}.{}", prefix, suffix, ext)
-    };
-    path.push(file_name);
-    path
-}
-
 fn is_safe_relay_attachment_filename(name: &str) -> bool {
     if !name.starts_with("relay_attach_") || name.len() > 256 {
         return false;
@@ -372,17 +361,6 @@ pub fn read_text_file(path: &Path) -> Result<String> {
     Ok(text)
 }
 
-pub fn trim_eol(mut text: String) -> String {
-    while text.ends_with('\n') || text.ends_with('\r') {
-        text.pop();
-    }
-    text
-}
-
-pub fn read_trimmed_text(path: &Path) -> Result<String> {
-    Ok(trim_eol(read_text_file(path)?))
-}
-
 pub fn read_control_status(path: &Path) -> Option<ControlStatus> {
     let text = read_text_file(path).ok()?;
     for line in text.lines() {
@@ -398,7 +376,7 @@ pub fn write_control_status(path: &Path, status: ControlStatus) -> Result<()> {
 }
 
 fn gui_alive_marker_path(config_dir: &Path) -> PathBuf {
-    config_dir.join(GUI_ALIVE_MARKER)
+    config_dir.join(gui_alive_marker_name())
 }
 
 pub fn refresh_gui_presence_marker() -> Result<()> {
