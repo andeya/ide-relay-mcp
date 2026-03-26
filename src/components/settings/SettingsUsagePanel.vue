@@ -1,23 +1,17 @@
 <script setup lang="ts">
 /**
- * Settings → Cursor Usage: token config, refresh policy, usage preview.
+ * Settings → Cursor Usage: refresh policy, usage preview.
+ * Receives usage state from parent (single source of truth).
  */
 import { computed, ref, watch } from "vue";
-import {
-  useCursorUsage,
-  type UsageToastPayload,
-} from "../../composables/useCursorUsage";
+import type { CursorUsageState } from "../../composables/useCursorUsage";
 import type { CursorUsageEvent } from "../../types/relay-app";
-
-type PushToastFn = (_payload: UsageToastPayload) => void;
 
 const props = defineProps<{
   strings: Record<string, string>;
   usageSegmentActive: boolean;
-  pushToast: PushToastFn;
+  usage: CursorUsageState;
 }>();
-
-const isActive = computed(() => props.usageSegmentActive);
 
 const {
   usageSummary,
@@ -34,7 +28,9 @@ const {
   refreshUsage,
   loadEvents,
   saveSettings,
-} = useCursorUsage(isActive, (p) => props.pushToast(p));
+} = props.usage;
+
+const isActive = computed(() => props.usageSegmentActive);
 
 const S = computed(() => props.strings);
 
