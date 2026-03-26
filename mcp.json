@@ -3,7 +3,7 @@
     "relay-mcp": {
       "command": "/absolute/path/to/relay",
       "args": [
-        "mcp"
+        "mcp-cursor"
       ],
       "autoApprove": [
         "relay_interactive_feedback"
