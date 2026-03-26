@@ -15,21 +15,25 @@ export function slashLineTokenRegex(): RegExp {
   return new RegExp(`(^|[\\n ])(\\/[${SLASH_CMD_CHAR_CLASS}]*)`, "g");
 }
 
-/** Tab strip label: `title` is MM-DD HH:mm:ss from backend; else retell preview. */
-export function feedbackTabLabel(tab: LaunchState): string {
+/** Tab strip label: `title` is MM-DD HH:mm:ss from backend; else retell preview. Append turn status when provided. */
+export function feedbackTabLabel(tab: LaunchState, turnStatusLabel?: string): string {
   if (tab.is_preview) {
     return "Hub";
   }
+  const suffix = turnStatusLabel ? ` · ${turnStatusLabel}` : "";
+  const maxBase = 22 - suffix.length;
   const w = tab.title?.trim();
   if (w) {
-    return w.length > 22 ? `${w.slice(0, 20)}…` : w;
+    const base = w.length > maxBase ? `${w.slice(0, maxBase - 2)}…` : w;
+    return base + suffix;
   }
   const sum = tab.retell?.trim() || "";
   if (sum) {
     const one = sum.split(/\n/)[0] ?? sum;
-    return one.length > 22 ? `${one.slice(0, 20)}…` : one;
+    const base = one.length > maxBase ? `${one.slice(0, maxBase - 2)}…` : one;
+    return base + suffix;
   }
-  return `#${tab.tab_id.slice(-6)}`;
+  return `#${tab.tab_id.slice(-6)}${suffix}`;
 }
 
 /**
