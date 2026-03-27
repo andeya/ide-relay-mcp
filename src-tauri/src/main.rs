@@ -855,6 +855,14 @@ fn run_mcp(ide: relay_mcp::ide::IdeKind, flags: McpFlags) {
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        extern "C" {
+            fn XInitThreads() -> std::os::raw::c_int;
+        }
+        XInitThreads();
+    }
+
     let cli = Cli::parse();
     match cli.command {
         None => {
