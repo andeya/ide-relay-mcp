@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import type { IdeKind } from "../types/relay-app";
 
 const props = defineProps<{
   strings: Record<string, string>;
   error?: string;
+  busy?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -12,6 +13,13 @@ const emit = defineEmits<{
 }>();
 
 const S = computed(() => props.strings);
+const selectedIde = ref<IdeKind | null>(null);
+
+function onSelect(ide: IdeKind) {
+  if (props.busy) return;
+  selectedIde.value = ide;
+  emit("select", ide);
+}
 
 const options: { key: IdeKind; nameKey: string; descKey: string; icon: string }[] = [
   { key: "cursor", nameKey: "ideCursor", descKey: "ideCursorDesc", icon: "⌨" },
@@ -33,9 +41,12 @@ const options: { key: IdeKind; nameKey: string; descKey: string; icon: string }[
           :key="opt.key"
           type="button"
           class="ideCard"
-          @click="emit('select', opt.key)"
+          :class="{ 'ideCard--busy': props.busy && selectedIde === opt.key }"
+          :disabled="props.busy"
+          @click="onSelect(opt.key)"
         >
-          <span class="ideCardIcon">{{ opt.icon }}</span>
+          <span v-if="props.busy && selectedIde === opt.key" class="ideCardSpinner" />
+          <span v-else class="ideCardIcon">{{ opt.icon }}</span>
           <span class="ideCardName">{{ S[opt.nameKey] }}</span>
           <span class="ideCardDesc">{{ S[opt.descKey] }}</span>
         </button>
