@@ -3050,6 +3050,7 @@ dependencies = [
  "clap",
  "directories",
  "hmac",
+ "libc",
  "opener",
  "pbkdf2",
  "rand 0.8.5",

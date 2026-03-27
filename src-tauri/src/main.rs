@@ -857,10 +857,19 @@ fn run_mcp(ide: relay_mcp::ide::IdeKind, flags: McpFlags) {
 fn main() {
     #[cfg(target_os = "linux")]
     unsafe {
-        extern "C" {
-            fn XInitThreads() -> std::os::raw::c_int;
+        let lib = libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_NOW | libc::RTLD_NOLOAD);
+        let lib = if lib.is_null() {
+            libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_NOW)
+        } else {
+            lib
+        };
+        if !lib.is_null() {
+            let sym = libc::dlsym(lib, c"XInitThreads".as_ptr());
+            if !sym.is_null() {
+                let init: unsafe extern "C" fn() -> std::os::raw::c_int = std::mem::transmute(sym);
+                init();
+            }
         }
-        XInitThreads();
     }
 
     let cli = Cli::parse();
