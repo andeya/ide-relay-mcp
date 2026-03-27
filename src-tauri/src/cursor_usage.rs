@@ -143,6 +143,7 @@ pub fn auto_detect_cursor_token() -> Result<String> {
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .with_context(|| format!("open {}", db_path.display()))?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
     let token: String = conn
         .query_row(
             "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'",
@@ -322,7 +323,7 @@ pub struct IdeStripeProfile {
 
 fn build_cookie_request(url: &str, token: &str) -> ureq::Request {
     ureq::get(url)
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(10))
         .set("Cookie", &format!("WorkosCursorSessionToken={token}"))
         .set("Origin", "https://cursor.com")
         .set("Content-Type", "application/json")
@@ -330,7 +331,7 @@ fn build_cookie_request(url: &str, token: &str) -> ureq::Request {
 
 fn build_cookie_post(url: &str, token: &str) -> ureq::Request {
     ureq::post(url)
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(10))
         .set("Cookie", &format!("WorkosCursorSessionToken={token}"))
         .set("Origin", "https://cursor.com")
         .set("Content-Type", "application/json")
@@ -338,7 +339,7 @@ fn build_cookie_post(url: &str, token: &str) -> ureq::Request {
 
 fn build_bearer_request(url: &str, token: &str) -> ureq::Request {
     ureq::get(url)
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(10))
         .set("Authorization", &format!("Bearer {token}"))
         .set("Content-Type", "application/json")
 }
@@ -580,17 +581,22 @@ static CACHED_EXT_COOKIE: std::sync::Mutex<Option<String>> = std::sync::Mutex::n
 
 /// Get web session token with priority: memory cache → local file → keychain/DPAPI decrypt.
 pub fn get_web_session_token() -> Option<String> {
-    CACHED_EXT_COOKIE
+    // Drop the MutexGuard before calling read_cursor_usage_ext_cookie (which also locks CACHED_EXT_COOKIE).
+    let cached = CACHED_EXT_COOKIE
         .lock()
         .unwrap()
         .clone()
-        .filter(|c| !c.is_empty())
-        .or_else(|| {
-            read_cursor_session_token()
-                .ok()
-                .filter(|t| !t.trim().is_empty())
-        })
-        .or_else(|| read_cursor_usage_ext_cookie().ok())
+        .filter(|c| !c.is_empty());
+    if cached.is_some() {
+        return cached;
+    }
+    let from_file = read_cursor_session_token()
+        .ok()
+        .filter(|t| !t.trim().is_empty());
+    if from_file.is_some() {
+        return from_file;
+    }
+    read_cursor_usage_ext_cookie().ok()
 }
 
 /// Read the WorkosCursorSessionToken stored by the cursor-usage extension.
@@ -617,6 +623,7 @@ fn read_encrypted_cookie_blob() -> Result<Vec<u8>> {
     let conn =
         rusqlite::Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .with_context(|| format!("open state.vscdb: {}", db_path.display()))?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
     let secret_key = r#"secret://{"extensionId":"yossisa.cursor-usage","key":"cursor.cookie"}"#;
     let raw: String = conn
