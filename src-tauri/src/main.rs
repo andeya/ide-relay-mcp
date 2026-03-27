@@ -867,7 +867,8 @@ fn assert_linux_gui_ready() {
             );
             std::process::exit(1);
         }
-        libc::dlclose(gtk);
+        // Keep the handle open — tao/GTK will use the already-loaded library.
+        // dlclose + reload can re-run static initializers on some systems.
     }
 }
 
