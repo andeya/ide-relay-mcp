@@ -15,15 +15,16 @@ function readJson(path) {
 }
 
 function cargoPackageVersion(toml) {
-  const lines = toml.split("\n");
+  const lines = toml.split(/\r?\n/);
   let inPackage = false;
   for (const line of lines) {
-    if (line.startsWith("[")) {
-      inPackage = line === "[package]";
+    const trimmed = line.trimEnd();
+    if (trimmed.startsWith("[")) {
+      inPackage = trimmed === "[package]";
       continue;
     }
-    if (inPackage && line.startsWith("version = ")) {
-      const m = line.match(/version\s*=\s*"([^"]+)"/);
+    if (inPackage && trimmed.startsWith("version")) {
+      const m = trimmed.match(/^version\s*=\s*"([^"]+)"/);
       return m ? m[1] : null;
     }
   }
