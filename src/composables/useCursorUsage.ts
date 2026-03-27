@@ -44,6 +44,7 @@ export function useCursorUsage(
   let tabsUnlisten: UnlistenFn | null = null;
   let lastTabCount = -1;
   let throttleUntil = 0;
+  let initialRefreshDone = false;
 
   const usageCapsuleLabel = computed(() => {
     const s = usageSummary.value;
@@ -170,6 +171,7 @@ export function useCursorUsage(
         "fetch_cursor_usage_via_ide",
       );
       lastRefreshed.value = new Date();
+      initialRefreshDone = true;
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       error.value = detail;
@@ -239,7 +241,7 @@ export function useCursorUsage(
       if (!settings.value.refresh_on_new_session) return;
       const payload = ev.payload as { tabs?: unknown[] } | undefined;
       const count = payload?.tabs?.length ?? -1;
-      if (lastTabCount >= 0 && count > lastTabCount) {
+      if (lastTabCount >= 0 && count > lastTabCount && initialRefreshDone) {
         const now = Date.now();
         if (now > throttleUntil) {
           throttleUntil = now + 2000;
@@ -253,7 +255,6 @@ export function useCursorUsage(
   async function init() {
     await loadSettings();
     void refreshUsage();
-    resetRefreshTimer();
     void setupTabListener();
   }
 
