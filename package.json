@@ -18,7 +18,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps --all-targets -- -D warnings && eslint \"src/**/*.vue\" \"src/**/*.ts\" --max-warnings 0 && vue-tsc --noEmit",
+    "lint": "node scripts/check-version-sync.mjs && cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps --all-targets -- -D warnings && eslint \"src/**/*.vue\" \"src/**/*.ts\" --max-warnings 0 && vue-tsc --noEmit",
     "lint:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml --no-deps --all-targets --fix --allow-dirty && eslint \"src/**/*.vue\" \"src/**/*.ts\" --fix && vue-tsc --noEmit",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
