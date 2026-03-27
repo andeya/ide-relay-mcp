@@ -3507,6 +3507,12 @@ textarea[readonly] {
   padding: 0.2rem 0.5rem;
 }
 
+.usageCapsule--error {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(153, 27, 27, 0.25);
+  color: #fca5a5;
+}
+
 .usageCapsuleSpinner {
   display: inline-block;
   width: 12px;
@@ -4320,6 +4326,27 @@ textarea[readonly] {
 .ideCard:active {
   transform: translateY(0);
   background: rgba(67, 56, 202, 0.2);
+}
+
+.ideCard:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
+.ideCard--busy {
+  border-color: rgba(99, 102, 241, 0.6);
+  opacity: 1 !important;
+}
+
+.ideCardSpinner {
+  display: inline-block;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 2.5px solid rgba(129, 140, 248, 0.25);
+  border-top-color: #818cf8;
+  border-radius: 50%;
+  animation: usageSpin 0.7s linear infinite;
 }
 
 .ideCardIcon {
