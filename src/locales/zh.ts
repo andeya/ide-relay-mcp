@@ -66,9 +66,9 @@ export default {
 
   setupTitle: "本机环境",
   setupLead:
-    "未就绪：点右侧「一键安装」（PATH + {ide} MCP）。就绪后：下方绿框可复制 MCP JSON；要还原请点「一键卸载」。",
+    "请分别安装「公共配置」与「IDE 配置」以完成环境搭建。就绪后可在下方卡片内复制 MCP JSON。",
   setupAllReadyLead:
-    "PATH 与 {ide} MCP 已就绪。绿框内可复制 JSON；要还原请点「一键卸载」。",
+    "PATH 与 {ide} MCP 均已就绪。可在下方卡片内复制 MCP JSON，或从各区域单独移除配置。",
   setupStatus: "配置详情",
   setupChipPath: "终端 PATH",
   setupPathExplain: "relay 可执行文件所在目录已加入当前用户 PATH",
@@ -94,7 +94,7 @@ export default {
     "高级选项（PATH / JSON 等排障）",
   setupAdvPathTitle: "只补写 PATH",
   setupAdvPathLead:
-    "若一键安装时 PATH 未成功（例如未找到 relay 可执行文件），可单独写入。新开终端或 fish 新会话后生效。",
+    "若安装时 PATH 未自动写入（例如未找到 relay 可执行文件），可在此单独补写。新开终端或 fish 新会话后生效。",
   pathEnvBtn: "写入用户 PATH",
   pathEnvBusy: "正在写入…",
   pathEnvDoneWin:
@@ -192,11 +192,11 @@ export default {
   noLaunch: "无启动数据。",
 
   ideHintCursor:
-    "Cursor — 一键安装会写入：\n{cursorPath}\n也可手动合并 JSON 后重启，在设置 → MCP 查看 relay-mcp。WSL + Windows relay：args 请含 \"--exe_in_wsl\"。",
+    "Cursor — 安装后配置写入：\n{cursorPath}\n也可手动合并 JSON 后重启，在设置 → MCP 查看 relay-mcp。WSL + Windows relay：args 请含 \"--exe_in_wsl\"。",
   ideHintVscode:
     "VS Code — MCP 入口因扩展而异；command 为 relay 绝对路径，args 至少 [\"mcp\"]；WSL + Windows relay 时用 [\"mcp\", \"--exe_in_wsl\"]。",
   ideHintWindsurf:
-    "Windsurf — 一键安装写入：\n{windsurfPath}\n手动添加时与绿框 JSON 一致；WSL + Windows relay 时在 args 中加 \"--exe_in_wsl\"。",
+    "Windsurf — 安装后配置写入：\n{windsurfPath}\n手动添加时与下方 JSON 卡片一致。WSL + Windows relay 时在 args 中加 \"--exe_in_wsl\"。",
   ideHintClaude:
     "Claude Desktop — command 为 relay 全路径，args 至少 [\"mcp\"]；WSL + Windows relay 时 [\"mcp\", \"--exe_in_wsl\"]；允许 relay_interactive_feedback。",
 
@@ -247,7 +247,7 @@ export default {
   segUsage: "Cursor 用量",
   usageTitle: "Cursor 用量",
   usageLead:
-    "监控 Cursor 套餐用量与按需消费。请在下方配置会话 Token 以启用用量追踪。",
+    "监控 Cursor 套餐用量与按需消费。用量数据自动从本地 Cursor IDE 会话读取。",
   usageCapsuleTitle: "Cursor 用量 — 点击查看详情",
   usagePopoverTitle: "本周期 Cursor 用量",
   usageMonthSummary: "账单周期概要",

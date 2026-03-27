@@ -67,9 +67,9 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
 
   setupTitle: "This machine",
   setupLead:
-    "Not ready: Install all (PATH + {ide} MCP). When ready: copy MCP JSON in the green card below; Uninstall all to revert.",
+    "Install PATH and {ide} config separately to complete setup. Once ready, copy MCP JSON from the card below.",
   setupAllReadyLead:
-    "PATH and {ide} MCP are set. JSON copy lives in the green card; Uninstall all to revert.",
+    "PATH and {ide} MCP are set. Copy MCP JSON from the card below, or remove config from each section.",
   setupStatus: "Configuration detail",
   setupChipPath: "Terminal PATH",
   setupPathExplain: "Folder containing the relay binary is on your user PATH",
@@ -95,7 +95,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
     "Advanced (PATH, JSON preview…)",
   setupAdvPathTitle: "PATH only",
   setupAdvPathLead:
-    "If full install skipped PATH (e.g. relay binary not found beside the app), add it here. Open a new terminal or fish session afterward.",
+    "If PATH was not written during install (e.g. relay binary not found), add it here manually. Open a new terminal or fish session afterward.",
   pathEnvBtn: "Add to user PATH",
   pathEnvBusy: "Applying…",
   pathEnvDoneWin: "Done. Open a new Command Prompt or PowerShell.",
@@ -199,11 +199,11 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   noLaunch: "No launch data available.",
 
   ideHintCursor:
-    "Cursor — Full install writes:\n{cursorPath}\nOr merge JSON manually, then restart. Settings → MCP. WSL + Windows relay: include \"--exe_in_wsl\" in args.",
+    "Cursor — Config is written to:\n{cursorPath}\nOr merge JSON manually, then restart. Settings → MCP. WSL + Windows relay: include \"--exe_in_wsl\" in args.",
   ideHintVscode:
     "VS Code — MCP UI varies; command = full path to relay; args at least [\"mcp\"]; WSL + Windows relay: [\"mcp\", \"--exe_in_wsl\"].",
   ideHintWindsurf:
-    "Windsurf — Full install writes:\n{windsurfPath}\nManual MCP: match the green JSON; WSL + Windows relay: add \"--exe_in_wsl\" to args.",
+    "Windsurf — Config is written to:\n{windsurfPath}\nManual MCP: match the JSON card below. WSL + Windows relay: add \"--exe_in_wsl\" to args.",
   ideHintClaude:
     "Claude Desktop — command = full path to relay; args at least [\"mcp\"]; WSL + Windows relay: [\"mcp\", \"--exe_in_wsl\"]. Approve relay_interactive_feedback if prompted.",
 
@@ -254,7 +254,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   segUsage: "Cursor Usage",
   usageTitle: "Cursor Usage",
   usageLead:
-    "Monitor your Cursor plan consumption and on-demand spending. Configure your session token below to enable usage tracking.",
+    "Monitor your Cursor plan consumption and on-demand spending. Usage data is read automatically from your local Cursor IDE session.",
   usageCapsuleTitle: "Cursor usage — click for details",
   usagePopoverTitle: "Cursor Usage This Cycle",
   usageMonthSummary: "Billing cycle summary",
