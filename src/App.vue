@@ -54,8 +54,11 @@ const {
 
 const ideNeedsSelection = computed(() => ideLoaded.value && ideKind.value === null);
 const ideSwitchError = ref("");
+const ideSwitchBusy = ref(false);
 
 async function doSwitchIde(ide: IdeKind) {
+  if (ideSwitchBusy.value) return;
+  ideSwitchBusy.value = true;
   ideSwitchError.value = "";
   try {
     await ideSwitchIde(ide);
@@ -63,6 +66,8 @@ async function doSwitchIde(ide: IdeKind) {
     window.location.reload();
   } catch (e) {
     ideSwitchError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    ideSwitchBusy.value = false;
   }
 }
 
@@ -402,6 +407,7 @@ const cursorUsage = useCursorUsage(usageSegmentActive, pushSettingsToast);
 const {
   usageSummary,
   loading: usageLoading,
+  error: usageError,
   usageCapsuleLabel,
   usageCapsuleWarn,
   popoverOpen: usagePopoverOpen,
@@ -706,6 +712,7 @@ onBeforeUnmount(() => {
     v-if="ideNeedsSelection"
     :strings="strings"
     :error="ideSwitchError"
+    :busy="ideSwitchBusy"
     @select="doSwitchIde"
   />
   <main
@@ -744,8 +751,8 @@ onBeforeUnmount(() => {
               v-if="ideSupportsUsage && usageSummary"
               type="button"
               class="usageCapsule"
-              :class="{ 'usageCapsule--warn': usageCapsuleWarn }"
-              :title="strings.usageCapsuleTitle"
+              :class="{ 'usageCapsule--warn': usageCapsuleWarn, 'usageCapsule--error': !!usageError }"
+              :title="usageError || strings.usageCapsuleTitle"
               @click="toggleUsagePopover"
             >
               <span class="usageCapsuleDot usageCapsuleDot--plan" />
@@ -758,6 +765,15 @@ onBeforeUnmount(() => {
             >
               <span class="usageCapsuleSpinner" />
             </span>
+            <button
+              v-else-if="ideSupportsUsage && usageError"
+              type="button"
+              class="usageCapsule usageCapsule--error"
+              :title="usageError"
+              @click="refreshUsage"
+            >
+              ⚠
+            </button>
           </div>
         </div>
         <div class="mainTopBarRight">
@@ -2026,6 +2042,7 @@ onBeforeUnmount(() => {
         <IdeSelectionPage
           :strings="strings"
           :error="ideSwitchError"
+          :busy="ideSwitchBusy"
           @select="doSwitchIde"
         />
       </div>
