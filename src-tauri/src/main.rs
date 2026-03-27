@@ -830,7 +830,7 @@ fn run_tauri(initial: LaunchState) {
 }
 
 fn run_gui_with_ide(ide: relay_mcp::ide::IdeKind) {
-    assert_linux_display_available();
+    assert_linux_gui_ready();
     if relay_mcp::mcp_http::is_ide_gui_alive(ide) {
         eprintln!(
             "Error: Another Relay GUI process is already running in {} mode.\n\
@@ -845,10 +845,10 @@ fn run_gui_with_ide(ide: relay_mcp::ide::IdeKind) {
     run_tauri(state);
 }
 
-/// On Linux, verify that a display server is reachable before attempting GTK init.
-/// Without this, tao panics with an unhelpful message inside `gtk::init`.
+/// On Linux, verify the graphical environment before tao/GTK init to avoid
+/// unhelpful panics from inside `gtk::init`.
 #[cfg(target_os = "linux")]
-fn assert_linux_display_available() {
+fn assert_linux_gui_ready() {
     if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
         eprintln!(
             "Error: No display server detected (neither DISPLAY nor WAYLAND_DISPLAY is set).\n\
@@ -857,10 +857,22 @@ fn assert_linux_display_available() {
         );
         std::process::exit(1);
     }
+    unsafe {
+        let gtk = libc::dlopen(c"libgtk-3.so.0".as_ptr(), libc::RTLD_LAZY);
+        if gtk.is_null() {
+            eprintln!(
+                "Error: GTK 3 runtime library (libgtk-3.so.0) not found.\n\
+                 Install it with:  sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0\n\
+                 Or if you used dpkg:  sudo apt install -f"
+            );
+            std::process::exit(1);
+        }
+        libc::dlclose(gtk);
+    }
 }
 
 #[cfg(not(target_os = "linux"))]
-fn assert_linux_display_available() {}
+fn assert_linux_gui_ready() {}
 
 fn run_mcp(ide: relay_mcp::ide::IdeKind, flags: McpFlags) {
     relay_mcp::ide::set_process_ide(ide);
@@ -891,7 +903,7 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         None => {
-            assert_linux_display_available();
+            assert_linux_gui_ready();
             let state = relay_mcp::dev_preview_launch_state();
             run_tauri(state);
         }
