@@ -830,6 +830,7 @@ fn run_tauri(initial: LaunchState) {
 }
 
 fn run_gui_with_ide(ide: relay_mcp::ide::IdeKind) {
+    assert_linux_display_available();
     if relay_mcp::mcp_http::is_ide_gui_alive(ide) {
         eprintln!(
             "Error: Another Relay GUI process is already running in {} mode.\n\
@@ -844,6 +845,23 @@ fn run_gui_with_ide(ide: relay_mcp::ide::IdeKind) {
     run_tauri(state);
 }
 
+/// On Linux, verify that a display server is reachable before attempting GTK init.
+/// Without this, tao panics with an unhelpful message inside `gtk::init`.
+#[cfg(target_os = "linux")]
+fn assert_linux_display_available() {
+    if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
+        eprintln!(
+            "Error: No display server detected (neither DISPLAY nor WAYLAND_DISPLAY is set).\n\
+             Relay GUI requires a graphical environment (X11 or Wayland).\n\
+             If you are in an SSH session, use X forwarding: ssh -X host"
+        );
+        std::process::exit(1);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn assert_linux_display_available() {}
+
 fn run_mcp(ide: relay_mcp::ide::IdeKind, flags: McpFlags) {
     relay_mcp::ide::set_process_ide(ide);
     relay_mcp::set_mcp_wsl_path_rewrite_enabled(flags.exe_in_wsl);
@@ -856,13 +874,16 @@ fn run_mcp(ide: relay_mcp::ide::IdeKind, flags: McpFlags) {
 
 fn main() {
     #[cfg(target_os = "linux")]
-    unsafe {
-        let lib = libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_LAZY);
-        if !lib.is_null() {
-            let sym = libc::dlsym(lib, c"XInitThreads".as_ptr());
-            if !sym.is_null() {
-                let init: unsafe extern "C" fn() -> std::os::raw::c_int = std::mem::transmute(sym);
-                init();
+    if std::env::var_os("DISPLAY").is_some() {
+        unsafe {
+            let lib = libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_LAZY);
+            if !lib.is_null() {
+                let sym = libc::dlsym(lib, c"XInitThreads".as_ptr());
+                if !sym.is_null() {
+                    let init: unsafe extern "C" fn() -> std::os::raw::c_int =
+                        std::mem::transmute(sym);
+                    init();
+                }
             }
         }
     }
@@ -870,7 +891,7 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         None => {
-            // Bare `relay`: open GUI without IDE — shows selection page.
+            assert_linux_display_available();
             let state = relay_mcp::dev_preview_launch_state();
             run_tauri(state);
         }
