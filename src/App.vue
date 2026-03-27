@@ -770,7 +770,7 @@ onBeforeUnmount(() => {
               type="button"
               class="usageCapsule usageCapsule--error"
               :title="usageError"
-              @click="refreshUsage"
+              @click="refreshUsage()"
             >
               ⚠
             </button>
@@ -1963,7 +1963,7 @@ onBeforeUnmount(() => {
             type="button"
             class="usagePopoverRefreshBtn"
             :disabled="usageLoading"
-            @click="refreshUsage"
+            @click="refreshUsage()"
           >
             {{ usageLoading ? strings.usageRefreshing : strings.usageRefreshBtn }}
           </button>

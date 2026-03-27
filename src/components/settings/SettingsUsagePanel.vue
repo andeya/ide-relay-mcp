@@ -108,7 +108,7 @@ watch(isActive, (active) => {
                 type="button"
                 class="usageBtn usageBtn--accent"
                 :disabled="loading"
-                @click="refreshUsage"
+                @click="refreshUsage()"
               >
                 {{ loading ? S.usageRefreshing : S.usageRefreshBtn }}
               </button>
