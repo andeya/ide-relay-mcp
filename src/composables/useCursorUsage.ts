@@ -156,11 +156,15 @@ export function useCursorUsage(
     resetRefreshTimer();
   }
 
+  let retryCount = 0;
+  const MAX_AUTO_RETRIES = 2;
 
-  async function refreshUsage() {
+  async function refreshUsage(isRetry = false) {
     if (loading.value) return;
+    if (!isRetry) retryCount = 0;
     loading.value = true;
     error.value = "";
+    let willRetry = false;
     try {
       usageSummary.value = await invoke<CursorUsageSummary>(
         "fetch_cursor_usage_via_ide",
@@ -169,9 +173,14 @@ export function useCursorUsage(
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       error.value = detail;
+      if (retryCount < MAX_AUTO_RETRIES && !usageSummary.value) {
+        retryCount++;
+        willRetry = true;
+        setTimeout(() => void refreshUsage(true), 3000 * retryCount);
+      }
     } finally {
       loading.value = false;
-      resetRefreshTimer();
+      if (!willRetry) resetRefreshTimer();
     }
   }
 
