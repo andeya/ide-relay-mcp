@@ -857,12 +857,7 @@ fn run_mcp(ide: relay_mcp::ide::IdeKind, flags: McpFlags) {
 fn main() {
     #[cfg(target_os = "linux")]
     unsafe {
-        let lib = libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_NOW | libc::RTLD_NOLOAD);
-        let lib = if lib.is_null() {
-            libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_NOW)
-        } else {
-            lib
-        };
+        let lib = libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_LAZY);
         if !lib.is_null() {
             let sym = libc::dlsym(lib, c"XInitThreads".as_ptr());
             if !sym.is_null() {

@@ -414,19 +414,9 @@ pub fn is_gui_marker_alive_for_ide(ide: crate::ide::IdeKind) -> bool {
 }
 
 fn process_is_running(pid: u32) -> bool {
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     {
-        Path::new(&format!("/proc/{}", pid)).exists()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+        unsafe { libc::kill(pid as i32, 0) == 0 }
     }
     #[cfg(windows)]
     {
