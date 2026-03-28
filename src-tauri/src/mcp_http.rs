@@ -93,7 +93,6 @@ fn find_any_healthy_gui_endpoint() -> Option<GuiEndpoint> {
             }
         }
     }
-    // Also try the generic endpoint file (bare `relay` hub mode)
     let generic = dir.join("gui_endpoint.json");
     if let Ok(text) = fs::read_to_string(&generic) {
         if let Ok(ep) = serde_json::from_str::<GuiEndpoint>(&text) {
