@@ -83,6 +83,22 @@ function onEventMouseLeave() {
   hoveredEvent.value = null;
 }
 
+function totalTokens(u: CursorUsageEvent["tokenUsage"]): number {
+  if (!u) return 0;
+  return (
+    u.inputTokens + u.outputTokens + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0)
+  );
+}
+
+function formatTokUnit(n: number): string {
+  const unit = S.value.usageTokUnit;
+  if (n >= 10000) {
+    const wan = n / 10000;
+    return wan >= 100 ? `${Math.round(wan)}${unit}` : `${wan.toFixed(1)}${unit}`;
+  }
+  return `${n.toLocaleString()} tok`;
+}
+
 watch(isActive, (active) => {
   if (active && !usageSummary.value) {
     void refreshUsage();
@@ -253,7 +269,7 @@ watch(isActive, (active) => {
               <span class="usageEventCell">{{ formatEventTime(ev.timestamp) }}</span>
               <span class="usageEventCell">{{ ev.model }}</span>
               <span class="usageEventCell">
-                {{ ev.tokenUsage ? `${Math.round(ev.tokenUsage.inputTokens + ev.tokenUsage.outputTokens)} tok` : '' }}
+                {{ ev.tokenUsage ? formatTokUnit(totalTokens(ev.tokenUsage)) : '' }}
               </span>
               <span class="usageEventCell">
                 {{ ev.chargedCents > 0 ? `$${(ev.chargedCents / 100).toFixed(3)}` : ev.requestsCosts ? `${ev.requestsCosts} req` : '—' }}
@@ -289,10 +305,10 @@ watch(isActive, (active) => {
         <div class="eventTooltipRow"><span class="eventTooltipLabel">Kind</span><span>{{ hoveredEvent.kind.replace('USAGE_EVENT_KIND_', '') }}</span></div>
         <div v-if="hoveredEvent.requestsCosts" class="eventTooltipRow"><span class="eventTooltipLabel">Requests</span><span>{{ hoveredEvent.requestsCosts }}</span></div>
         <template v-if="hoveredEvent.tokenUsage">
-          <div class="eventTooltipRow"><span class="eventTooltipLabel">Input</span><span>{{ hoveredEvent.tokenUsage.inputTokens.toLocaleString() }} tok</span></div>
-          <div class="eventTooltipRow"><span class="eventTooltipLabel">Output</span><span>{{ hoveredEvent.tokenUsage.outputTokens.toLocaleString() }} tok</span></div>
-          <div v-if="hoveredEvent.tokenUsage.cacheReadTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache read</span><span>{{ hoveredEvent.tokenUsage.cacheReadTokens.toLocaleString() }} tok</span></div>
-          <div v-if="hoveredEvent.tokenUsage.cacheWriteTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache write</span><span>{{ hoveredEvent.tokenUsage.cacheWriteTokens.toLocaleString() }} tok</span></div>
+          <div class="eventTooltipRow"><span class="eventTooltipLabel">Input</span><span>{{ formatTokUnit(hoveredEvent.tokenUsage.inputTokens) }}</span></div>
+          <div class="eventTooltipRow"><span class="eventTooltipLabel">Output</span><span>{{ formatTokUnit(hoveredEvent.tokenUsage.outputTokens) }}</span></div>
+          <div v-if="hoveredEvent.tokenUsage.cacheReadTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache read</span><span>{{ formatTokUnit(hoveredEvent.tokenUsage.cacheReadTokens) }}</span></div>
+          <div v-if="hoveredEvent.tokenUsage.cacheWriteTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache write</span><span>{{ formatTokUnit(hoveredEvent.tokenUsage.cacheWriteTokens) }}</span></div>
           <div class="eventTooltipRow"><span class="eventTooltipLabel">Cost</span><span>${{ (hoveredEvent.tokenUsage.totalCents / 100).toFixed(4) }}</span></div>
         </template>
         <div v-if="hoveredEvent.chargedCents > 0" class="eventTooltipRow eventTooltipRow--highlight"><span class="eventTooltipLabel">Charged</span><span>${{ (hoveredEvent.chargedCents / 100).toFixed(3) }}</span></div>
