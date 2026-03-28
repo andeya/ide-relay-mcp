@@ -67,7 +67,7 @@ export type PathEnvStatus = {
   reason?: string;
 };
 
-export type SettingsSegment = "setup" | "rulePrompts" | "cache" | "usage";
+export type SettingsSegment = "setup" | "rulePrompts" | "app" | "usage";
 
 export type CursorUsagePlanBlock = {
   enabled: boolean;
