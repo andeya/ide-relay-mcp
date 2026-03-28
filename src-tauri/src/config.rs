@@ -85,10 +85,17 @@ pub struct WindowDockConfig {
     /// When true, keep main window always on top.
     #[serde(default)]
     pub window_always_on_top: bool,
+    /// When true, closing the window hides it to the system tray instead of quitting.
+    #[serde(default = "default_close_to_tray")]
+    pub close_to_tray: bool,
 }
 
 fn default_window_dock() -> String {
     "left".to_string()
+}
+
+fn default_close_to_tray() -> bool {
+    true
 }
 
 fn default_window_dock_config() -> WindowDockConfig {
@@ -96,6 +103,7 @@ fn default_window_dock_config() -> WindowDockConfig {
         dock: default_window_dock(),
         dock_edge_hide: false,
         window_always_on_top: false,
+        close_to_tray: default_close_to_tray(),
     }
 }
 
@@ -198,6 +206,16 @@ pub fn write_dock_edge_hide(enabled: bool) -> Result<()> {
 pub fn write_window_always_on_top(enabled: bool) -> Result<()> {
     let mut cfg = read_window_dock_config_or_default();
     cfg.window_always_on_top = enabled;
+    write_window_dock_config(&cfg)
+}
+
+pub fn read_close_to_tray() -> bool {
+    read_window_dock_config_or_default().close_to_tray
+}
+
+pub fn write_close_to_tray(enabled: bool) -> Result<()> {
+    let mut cfg = read_window_dock_config_or_default();
+    cfg.close_to_tray = enabled;
     write_window_dock_config(&cfg)
 }
 
