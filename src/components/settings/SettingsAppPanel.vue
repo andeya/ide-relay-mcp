@@ -1,22 +1,23 @@
 <script setup lang="ts">
 /**
- * Settings → Storage & cache: usage cards, retention menu, manual clear + confirm modal.
+ * Settings → Application: system tray behavior + storage & cache management.
  */
 import {
   useRelayCacheSettings,
   type SettingsToastPayload,
 } from "../../composables/useRelayCacheSettings";
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 
 type PushToastFn = (_payload: SettingsToastPayload) => void;
 
 const props = defineProps<{
   strings: Record<string, string>;
-  cacheSegmentActive: boolean;
+  appSegmentActive: boolean;
   pushToast: PushToastFn;
 }>();
 
-const isActive = computed(() => props.cacheSegmentActive);
+const isActive = computed(() => props.appSegmentActive);
 
 const {
   cacheStats,
@@ -45,12 +46,58 @@ const {
 } = useRelayCacheSettings(isActive, (p) => props.pushToast(p));
 
 const S = computed(() => props.strings);
+
+const closeToTray = ref(true);
+watch(
+  isActive,
+  async (active) => {
+    if (active) {
+      try {
+        closeToTray.value = await invoke<boolean>("get_close_to_tray");
+      } catch {
+        /* keep default */
+      }
+    }
+  },
+  { immediate: true },
+);
+async function onCloseToTrayChange(ev: Event) {
+  const checked = (ev.target as HTMLInputElement).checked;
+  closeToTray.value = checked;
+  try {
+    await invoke("set_close_to_tray", { enabled: checked });
+  } catch {
+    closeToTray.value = !checked;
+  }
+}
 </script>
 
 <template>
   <div>
-    <div v-show="cacheSegmentActive" class="segPanel segPanel--cache">
+    <div v-show="appSegmentActive" class="segPanel segPanel--app">
       <div class="cachePage">
+        <section class="cachePolicyCard settingsCard">
+          <h4 class="cacheSectionLabel">{{ S.appTrayTitle }}</h4>
+          <label class="usageToggleRow">
+            <span
+              class="usageToggleTrack"
+              :class="{ 'usageToggleTrack--on': closeToTray }"
+              role="switch"
+              :aria-checked="closeToTray"
+            >
+              <span class="usageToggleThumb" />
+            </span>
+            <input
+              type="checkbox"
+              class="usageToggleNative"
+              :checked="closeToTray"
+              @change="onCloseToTrayChange"
+            />
+            <span>{{ S.appTrayCloseToTray }}</span>
+          </label>
+          <p class="cachePolicyLead">{{ S.appTrayCloseToTrayHint }}</p>
+        </section>
+
         <header class="cachePageHero">
           <div class="cachePageHeroRow">
             <div class="cachePageHeroText">
@@ -244,7 +291,7 @@ const S = computed(() => props.strings);
     </div>
 
     <div
-      v-if="cacheConfirmKind && cacheSegmentActive"
+      v-if="cacheConfirmKind && appSegmentActive"
       class="cacheConfirmBackdrop"
       role="presentation"
       @click.self="cancelCacheClearConfirm"
