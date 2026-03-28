@@ -11,7 +11,7 @@ export default {
   ariaOpenSettings: "打开设置",
   segSetup: "环境与 MCP",
   segRulePrompts: "规则提示词",
-  segCache: "缓存管理",
+  segCache: "应用管理",
 
   settingsLangAria: "界面语言",
 
@@ -133,8 +133,6 @@ export default {
   releaseBadgeCurrent: "v{current}",
 
   appTitle: "Relay MCP",
-  statusAwaiting: "ME 回合",
-  statusHubWaiting: "Hub · 未连IDE",
   ideBlockingHint:
     "IDE 正在等待你提交 Answer；提交后智能体会在同一轮继续。",
   mcpPauseTitle: "暂停 Relay MCP",
@@ -146,9 +144,6 @@ export default {
   mcpPauseStatusOff: "当前：正常",
   mcpPauseUpdateErr: "无法更新暂停状态，请检查权限后重试。",
 
-  statusIdle: "AI 回合",
-  statusTimedOut: "已超时",
-  statusCancelled: "已取消",
   mainHintPreview:
     "有待回复的标签时在此输入。Enter 发送 · ⌘/Ctrl+Enter 发送并关闭该标签。",
   tabStripAria: "反馈标签",
@@ -199,6 +194,10 @@ export default {
     "Windsurf — 安装后配置写入：\n{windsurfPath}\n手动添加时与下方 JSON 卡片一致。WSL + Windows relay 时在 args 中加 \"--exe_in_wsl\"。",
   ideHintClaude:
     "Claude Desktop — command 为 relay 全路径，args 至少 [\"mcp\"]；WSL + Windows relay 时 [\"mcp\", \"--exe_in_wsl\"]；允许 relay_interactive_feedback。",
+
+  appTrayTitle: "系统托盘",
+  appTrayCloseToTray: "关闭时最小化到系统托盘",
+  appTrayCloseToTrayHint: "开启后，关闭窗口不会退出应用，而是隐藏到系统托盘。",
 
   cacheTitle: "存储与缓存",
   cacheSubtitle:
@@ -271,6 +270,7 @@ export default {
   usageRecentTitle: "近期用量事件",
   usageNoEvents: "暂无事件",
   usageLoadMore: "加载更多",
+  usageTokUnit: "万tok",
   usageSettingsTokenTitle: "身份验证",
   usageSettingsAutoHint:
     "用量数据自动从本地 Cursor IDE 会话读取，无需手动配置。",

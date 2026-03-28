@@ -11,7 +11,7 @@ export default {
   ariaOpenSettings: "Open settings",
   segSetup: "Environment & MCP",
   segRulePrompts: "Rule prompts",
-  segCache: "Cache",
+  segCache: "Application",
 
   settingsLangAria: "Interface language",
 
@@ -133,8 +133,6 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   releaseBadgeCurrent: "v{current}",
 
   appTitle: "Relay MCP",
-  statusAwaiting: "ME turn",
-  statusHubWaiting: "Hub · no IDE",
   ideBlockingHint:
     "The IDE is waiting for your Answer. After you submit, the agent continues in the same turn.",
   mcpPauseTitle: "Pause Relay MCP",
@@ -146,9 +144,6 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   mcpPauseStatusOff: "Status: active",
   mcpPauseUpdateErr: "Could not update pause. Check permissions and try again.",
 
-  statusIdle: "AI turn",
-  statusTimedOut: "Timed out",
-  statusCancelled: "Cancelled",
   mainHintPreview:
     "When a tab is waiting for your reply, type here. Enter to send · ⌘/Ctrl+Enter to send and close the tab.",
   tabStripAria: "Feedback tabs",
@@ -206,6 +201,11 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
     "Windsurf — Config is written to:\n{windsurfPath}\nManual MCP: match the JSON card below. WSL + Windows relay: add \"--exe_in_wsl\" to args.",
   ideHintClaude:
     "Claude Desktop — command = full path to relay; args at least [\"mcp\"]; WSL + Windows relay: [\"mcp\", \"--exe_in_wsl\"]. Approve relay_interactive_feedback if prompted.",
+
+  appTrayTitle: "System tray",
+  appTrayCloseToTray: "Minimize to tray on close",
+  appTrayCloseToTrayHint:
+    "When enabled, closing the window hides it to the system tray instead of quitting the app.",
 
   cacheTitle: "Storage & cache",
   cacheSubtitle:
@@ -278,6 +278,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   usageRecentTitle: "Recent usage events",
   usageNoEvents: "No events yet",
   usageLoadMore: "Load more",
+  usageTokUnit: "w tok",
   usageSettingsTokenTitle: "Authentication",
   usageSettingsAutoHint:
     "Usage data is automatically read from your local Cursor IDE session. No manual configuration needed.",
