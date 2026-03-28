@@ -400,7 +400,7 @@ pub fn is_gui_marker_alive_for_ide(ide: crate::ide::IdeKind) -> bool {
         Ok(d) => d,
         Err(_) => return false,
     };
-    let marker = dir.join(format!("relay_gui_{}_alive.marker", ide.cli_id()));
+    let marker = dir.join(crate::gui_alive_marker_name_for(&ide));
     let Ok(text) = fs::read_to_string(&marker) else {
         return false;
     };
