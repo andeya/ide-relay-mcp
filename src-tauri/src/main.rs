@@ -14,7 +14,11 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use clap::{Parser, Subcommand};
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::TrayIconBuilder,
+    Manager, State,
+};
 
 use relay_mcp::{
     dock_edge_hide::EdgeHideState, gui_http::RelayGuiRuntime, refresh_gui_presence_marker,
@@ -254,6 +258,16 @@ fn set_window_always_on_top(enabled: bool, app: tauri::AppHandle) -> Result<(), 
         let _ = w.set_always_on_top(enabled);
     }
     Ok(())
+}
+
+#[tauri::command]
+fn get_close_to_tray() -> bool {
+    relay_mcp::read_close_to_tray()
+}
+
+#[tauri::command]
+fn set_close_to_tray(enabled: bool) -> Result<(), String> {
+    relay_mcp::write_close_to_tray(enabled).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -676,6 +690,68 @@ fn open_url(url: String) -> Result<(), String> {
     opener::open(&url).map_err(|e| e.to_string())
 }
 
+fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let is_zh = relay_mcp::config::read_ui_locale() == "zh";
+    let show_label = if is_zh { "显示窗口" } else { "Show Window" };
+    let new_window_label = if is_zh { "新建窗口" } else { "New Window" };
+    let quit_label = if is_zh { "退出" } else { "Quit" };
+    let show = MenuItemBuilder::with_id("show", show_label).build(app)?;
+    let new_window = MenuItemBuilder::with_id("new_window", new_window_label).build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", quit_label).build(app)?;
+    let menu = MenuBuilder::new(app)
+        .items(&[&show, &new_window])
+        .separator()
+        .item(&quit)
+        .build()?;
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .expect("default window icon must be set in tauri.conf.json");
+    let _tray = TrayIconBuilder::new()
+        .icon(icon)
+        .icon_as_template(cfg!(target_os = "macos"))
+        .tooltip(relay_mcp::ide::window_title())
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.unminimize();
+                    let _ = w.set_focus();
+                }
+            }
+            "new_window" => {
+                let exe = std::env::current_exe().unwrap_or_default();
+                let _ = std::process::Command::new(exe)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                button_state: tauri::tray::MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Some(w) = tray.app_handle().get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.unminimize();
+                    let _ = w.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
 fn run_tauri(initial: LaunchState) {
     let _ = refresh_gui_presence_marker();
     let persist_hub = true;
@@ -709,8 +785,20 @@ fn run_tauri(initial: LaunchState) {
             if window.label() != "main" {
                 return;
             }
-            if let tauri::WindowEvent::Focused(focused) = event {
-                relay_mcp::dock_edge_hide::handle_main_window_focus(window.app_handle(), *focused);
+            match event {
+                tauri::WindowEvent::Focused(focused) => {
+                    relay_mcp::dock_edge_hide::handle_main_window_focus(
+                        window.app_handle(),
+                        *focused,
+                    );
+                }
+                tauri::WindowEvent::CloseRequested { api, .. }
+                    if relay_mcp::read_close_to_tray() =>
+                {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                _ => {}
             }
         })
         .setup(move |app| {
@@ -746,6 +834,7 @@ fn run_tauri(initial: LaunchState) {
                 thread::sleep(Duration::from_millis(ms));
                 relay_mcp::dock_edge_hide::try_expand_from_peek_hover(&peek_h);
             });
+            setup_system_tray(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -761,6 +850,8 @@ fn run_tauri(initial: LaunchState) {
             get_window_always_on_top,
             set_window_dock,
             set_window_always_on_top,
+            get_close_to_tray,
+            set_close_to_tray,
             get_dock_edge_hide,
             get_dock_edge_hide_ui_timing,
             set_dock_edge_hide,
