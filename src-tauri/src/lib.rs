@@ -27,14 +27,23 @@ pub mod storage;
 pub const APP_NAME: &str = "Relay MCP";
 pub const APP_QUALIFIER: &str = "com";
 pub const APP_ORGANIZATION: &str = "relay";
+/// Debug and release builds use separate data directories to avoid interference.
+#[cfg(debug_assertions)]
+pub const APP_DATA_DIR: &str = "relay-mcp-debug";
+#[cfg(not(debug_assertions))]
 pub const APP_DATA_DIR: &str = "relay-mcp";
 pub const TOOL_NAME: &str = "relay_interactive_feedback";
 pub const LOG_FILE: &str = "feedback_log.txt";
 
-/// Per-IDE marker file name. Falls back to generic name when no IDE is set.
+/// Marker file name for a specific IDE.
+pub fn gui_alive_marker_name_for(ide: &ide::IdeKind) -> String {
+    format!("relay_gui_{}_alive.marker", ide.cli_id())
+}
+
+/// Per-IDE marker file name for the current process. Falls back to generic name when no IDE is set.
 pub fn gui_alive_marker_name() -> String {
     if let Some(ide) = ide::get_process_ide() {
-        format!("relay_gui_{}_alive.marker", ide.cli_id())
+        gui_alive_marker_name_for(&ide)
     } else {
         "relay_gui_alive.marker".to_string()
     }
@@ -49,11 +58,11 @@ pub fn set_mcp_wsl_path_rewrite_enabled(enabled: bool) {
 pub use auto_reply::{auto_reply_peek, consume_oneshot, load_auto_reply_rules, AutoReplyRule};
 pub use config::{
     collapse_window_for_edge_hide, desktop_cursor_outside_outer_window,
-    mouse_in_dock_edge_peek_zone_window_only, position_main_window_for_dock, read_dock_edge_hide,
-    read_mcp_paused, read_ui_locale, read_window_always_on_top, read_window_dock,
-    window_nearest_horizontal_screen_edge_side, window_outer_straddles_screen_edge,
-    write_dock_edge_hide, write_mcp_paused, write_ui_locale, write_window_always_on_top,
-    write_window_dock,
+    mouse_in_dock_edge_peek_zone_window_only, position_main_window_for_dock, read_close_to_tray,
+    read_dock_edge_hide, read_mcp_paused, read_ui_locale, read_window_always_on_top,
+    read_window_dock, window_nearest_horizontal_screen_edge_side,
+    window_outer_straddles_screen_edge, write_close_to_tray, write_dock_edge_hide,
+    write_mcp_paused, write_ui_locale, write_window_always_on_top, write_window_dock,
 };
 pub use path_persistence::{
     persist_relay_cli_path, relay_path_config_reason, relay_path_persistently_configured,
@@ -164,7 +173,7 @@ pub struct LaunchState {
     /// Merge key; generated as ms timestamp for new tabs, reused when merging.
     pub relay_mcp_session_id: String,
     pub is_preview: bool,
-    /// Cursor commands bound to this session for slash-completion in input.
+    /// IDE commands bound to this session for slash-completion in input.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commands: Option<Vec<CommandItem>>,
     /// Skills (same shape as commands) for slash-completion in input.
