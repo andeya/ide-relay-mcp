@@ -361,11 +361,28 @@ fn compute_cycle_end(start_iso: &str) -> String {
                 parts[2].parse::<u32>(),
             ) {
                 let (ny, nm) = if m >= 12 { (y + 1, 1) } else { (y, m + 1) };
-                return format!("{:04}-{:02}-{:02}T00:00:00.000Z", ny, nm, d);
+                let days_in_month = days_in_month(ny, nm);
+                let nd = d.min(days_in_month);
+                return format!("{:04}-{:02}-{:02}T00:00:00.000Z", ny, nm, nd);
             }
         }
     }
     String::new()
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
 }
 
 // ---------------------------------------------------------------------------
