@@ -114,7 +114,7 @@ fn gui_http_bind_listener() -> Result<(StdTcpListener, u16), String> {
     Ok((listener, port))
 }
 
-/// Writes `gui_endpoint.json` so MCP can discover port and bearer token.
+/// Writes per-IDE endpoint file so MCP can discover port and bearer token.
 fn gui_http_write_endpoint_file(port: u16, token: &str) -> Result<(), String> {
     let path = mcp_http::gui_endpoint_path().map_err(|e| format!("gui_endpoint_path: {e}"))?;
     if let Some(parent) = path.parent() {
