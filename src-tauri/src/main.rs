@@ -690,6 +690,18 @@ fn open_url(url: String) -> Result<(), String> {
     opener::open(&url).map_err(|e| e.to_string())
 }
 
+/// Returns `true` when the macOS system preferred language begins with "zh".
+#[cfg(target_os = "macos")]
+fn macos_system_locale_is_zh() -> bool {
+    std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleLanguages"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.contains("\"zh"))
+        .unwrap_or(false)
+}
+
 /// Register a native macOS Dock right-click menu with a "New Window" item.
 ///
 /// Tauri/tao does not expose the NSApplication dock menu API, so we dynamically
@@ -935,7 +947,7 @@ fn run_tauri(initial: LaunchState) {
             });
             setup_system_tray(app)?;
             #[cfg(target_os = "macos")]
-            setup_macos_dock_menu(relay_mcp::config::read_ui_locale() == "zh");
+            setup_macos_dock_menu(macos_system_locale_is_zh());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
