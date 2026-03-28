@@ -174,12 +174,6 @@ kbd {
   box-sizing: border-box;
 }
 
-.mainBrandCluster .mainTopBarStatusPill {
-  flex-shrink: 1;
-  min-width: 0;
-  max-width: min(48vw, 360px);
-}
-
 .mainTopBarToolbar .releaseBadge {
   flex-shrink: 1;
   min-width: 0;
@@ -386,86 +380,6 @@ kbd {
 }
 
 /* Header status: compact pill, wins over global .statusPill padding */
-.mainTopBarStatusPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 0.28rem 0.75rem !important;
-  font-size: 0.68rem !important;
-  font-weight: 500 !important;
-  line-height: 1.35 !important;
-  border-radius: 999px;
-  overflow: hidden;
-  vertical-align: middle;
-}
-
-/*
- * Waiting ring: transform-only spin (compositor-friendly). Do not animate box-shadow on the pill.
- */
-.statusPillWaitRing {
-  display: block;
-  width: 10px;
-  height: 10px;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  opacity: 0.8;
-  animation: statusPillWaitRingSpin 1.35s linear infinite;
-}
-
-@keyframes statusPillWaitRingSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-html.relay-doc-hidden .statusPillWaitRing,
-html.relay-window-unfocused .statusPillWaitRing {
-  animation-play-state: paused;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .statusPillWaitRing {
-    animation: none;
-    opacity: 0.88;
-    border-right-color: rgba(255, 255, 255, 0.35);
-  }
-}
-
-.mainTopBarStatusPill--hue-hub {
-  background: rgba(15, 118, 110, 0.18);
-  color: #99f6e4;
-  border-color: rgba(45, 212, 191, 0.24);
-}
-
-.mainTopBarStatusPill--hue-loading {
-  background: rgba(14, 116, 144, 0.22);
-  color: #a5f3fc;
-  border-color: rgba(34, 211, 238, 0.38);
-}
-
-.mainTopBarStatusPill--hue-idle {
-  background: rgba(37, 99, 235, 0.2);
-  color: #93c5fd;
-  border-color: rgba(59, 130, 246, 0.4);
-}
-
-.mainTopBarStatusPill--hue-active {
-  background: rgba(5, 150, 105, 0.24);
-  color: #6ee7b7;
-  border-color: rgba(52, 211, 153, 0.45);
-}
-
-.mainTopBarStatusPill--hue-expired {
-  background: rgba(127, 29, 29, 0.24);
-  color: #fca5a5;
-  border-color: rgba(248, 113, 113, 0.42);
-}
-
 /*
  * When another window is focused, pause remaining infinite spinners (submit, setup, cache).
  * Header status ring uses its own pause rules (see .statusPillWaitRing).
@@ -1733,7 +1647,7 @@ h1 {
   line-height: 1.55;
 }
 
-.segPanel--cache {
+.segPanel--app {
   padding-bottom: 28px;
 }
 
