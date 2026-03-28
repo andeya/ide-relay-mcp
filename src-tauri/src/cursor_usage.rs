@@ -619,19 +619,26 @@ pub fn get_web_session_token() -> Option<String> {
 /// Read the WorkosCursorSessionToken stored by the cursor-usage extension.
 /// Result is cached in memory + persisted to local token file.
 pub fn read_cursor_usage_ext_cookie() -> Result<String> {
-    if let Some(ref cached) = *CACHED_EXT_COOKIE.lock().unwrap() {
+    if let Some(ref cached) = *CACHED_EXT_COOKIE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    {
         if !cached.is_empty() {
             return Ok(cached.clone());
         }
     }
     let cookie = read_cursor_usage_ext_cookie_inner()?;
-    *CACHED_EXT_COOKIE.lock().unwrap() = Some(cookie.clone());
+    *CACHED_EXT_COOKIE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(cookie.clone());
     let _ = write_cursor_session_token(&cookie);
     Ok(cookie)
 }
 
 fn invalidate_ext_cookie_cache() {
-    *CACHED_EXT_COOKIE.lock().unwrap() = None;
+    *CACHED_EXT_COOKIE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
 /// Read encrypted cookie JSON blob from state.vscdb.
