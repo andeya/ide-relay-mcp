@@ -21,7 +21,7 @@ import type { SettingsToastPayload } from "./composables/useRelayCacheSettings";
 import { useCursorUsage } from "./composables/useCursorUsage";
 import { useIdeBinding } from "./composables/useIdeBinding";
 import IdeSelectionPage from "./components/IdeSelectionPage.vue";
-import SettingsCachePanel from "./components/settings/SettingsCachePanel.vue";
+import SettingsAppPanel from "./components/settings/SettingsAppPanel.vue";
 import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsPanel.vue";
 import SettingsUsagePanel from "./components/settings/SettingsUsagePanel.vue";
 import relayLogoUrl from "./assets/relay-logo.svg?url";
@@ -216,11 +216,11 @@ function pendingFileChipTitle(
 const attachInputRef = ref<HTMLInputElement | null>(null);
 
 function onAttachChange(e: Event) {
-  const t = e.target as HTMLInputElement;
-  if (t.files?.length) {
-    addAttachedFilesFromPicker(t.files);
+  const el = e.target as HTMLInputElement;
+  if (el.files?.length) {
+    addAttachedFilesFromPicker(el.files);
   }
-  t.value = "";
+  el.value = "";
 }
 
 const summaryScrollRef = ref<HTMLElement | null>(null);
@@ -400,7 +400,7 @@ function pushSettingsToast(p: SettingsToastPayload) {
   }, p.durationMs ?? 4500);
 }
 
-const cacheSegmentActive = computed(() => settingsSeg.value === "cache");
+const appSegmentActive = computed(() => settingsSeg.value === "app");
 const usageSegmentActive = computed(() => settingsSeg.value === "usage");
 
 const cursorUsage = useCursorUsage(usageSegmentActive, pushSettingsToast);
@@ -436,6 +436,20 @@ function formatEventTime(ts: string): string {
     return `${mm}-${dd} ${hh}:${mi}`;
   }
   return ts?.slice(5, 16)?.replace("T", " ") ?? "";
+}
+
+function totalTokens(u: CursorUsageEvent["tokenUsage"]): number {
+  if (!u) return 0;
+  return u.inputTokens + u.outputTokens + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0);
+}
+
+function formatTokUnit(n: number): string {
+  const unit = strings.value.usageTokUnit;
+  if (n >= 10000) {
+    const wan = n / 10000;
+    return wan >= 100 ? `${Math.round(wan)}${unit}` : `${wan.toFixed(1)}${unit}`;
+  }
+  return `${n.toLocaleString()} tok`;
 }
 
 const hoveredEvent = ref<CursorUsageEvent | null>(null);
@@ -1444,9 +1458,9 @@ onBeforeUnmount(() => {
           type="button"
           role="tab"
           class="segTab"
-          :class="{ active: settingsSeg === 'cache' }"
-          :aria-selected="settingsSeg === 'cache'"
-          @click="settingsSeg = 'cache'"
+          :class="{ active: settingsSeg === 'app' }"
+          :aria-selected="settingsSeg === 'app'"
+          @click="settingsSeg = 'app'"
         >
           {{ strings.segCache }}
         </button>
@@ -1788,8 +1802,8 @@ onBeforeUnmount(() => {
           :push-toast="pushSettingsToast"
         />
 
-        <SettingsCachePanel
-          :cache-segment-active="cacheSegmentActive"
+        <SettingsAppPanel
+          :app-segment-active="appSegmentActive"
           :strings="strings"
           :push-toast="pushSettingsToast"
         />
@@ -1939,7 +1953,7 @@ onBeforeUnmount(() => {
                 <span class="usagePopoverEventModel">{{ ev.model }}</span>
                 <span class="usagePopoverEventKind">{{ ev.kind }}</span>
                 <span class="usagePopoverEventCost">
-                  {{ ev.tokenUsage ? `${Math.round(ev.tokenUsage.inputTokens + ev.tokenUsage.outputTokens)} tok` : '' }}
+                  {{ ev.tokenUsage ? formatTokUnit(totalTokens(ev.tokenUsage)) : '' }}
                 </span>
                 <span class="usagePopoverEventCents">
                   {{ ev.chargedCents > 0 ? `$${(ev.chargedCents / 100).toFixed(3)}` : ev.requestsCosts ? `${ev.requestsCosts} req` : '—' }}
@@ -2027,10 +2041,10 @@ onBeforeUnmount(() => {
         <div class="eventTooltipRow"><span class="eventTooltipLabel">Kind</span><span>{{ hoveredEvent.kind.replace('USAGE_EVENT_KIND_', '') }}</span></div>
         <div v-if="hoveredEvent.requestsCosts" class="eventTooltipRow"><span class="eventTooltipLabel">Requests</span><span>{{ hoveredEvent.requestsCosts }}</span></div>
         <template v-if="hoveredEvent.tokenUsage">
-          <div class="eventTooltipRow"><span class="eventTooltipLabel">Input</span><span>{{ hoveredEvent.tokenUsage.inputTokens.toLocaleString() }} tok</span></div>
-          <div class="eventTooltipRow"><span class="eventTooltipLabel">Output</span><span>{{ hoveredEvent.tokenUsage.outputTokens.toLocaleString() }} tok</span></div>
-          <div v-if="hoveredEvent.tokenUsage.cacheReadTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache read</span><span>{{ hoveredEvent.tokenUsage.cacheReadTokens.toLocaleString() }} tok</span></div>
-          <div v-if="hoveredEvent.tokenUsage.cacheWriteTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache write</span><span>{{ hoveredEvent.tokenUsage.cacheWriteTokens.toLocaleString() }} tok</span></div>
+          <div class="eventTooltipRow"><span class="eventTooltipLabel">Input</span><span>{{ formatTokUnit(hoveredEvent.tokenUsage.inputTokens) }}</span></div>
+          <div class="eventTooltipRow"><span class="eventTooltipLabel">Output</span><span>{{ formatTokUnit(hoveredEvent.tokenUsage.outputTokens) }}</span></div>
+          <div v-if="hoveredEvent.tokenUsage.cacheReadTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache read</span><span>{{ formatTokUnit(hoveredEvent.tokenUsage.cacheReadTokens) }}</span></div>
+          <div v-if="hoveredEvent.tokenUsage.cacheWriteTokens" class="eventTooltipRow"><span class="eventTooltipLabel">Cache write</span><span>{{ formatTokUnit(hoveredEvent.tokenUsage.cacheWriteTokens) }}</span></div>
           <div class="eventTooltipRow"><span class="eventTooltipLabel">Cost</span><span>${{ (hoveredEvent.tokenUsage.totalCents / 100).toFixed(4) }}</span></div>
         </template>
         <div v-if="hoveredEvent.chargedCents > 0" class="eventTooltipRow eventTooltipRow--highlight"><span class="eventTooltipLabel">Charged</span><span>${{ (hoveredEvent.chargedCents / 100).toFixed(3) }}</span></div>
