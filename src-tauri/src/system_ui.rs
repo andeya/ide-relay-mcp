@@ -138,8 +138,7 @@ pub fn setup_macos_dock_menu() {
     }
 
     unsafe fn msg0(obj: Id, s: Sel) -> Id {
-        let f: unsafe extern "C" fn(Id, Sel) -> Id =
-            std::mem::transmute(objc_msgSend as *const ());
+        let f: unsafe extern "C" fn(Id, Sel) -> Id = std::mem::transmute(objc_msgSend as *const ());
         f(obj, s)
     }
     unsafe fn msg1(obj: Id, s: Sel, a: Id) -> Id {
