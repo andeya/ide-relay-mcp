@@ -284,37 +284,6 @@ export function useFeedbackWindow() {
     if (status.value === "idle") return false;
     return true;
   });
-  const statusLabel = computed(() => {
-    void locale.value;
-    if (isHubPage.value) return t("statusHubWaiting");
-    if (status.value === "timed_out") return t("statusTimedOut");
-    if (status.value === "cancelled") return t("statusCancelled");
-    if (status.value === "idle") return t("statusIdle");
-    return t("statusAwaiting");
-  });
-  /**
-   * Header status capsule: busy state + hue tier (CSS: Hub = static glow only, no spinner
-   * ring; other waiting hues use transform-only spinner — see statusPillWaitRing in style.css).
-   */
-  const statusPillUi = computed(() => {
-    if (isHubPage.value) {
-      return { indeterminate: true, hue: "hub" as const };
-    }
-    if (status.value === "timed_out" || status.value === "cancelled") {
-      return { indeterminate: false, hue: "expired" as const };
-    }
-    if (status.value === "idle") {
-      return { indeterminate: true, hue: "idle" as const };
-    }
-    if (status.value === "active") {
-      return { indeterminate: true, hue: "active" as const };
-    }
-    if (status.value === null && activeTabId.value) {
-      return { indeterminate: true, hue: "loading" as const };
-    }
-    return { indeterminate: false, hue: "default" as const };
-  });
-
   const tabStatuses = ref<Map<string, ControlStatus | null>>(new Map());
 
   async function refreshAllTabStatuses() {
@@ -338,19 +307,6 @@ export function useFeedbackWindow() {
     }
     tabStatuses.value = next;
   }
-
-  const tabTurnCounts = computed(() => {
-    const m = new Map<string, number>();
-    const raw = tabsState.value?.qa_rounds;
-    if (!Array.isArray(raw)) return m;
-    for (const tab of tabs.value) {
-      const sid = (tab.relay_mcp_session_id || "").trim();
-      if (!sid) continue;
-      const count = raw.filter((r) => (r.relay_mcp_session_id || "").trim() === sid).length;
-      if (count > 0) m.set(tab.tab_id, count);
-    }
-    return m;
-  });
 
   function tabHue(tab: LaunchState): "hub" | "active" | "idle" | "expired" | "loading" | "default" {
     if (tab.is_preview) return "hub";
@@ -1217,8 +1173,6 @@ export function useFeedbackWindow() {
     composerDrafting,
     composerSwallowPlainEnter,
     hasPendingFileDropErrors,
-    statusLabel,
-    statusPillUi,
     setWindowTitle,
     closeWindow: closeTabOrWindow,
     requestCloseTab,
@@ -1244,7 +1198,6 @@ export function useFeedbackWindow() {
     removePendingImage,
     removePendingFileDrop,
     tabStatuses,
-    tabTurnCounts,
     tabHue,
     tabLabel: (tab: LaunchState) => {
       void locale.value;
