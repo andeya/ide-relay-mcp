@@ -616,32 +616,47 @@ async function onMcpPausedChange() {
   }
 }
 
+let dockBusy = false;
 async function applyWindowDock(d: "left" | "center" | "right") {
+  if (dockBusy) return;
+  dockBusy = true;
   try {
     await invoke("set_window_dock", { dock: d });
     windowDock.value = d;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    dockBusy = false;
   }
 }
 
+let edgeHideBusy = false;
 async function toggleDockEdgeHide() {
+  if (edgeHideBusy) return;
+  edgeHideBusy = true;
   const next = !dockEdgeHide.value;
   try {
     await invoke("set_dock_edge_hide", { enabled: next });
     dockEdgeHide.value = next;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    edgeHideBusy = false;
   }
 }
 
+let aotBusy = false;
 async function toggleWindowAlwaysOnTop() {
+  if (aotBusy) return;
+  aotBusy = true;
   const next = !windowAlwaysOnTop.value;
   try {
     await invoke("set_window_always_on_top", { enabled: next });
     windowAlwaysOnTop.value = next;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    aotBusy = false;
   }
 }
 
