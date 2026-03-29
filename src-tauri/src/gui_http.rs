@@ -258,6 +258,8 @@ fn focus_main_window(app: &tauri::AppHandle) {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+        // Re-apply always-on-top: hide→show can reset the window level on macOS.
+        let _ = w.set_always_on_top(crate::read_window_always_on_top());
     }
 }
 
