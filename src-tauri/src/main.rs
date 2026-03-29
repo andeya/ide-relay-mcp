@@ -251,10 +251,12 @@ fn set_window_dock(
 
 #[tauri::command]
 fn set_window_always_on_top(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
-    relay_mcp::write_window_always_on_top(enabled).map_err(|e| e.to_string())?;
+    // Apply the window-level change first so we never persist a value the OS
+    // refused to honour (main cause of "click has no effect" on macOS).
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.set_always_on_top(enabled);
+        w.set_always_on_top(enabled).map_err(|e| e.to_string())?;
     }
+    relay_mcp::write_window_always_on_top(enabled).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -850,6 +852,7 @@ fn run_tauri(initial: LaunchState) {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.set_focus();
+                let _ = w.set_always_on_top(relay_mcp::read_window_always_on_top());
             }
         }
         if let tauri::RunEvent::Exit = event {
