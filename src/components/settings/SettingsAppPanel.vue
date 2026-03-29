@@ -61,13 +61,18 @@ watch(
   },
   { immediate: true },
 );
+let closeToTrayBusy = false;
 async function onCloseToTrayChange(ev: Event) {
+  if (closeToTrayBusy) return;
+  closeToTrayBusy = true;
   const checked = (ev.target as HTMLInputElement).checked;
   closeToTray.value = checked;
   try {
     await invoke("set_close_to_tray", { enabled: checked });
   } catch {
     closeToTray.value = !checked;
+  } finally {
+    closeToTrayBusy = false;
   }
 }
 </script>
