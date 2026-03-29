@@ -3,7 +3,13 @@
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::sync::Mutex;
 use tauri::{PhysicalPosition, WebviewWindow};
+
+/// Serialises read-modify-write cycles on `window_dock.json` so concurrent
+/// callers (e.g. dock-position change + always-on-top toggle) cannot lose
+/// each other's updates.
+static DOCK_CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
 /// Visible strip (px) when the window is tucked to left/right edge.
 pub const DOCK_EDGE_HIDE_PEEK_PX: i32 = 14;
@@ -169,6 +175,16 @@ fn write_window_dock_config(cfg: &WindowDockConfig) -> Result<()> {
     Ok(())
 }
 
+/// Atomically read-modify-write `window_dock.json` under [`DOCK_CONFIG_LOCK`].
+fn update_window_dock_config(f: impl FnOnce(&mut WindowDockConfig)) -> Result<()> {
+    let _guard = DOCK_CONFIG_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut cfg = read_window_dock_config_or_default();
+    f(&mut cfg);
+    write_window_dock_config(&cfg)
+}
+
 /// Persisted horizontal dock; default **left**.
 pub fn read_window_dock() -> String {
     let cfg = read_window_dock_config_or_default();
@@ -192,21 +208,15 @@ pub fn write_window_dock(dock: &str) -> Result<()> {
     if d != "left" && d != "center" && d != "right" {
         bail!("dock must be left, center, or right");
     }
-    let mut cfg = read_window_dock_config_or_default();
-    cfg.dock = d.to_string();
-    write_window_dock_config(&cfg)
+    update_window_dock_config(|cfg| cfg.dock = d.to_string())
 }
 
 pub fn write_dock_edge_hide(enabled: bool) -> Result<()> {
-    let mut cfg = read_window_dock_config_or_default();
-    cfg.dock_edge_hide = enabled;
-    write_window_dock_config(&cfg)
+    update_window_dock_config(|cfg| cfg.dock_edge_hide = enabled)
 }
 
 pub fn write_window_always_on_top(enabled: bool) -> Result<()> {
-    let mut cfg = read_window_dock_config_or_default();
-    cfg.window_always_on_top = enabled;
-    write_window_dock_config(&cfg)
+    update_window_dock_config(|cfg| cfg.window_always_on_top = enabled)
 }
 
 pub fn read_close_to_tray() -> bool {
@@ -214,9 +224,7 @@ pub fn read_close_to_tray() -> bool {
 }
 
 pub fn write_close_to_tray(enabled: bool) -> Result<()> {
-    let mut cfg = read_window_dock_config_or_default();
-    cfg.close_to_tray = enabled;
-    write_window_dock_config(&cfg)
+    update_window_dock_config(|cfg| cfg.close_to_tray = enabled)
 }
 
 /// Slide main window so only a thin strip remains visible on the docked edge (left or right).
