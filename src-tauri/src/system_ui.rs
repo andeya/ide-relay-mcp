@@ -6,6 +6,18 @@ use tauri::{
     Manager,
 };
 
+/// Show (or restore) the main window and re-apply the user's always-on-top
+/// preference.  On macOS, hiding then showing a window can reset the window
+/// level, so we must explicitly restore it.
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        let _ = w.set_always_on_top(relay_mcp::read_window_always_on_top());
+    }
+}
+
 /// Spawn a detached instance of the current executable.
 ///
 /// Used by both the system tray "New Window" action and the macOS Dock menu item.
@@ -58,13 +70,7 @@ pub fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.unminimize();
-                    let _ = w.set_focus();
-                }
-            }
+            "show" => show_main_window(app),
             "new_window" => spawn_new_window(),
             "quit" => {
                 app.exit(0);
@@ -78,11 +84,7 @@ pub fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
                 ..
             } = event
             {
-                if let Some(w) = tray.app_handle().get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.unminimize();
-                    let _ = w.set_focus();
-                }
+                show_main_window(tray.app_handle());
             }
         })
         .build(app)?;
