@@ -230,9 +230,10 @@ function onTabMouseEnter(ev: MouseEvent, tab: { tab_id: string; title?: string }
     tabTooltip.value = null;
     return;
   }
+  const el = ev.currentTarget as HTMLElement;
   if (tabTooltipTimer) clearTimeout(tabTooltipTimer);
   tabTooltipTimer = setTimeout(() => {
-    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
     tabTooltip.value = { text: full, x: rect.left + rect.width / 2, y: rect.bottom + 6 };
   }, 380);
 }
