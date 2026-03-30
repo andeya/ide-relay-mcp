@@ -155,6 +155,16 @@ fn dismiss_feedback_tab(
 }
 
 #[tauri::command]
+fn rename_tab(
+    tab_id: String,
+    title: String,
+    state: State<'_, RelayGuiRuntime>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    state.rename_tab(&tab_id, &title, &app)
+}
+
+#[tauri::command]
 fn close_feedback_tab(
     tab_id: String,
     state: State<'_, RelayGuiRuntime>,
@@ -785,6 +795,7 @@ fn run_tauri(initial: LaunchState) {
             read_tab_status,
             submit_tab_feedback,
             close_feedback_tab,
+            rename_tab,
             dismiss_feedback_tab,
             get_ui_locale,
             set_ui_locale,
