@@ -1014,13 +1014,13 @@ onBeforeUnmount(() => {
         >
           <input
             v-if="editingTabId === tab.tab_id"
+            :ref="(el: any) => { if (el) nextTick(() => (el as HTMLInputElement).focus()); }"
             v-model="editingTabTitle"
             class="tabRenameInput"
             maxlength="60"
             @blur="commitTabRename"
             @keydown.enter.prevent="commitTabRename"
             @keydown.escape.prevent="cancelTabRename"
-            @vue:mounted="($event: any) => $event.el.focus()"
             @click.stop
           />
           <button
