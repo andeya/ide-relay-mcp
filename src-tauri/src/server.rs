@@ -53,6 +53,7 @@ pub(crate) trait HilFeedback: Send + Sync {
         relay_mcp_session_id: &str,
         commands: Option<Vec<CommandItem>>,
         skills: Option<Vec<CommandItem>>,
+        title: Option<String>,
     ) -> Result<String, String>;
 }
 
@@ -66,12 +67,14 @@ impl HilFeedback for McpHttpFeedback {
         relay_mcp_session_id: &str,
         commands: Option<Vec<CommandItem>>,
         skills: Option<Vec<CommandItem>>,
+        title: Option<String>,
     ) -> Result<String, String> {
         mcp_http::feedback_round(
             retell,
             relay_mcp_session_id,
             commands.as_deref(),
             skills.as_deref(),
+            title.as_deref(),
         )
         .map_err(|e| e.to_string())
     }
@@ -248,6 +251,7 @@ fn spawn_hil_worker(
     relay_mcp_session_id: String,
     commands: Option<Vec<CommandItem>>,
     skills: Option<Vec<CommandItem>>,
+    title: Option<String>,
 ) -> Result<()> {
     let state = Arc::new(CallState::default());
     {
@@ -274,7 +278,7 @@ fn spawn_hil_worker(
     let st = Arc::clone(&state);
 
     thread::spawn(move || {
-        let result = hil.feedback_round(&retell, &relay_mcp_session_id, commands, skills);
+        let result = hil.feedback_round(&retell, &relay_mcp_session_id, commands, skills, title);
 
         {
             let mut g = mutex_lock_or_recover(&pending_map);
@@ -361,6 +365,11 @@ fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value, rpc_id: Value) -> Result<(
     let skills: Option<Vec<CommandItem>> = arguments
         .get("skills")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let title: Option<String> = arguments
+        .get("title")
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     let log_line = if relay_mcp_session_id.is_empty() {
         retell.clone()
@@ -371,7 +380,15 @@ fn handle_tool_call(ctx: &mut RouterCtx, msg: &Value, rpc_id: Value) -> Result<(
 
     let loop_idx = *mutex_lock_or_recover(&ctx.loop_index);
     let Some((rule, is_oneshot)) = auto_reply_peek(&ctx.config_dir, loop_idx) else {
-        return spawn_hil_worker(ctx, rpc_id, retell, relay_mcp_session_id, commands, skills);
+        return spawn_hil_worker(
+            ctx,
+            rpc_id,
+            retell,
+            relay_mcp_session_id,
+            commands,
+            skills,
+            title,
+        );
     };
 
     if is_oneshot {
@@ -463,6 +480,10 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
                                                 "description": { "type": "string" }
                                             }
                                         }
+                                    },
+                                    "title": {
+                                        "type": "string",
+                                        "description": "Short descriptive title for this session tab (<=60 chars). New tab only (no session): if provided, Relay displays it instead of the default MM-DD HH:mm:ss timestamp. Summarize the chat context, e.g. 'Fix login page CSS'. Ignored when session already exists."
                                     }
                                 },
                                 "required": ["retell"]
@@ -576,7 +597,7 @@ pub fn run_feedback_cli(
     let retell_for_thread = retell.clone();
     let (tx, rx) = mpsc::sync_channel(1);
     thread::spawn(move || {
-        let r = mcp_http::feedback_round(&retell_for_thread, &sid, None, None);
+        let r = mcp_http::feedback_round(&retell_for_thread, &sid, None, None, None);
         let _ = tx.send(r);
     });
     let wait = Duration::from_secs(timeout_seconds.max(1));
@@ -662,6 +683,7 @@ mod tests {
             _relay_mcp_session_id: &str,
             _commands: Option<Vec<CommandItem>>,
             _skills: Option<Vec<CommandItem>>,
+            _title: Option<String>,
         ) -> Result<String, String> {
             let _ = self.started.send(());
             let rx = self
@@ -805,6 +827,7 @@ mod tests {
             _relay_mcp_session_id: &str,
             _commands: Option<Vec<CommandItem>>,
             _skills: Option<Vec<CommandItem>>,
+            _title: Option<String>,
         ) -> Result<String, String> {
             let idx = {
                 let mut g = mutex_lock_or_recover(&self.out);
