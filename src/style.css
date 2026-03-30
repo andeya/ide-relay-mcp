@@ -1543,10 +1543,10 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
 .retellToolBtn {
   all: unset;
   cursor: pointer;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 1px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 5px;
   border-radius: 4px;
   color: #94a3b8;
   background: rgba(100, 116, 139, 0.12);
@@ -1555,7 +1555,6 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
     color 0.15s,
     background 0.15s,
     border-color 0.15s;
-  line-height: 1.6;
   user-select: none;
 }
 
