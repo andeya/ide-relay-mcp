@@ -474,7 +474,7 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
                                     },
                                     "title": {
                                         "type": "string",
-                                        "description": "Short descriptive title for this session tab (<=60 chars). New tab only (no session): if provided, Relay displays it instead of the default MM-DD HH:mm:ss timestamp. Summarize the chat context, e.g. 'Fix login page CSS'. Ignored when session already exists."
+                                        "description": "Short descriptive title for this session tab (<=60 chars). New tab only (no session); strongly recommended. Relay displays it instead of the default MM-DD HH:mm:ss timestamp. Summarize the chat context, e.g. 'Fix login page CSS'. Agents should always provide this when creating a new tab. Ignored when session already exists."
                                     }
                                 },
                                 "required": ["retell"]

@@ -30,7 +30,7 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp-<ide>\`（stdio
 | \`relay_mcp_session_id\` | string                                         | 若已有则必传；否则省略或 \`""\`                 | 来源：上一次工具返回 JSON 的 \`relay_mcp_session_id\`。省略或 \`""\` = 新标签页；非空 = 合并到该标签页。                                                          |
 | \`commands\`           | array of { name, id, category?, description? } | **无 session（新标签）**：每次调用**必须**带上本字段（数组）；内容应为当前宿主/IDE **能够枚举到的全部** commands，供 Relay 输入框斜杠补全。**仅当宿主确实无法提供任何项时**才允许 \`[]\`；**不得**在仍能拿到列表时偷懒传空。**有 session**：可选；若传入则按 \`id\` 与标签内已有列表合并去重。 |
 | \`skills\`            | array of { name, id, category?, description? } | 与 \`commands\` 相同规则，对象均为当前宿主能获得的 **skills**。 |
-| \`title\`             | string                                         | **仅新标签（无 session）时可选**。≤60 字符的短描述标题，概括本次聊天上下文（如 \`"修复登录页 CSS"\`）。若提供，Relay 用它替代默认的 MM-DD HH:mm:ss 时间戳作为标签页标题。有 session 时忽略。 |
+| \`title\`             | string                                         | **仅新标签（无 session）时生效；强烈推荐传入**。≤60 字符的短描述标题，概括本次聊天上下文（如 \`"修复登录页 CSS"\`）。Relay 用它替代默认的 MM-DD HH:mm:ss 时间戳作为标签页标题。有 session 时忽略。**创建新标签时 agent 应始终传入此参数**以提供有意义的标签名。 |
 
 ### [RETURN] 工具结果
 
@@ -72,7 +72,7 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp-<ide>\` (stdio), where \`<id
 | \`relay_mcp_session_id\` | string                                         | If you have it: YES; else omit or \`""\`           | From previous tool return JSON. Omit or \`""\` = new tab; non-empty = merge into that tab.                                                                     |
 | \`commands\`           | array of { name, id, category?, description? } | **No session (new tab)**: **must** include this property every call; array **must list every IDE/host command you can obtain** for Relay slash-completion. Use \`[]\` **only if** the host truly exposes none — **do not** send empty when you could populate. **With session**: optional; if sent, merged into that tab (dedupe by \`id\`). |
 | \`skills\`             | array of { name, id, category?, description? } | Same rules as \`commands\`, for **skills** the host can expose. |
-| \`title\`              | string                                         | **New tab only (no session), optional.** ≤60-char short title summarising the chat context (e.g. \`"Fix login page CSS"\`). When provided, Relay displays it instead of the default MM-DD HH:mm:ss timestamp. Ignored when session already exists. |
+| \`title\`              | string                                         | **New tab only (no session); strongly recommended.** ≤60-char short title summarising the chat context (e.g. \`"Fix login page CSS"\`). Relay displays it instead of the default MM-DD HH:mm:ss timestamp. Ignored when session already exists. **Agents should always provide this when creating a new tab** to give tabs meaningful labels. |
 
 ### [RETURN] Tool result
 
