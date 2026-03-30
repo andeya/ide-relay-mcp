@@ -444,6 +444,26 @@ impl RelayGuiRuntime {
         Ok(())
     }
 
+    pub fn rename_tab(
+        &self,
+        tab_id: &str,
+        title: &str,
+        app: &tauri::AppHandle,
+    ) -> Result<(), String> {
+        let new_title = title.trim();
+        if new_title.is_empty() {
+            return Err("title must not be empty".to_string());
+        }
+        let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
+        let Some(t) = g.tabs.iter_mut().find(|x| x.tab_id == tab_id) else {
+            return Ok(());
+        };
+        t.title = new_title.to_string();
+        drop(g);
+        emit_tabs(app);
+        Ok(())
+    }
+
     pub fn close_feedback_tab(&self, tab_id: &str, app: &tauri::AppHandle) -> Result<(), String> {
         let t = {
             let g = self.0.tabs.lock().map_err(|e| e.to_string())?;
@@ -573,6 +593,7 @@ fn post_feedback_apply_state(
     relay_mcp_session_id: String,
     commands: Option<Vec<CommandItem>>,
     skills: Option<Vec<CommandItem>>,
+    title: Option<String>,
 ) -> String {
     let rid = uuid::Uuid::new_v4().to_string();
     let mut g = lock_tabs(inner);
@@ -613,7 +634,9 @@ fn post_feedback_apply_state(
         } else {
             relay_mcp_session_id.clone()
         };
-        let title = format_session_id_as_title(&sid);
+        let title = title
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| format_session_id_as_title(&sid));
         let tid = new_tab_id();
         push_qa_round(&mut g, &retell, &tid, &sid);
         g.tabs.push(LaunchState {
@@ -692,6 +715,9 @@ struct PostFeedbackBody {
     /// IDE cli_id that the MCP process was launched with (e.g. "cursor").
     #[serde(default)]
     ide_mode: Option<String>,
+    /// Agent-provided descriptive title for a new session tab.
+    #[serde(default)]
+    title: Option<String>,
 }
 
 async fn post_feedback(
@@ -730,9 +756,17 @@ async fn post_feedback(
     let relay_mcp_session_id = session_id_from_tool_arg(Some(&body.relay_mcp_session_id));
     let commands = body.commands;
     let skills = body.skills;
+    let title = body.title;
 
     let rid = match tokio::task::spawn_blocking(move || {
-        post_feedback_apply_state(&inner, retell, relay_mcp_session_id, commands, skills)
+        post_feedback_apply_state(
+            &inner,
+            retell,
+            relay_mcp_session_id,
+            commands,
+            skills,
+            title,
+        )
     })
     .await
     {
