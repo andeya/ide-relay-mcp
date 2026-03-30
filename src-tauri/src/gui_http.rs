@@ -350,7 +350,9 @@ impl RelayGuiRuntime {
         }
         let inner = self.0.clone();
         thread::spawn(move || {
-            hydrate_qa_from_log_background(&inner);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                hydrate_qa_from_log_background(&inner);
+            }));
             inner.hydration_running.store(false, Ordering::Release);
         });
     }
@@ -450,7 +452,7 @@ impl RelayGuiRuntime {
         title: &str,
         app: &tauri::AppHandle,
     ) -> Result<(), String> {
-        let new_title = title.trim();
+        let new_title = truncate_title(title);
         if new_title.is_empty() {
             return Err("title must not be empty".to_string());
         }
@@ -458,7 +460,7 @@ impl RelayGuiRuntime {
         let Some(t) = g.tabs.iter_mut().find(|x| x.tab_id == tab_id) else {
             return Ok(());
         };
-        t.title = new_title.to_string();
+        t.title = new_title;
         drop(g);
         emit_tabs(app);
         Ok(())
@@ -565,6 +567,16 @@ fn hydrate_qa_from_log_background(inner: &Arc<RelayGuiInner>) {
     }
 }
 
+const MAX_TITLE_CHARS: usize = 60;
+
+fn truncate_title(raw: &str) -> String {
+    let t = raw.trim();
+    if t.chars().count() <= MAX_TITLE_CHARS {
+        return t.to_string();
+    }
+    t.chars().take(MAX_TITLE_CHARS).collect()
+}
+
 /// If old clients still send `<<<RELAY_FEEDBACK_JSON>>>` inside `human`, keep only the caption.
 fn strip_legacy_relay_marker_tail(s: &str) -> String {
     const M: &str = "<<<RELAY_FEEDBACK_JSON>>>";
@@ -635,7 +647,8 @@ fn post_feedback_apply_state(
             relay_mcp_session_id.clone()
         };
         let title = title
-            .filter(|t| !t.trim().is_empty())
+            .map(|t| truncate_title(&t))
+            .filter(|t| !t.is_empty())
             .unwrap_or_else(|| format_session_id_as_title(&sid));
         let tid = new_tab_id();
         push_qa_round(&mut g, &retell, &tid, &sid);
