@@ -1522,6 +1522,78 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   color: #e2e8f0;
 }
 
+/* --- Retell toolbar: Md / Raw toggle + Copy --- */
+.retellContainer {
+  position: relative;
+}
+
+.retellToolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 6px;
+  opacity: 0.45;
+  transition: opacity 0.18s ease;
+}
+
+.retellContainer:hover .retellToolbar {
+  opacity: 1;
+}
+
+.retellToolBtn {
+  all: unset;
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: #94a3b8;
+  background: rgba(100, 116, 139, 0.12);
+  border: 1px solid transparent;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    border-color 0.15s;
+  line-height: 1.6;
+  user-select: none;
+}
+
+.retellToolBtn:hover {
+  color: #e2e8f0;
+  background: rgba(100, 116, 139, 0.25);
+}
+
+.retellToolBtn--active {
+  color: #a5b4fc;
+  background: rgba(129, 140, 248, 0.18);
+  border-color: rgba(129, 140, 248, 0.35);
+}
+
+.retellToolDivider {
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  background: rgba(100, 116, 139, 0.3);
+  margin: 0 3px;
+}
+
+.retellCopyBtn--ok {
+  color: #34d399;
+}
+
+.retellRawPre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
 .qaRoundMd--user {
   color: #cbd5e1;
 }
