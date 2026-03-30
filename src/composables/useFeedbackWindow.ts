@@ -1208,8 +1208,8 @@ export function useFeedbackWindow() {
       try {
         await invoke("rename_tab", { tabId, title });
         await reloadTabs();
-      } catch {
-        /* keep current title on error */
+      } catch (e) {
+        console.warn("rename_tab failed:", e);
       }
     },
   };

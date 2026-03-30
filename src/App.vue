@@ -185,16 +185,38 @@ const {
 
 const editingTabId = ref<string | null>(null);
 const editingTabTitle = ref("");
+let tabClickTimer: ReturnType<typeof setTimeout> | null = null;
+
+function onTabClick(tabId: string) {
+  if (tabClickTimer !== null) clearTimeout(tabClickTimer);
+  tabClickTimer = setTimeout(() => {
+    tabClickTimer = null;
+    void selectTab(tabId);
+  }, 220);
+}
+
 function startTabRename(tab: { tab_id: string; title?: string }) {
+  if (tabClickTimer !== null) {
+    clearTimeout(tabClickTimer);
+    tabClickTimer = null;
+  }
   editingTabId.value = tab.tab_id;
   editingTabTitle.value = tab.title?.trim() || "";
 }
+
+let commitRenameGuard = false;
 async function commitTabRename() {
+  if (commitRenameGuard) return;
+  commitRenameGuard = true;
   const tid = editingTabId.value;
   const val = editingTabTitle.value.trim();
   editingTabId.value = null;
-  if (!tid || !val) return;
-  await renameTab(tid, val);
+  try {
+    if (!tid || !val) return;
+    await renameTab(tid, val);
+  } finally {
+    commitRenameGuard = false;
+  }
 }
 function cancelTabRename() {
   editingTabId.value = null;
@@ -992,12 +1014,13 @@ onBeforeUnmount(() => {
             }"
             :aria-selected="tab.tab_id === activeTabId"
             :title="tabFullTitle(tab)"
-            @click="selectTab(tab.tab_id)"
+            @click="onTabClick(tab.tab_id)"
             @dblclick.stop="startTabRename(tab)"
           >
             {{ tabLabel(tab) }}
           </button>
           <button
+            v-show="editingTabId !== tab.tab_id"
             type="button"
             class="tabCloseBadge"
             :aria-label="strings.tabCloseAria"
