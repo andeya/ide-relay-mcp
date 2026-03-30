@@ -1427,7 +1427,8 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   overflow: hidden;
 }
 
-.qaChatBubble--me .qaRoundMd--bubble + .qaReplyAttachStrip {
+.qaChatBubble--me .qaRoundMd--bubble + .qaReplyAttachStrip,
+.qaChatBubble--me .retellContainer + .qaReplyAttachStrip {
   margin-top: 8px;
   border-top: 1px solid rgba(45, 212, 191, 0.15);
   padding-top: 8px;
