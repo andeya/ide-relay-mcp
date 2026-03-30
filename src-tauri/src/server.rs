@@ -34,14 +34,6 @@ fn mutex_lock_or_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 struct CallState {
     /// Set when any party has emitted the JSON-RPC result/error for this id.
     response_sent: AtomicBool,
-    /// Set when host sends notifications/cancelled for this id (before worker finishes).
-    cancelled: AtomicBool,
-}
-
-impl CallState {
-    fn mark_cancelled(&self) {
-        self.cancelled.store(true, Ordering::Release);
-    }
 }
 
 // --- Hil backend (real HTTP vs test mock) ---
@@ -208,7 +200,6 @@ fn process_cancel_notification(ctx: &RouterCtx, msg: &Value) -> Result<()> {
         return Ok(());
     };
 
-    st.mark_cancelled();
     if st
         .response_sent
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
