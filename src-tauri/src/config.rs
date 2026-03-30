@@ -14,9 +14,6 @@ static DOCK_CONFIG_LOCK: Mutex<()> = Mutex::new(());
 /// Visible strip (px) when the window is tucked to left/right edge.
 pub const DOCK_EDGE_HIDE_PEEK_PX: i32 = 14;
 
-/// Max gap (px) from window outer to left/right monitor edge to count as “near” that edge when fully on-screen.
-pub const DOCK_EDGE_SCREEN_NEAR_TOL_PX: i32 = 80;
-
 /// Outer window left/right vs current monitor left/right (same coordinate space as Tauri `outer_position`).
 fn window_horizontal_edges_vs_monitor(
     win: &WebviewWindow,
@@ -294,50 +291,20 @@ pub fn mouse_in_dock_edge_peek_zone_window_only(
     Ok(false)
 }
 
-/// Which horizontal edge to tuck toward — monitor geometry only (not `window_dock.json`).
-///
-/// - If the window **already straddles** the left or right screen edge (part of the outer rect is
-///   past that edge), that side wins immediately.
-/// - Otherwise, if the window is **fully on-screen**, the **nearer** left/right edge is used only when
-///   at least one gap is within `TOL` px; if both gaps exceed `TOL`, returns `None`.
-pub fn window_nearest_horizontal_screen_edge_side(
+/// Always returns `"left"` or `"right"` — whichever horizontal screen edge
+/// the window centre is closer to.  Used as the tuck side for edge-hide
+/// collapse (both focus-loss and pointer-leave paths).
+pub fn window_nearer_horizontal_edge_side(
     win: &WebviewWindow,
-) -> std::result::Result<Option<String>, String> {
+) -> std::result::Result<String, String> {
     let (win_l, win_r, scr_l, scr_r) = window_horizontal_edges_vs_monitor(win)?;
-
-    let off_left = win_l < scr_l;
-    let off_right = win_r > scr_r;
-    if off_left && !off_right {
-        return Ok(Some("left".to_string()));
+    let win_cx = (win_l + win_r) / 2;
+    let scr_cx = (scr_l + scr_r) / 2;
+    if win_cx <= scr_cx {
+        Ok("left".to_string())
+    } else {
+        Ok("right".to_string())
     }
-    if off_right && !off_left {
-        return Ok(Some("right".to_string()));
-    }
-    if off_left && off_right {
-        let overflow_left = scr_l.saturating_sub(win_l);
-        let overflow_right = win_r.saturating_sub(scr_r);
-        if overflow_left > overflow_right {
-            return Ok(Some("left".to_string()));
-        }
-        if overflow_right > overflow_left {
-            return Ok(Some("right".to_string()));
-        }
-        return Ok(None);
-    }
-
-    let d_left = (win_l - scr_l).abs();
-    let d_right = (scr_r - win_r).abs();
-    let tol = DOCK_EDGE_SCREEN_NEAR_TOL_PX;
-    if d_left > tol && d_right > tol {
-        return Ok(None);
-    }
-    if d_left < d_right {
-        return Ok(Some("left".to_string()));
-    }
-    if d_right < d_left {
-        return Ok(Some("right".to_string()));
-    }
-    Ok(None)
 }
 
 /// Vertically centered on work area; horizontal by `dock`.
