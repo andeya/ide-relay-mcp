@@ -222,6 +222,25 @@ function cancelTabRename() {
   editingTabId.value = null;
 }
 
+const tabTooltip = ref<{ text: string; x: number; y: number } | null>(null);
+let tabTooltipTimer: ReturnType<typeof setTimeout> | null = null;
+function onTabMouseEnter(ev: MouseEvent, tab: { tab_id: string; title?: string }) {
+  const full = tab.title?.trim() || "";
+  if (!full || full.length <= 18) {
+    tabTooltip.value = null;
+    return;
+  }
+  if (tabTooltipTimer) clearTimeout(tabTooltipTimer);
+  tabTooltipTimer = setTimeout(() => {
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    tabTooltip.value = { text: full, x: rect.left + rect.width / 2, y: rect.bottom + 6 };
+  }, 380);
+}
+function onTabMouseLeave() {
+  if (tabTooltipTimer) { clearTimeout(tabTooltipTimer); tabTooltipTimer = null; }
+  tabTooltip.value = null;
+}
+
 /** One `slashCommandSecondaryLine` eval per row (description, or non-redundant name). */
 const slashPaletteRows = computed(() =>
   filteredCommands.value.map((cmd, index) => ({
@@ -1013,9 +1032,10 @@ onBeforeUnmount(() => {
               ['tabBtn--hue-' + tabHue(tab)]: !flashingTabIds.has(tab.tab_id) && tabHue(tab) !== 'default',
             }"
             :aria-selected="tab.tab_id === activeTabId"
-            :title="tabFullTitle(tab)"
             @click="onTabClick(tab.tab_id)"
             @dblclick.stop="startTabRename(tab)"
+            @mouseenter="onTabMouseEnter($event, tab)"
+            @mouseleave="onTabMouseLeave"
           >
             {{ tabLabel(tab) }}
           </button>
@@ -2132,5 +2152,14 @@ onBeforeUnmount(() => {
         />
       </div>
     </Teleport>
+
+    <!-- Custom tab title tooltip -->
+    <div
+      v-if="tabTooltip"
+      class="tabTooltip"
+      :style="{ left: tabTooltip.x + 'px', top: tabTooltip.y + 'px' }"
+    >
+      {{ tabTooltip.text }}
+    </div>
   </main>
 </template>

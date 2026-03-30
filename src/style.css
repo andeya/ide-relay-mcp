@@ -643,6 +643,30 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   outline: none;
 }
 
+.tabTooltip {
+  position: fixed;
+  z-index: 9999;
+  transform: translateX(-50%);
+  max-width: 320px;
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  animation: tabTooltipIn 0.12s ease-out;
+}
+
+@keyframes tabTooltipIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 .mainFeedbackZone {
   flex: 0 1 auto;
   min-height: 0;
