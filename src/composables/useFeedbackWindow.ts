@@ -1203,5 +1203,14 @@ export function useFeedbackWindow() {
       void locale.value;
       return feedbackTabLabel(tab);
     },
+    tabFullTitle: (tab: LaunchState) => tab.title?.trim() || "",
+    renameTab: async (tabId: string, title: string) => {
+      try {
+        await invoke("rename_tab", { tabId, title });
+        await reloadTabs();
+      } catch {
+        /* keep current title on error */
+      }
+    },
   };
 }
