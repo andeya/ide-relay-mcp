@@ -169,6 +169,7 @@ pub fn feedback_round(
     relay_mcp_session_id: &str,
     commands: Option<&[crate::CommandItem]>,
     skills: Option<&[crate::CommandItem]>,
+    title: Option<&str>,
 ) -> Result<String> {
     let ep = ensure_gui_endpoint(Duration::from_secs(45))?;
 
@@ -185,6 +186,9 @@ pub fn feedback_round(
     }
     if let Some(skill_list) = skills {
         body["skills"] = serde_json::to_value(skill_list).unwrap_or(serde_json::json!([]));
+    }
+    if let Some(t) = title {
+        body["title"] = serde_json::json!(t);
     }
     let resp = ureq::post(&post_url)
         .set("Authorization", &format!("Bearer {}", ep.token))
