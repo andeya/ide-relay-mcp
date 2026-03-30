@@ -179,7 +179,26 @@ const {
   removePendingImage,
   removePendingFileDrop,
   tabHue,
+  tabFullTitle,
+  renameTab,
 } = useFeedbackWindow();
+
+const editingTabId = ref<string | null>(null);
+const editingTabTitle = ref("");
+function startTabRename(tab: { tab_id: string; title?: string }) {
+  editingTabId.value = tab.tab_id;
+  editingTabTitle.value = tab.title?.trim() || "";
+}
+async function commitTabRename() {
+  const tid = editingTabId.value;
+  const val = editingTabTitle.value.trim();
+  editingTabId.value = null;
+  if (!tid || !val) return;
+  await renameTab(tid, val);
+}
+function cancelTabRename() {
+  editingTabId.value = null;
+}
 
 /** One `slashCommandSecondaryLine` eval per row (description, or non-redundant name). */
 const slashPaletteRows = computed(() =>
@@ -950,7 +969,19 @@ onBeforeUnmount(() => {
           :key="tab.tab_id"
           class="tabStripCell"
         >
+          <input
+            v-if="editingTabId === tab.tab_id"
+            v-model="editingTabTitle"
+            class="tabRenameInput"
+            maxlength="60"
+            @blur="commitTabRename"
+            @keydown.enter.prevent="commitTabRename"
+            @keydown.escape.prevent="cancelTabRename"
+            @vue:mounted="($event: any) => $event.el.focus()"
+            @click.stop
+          />
           <button
+            v-else
             type="button"
             role="tab"
             class="tabBtn"
@@ -960,7 +991,9 @@ onBeforeUnmount(() => {
               ['tabBtn--hue-' + tabHue(tab)]: !flashingTabIds.has(tab.tab_id) && tabHue(tab) !== 'default',
             }"
             :aria-selected="tab.tab_id === activeTabId"
+            :title="tabFullTitle(tab)"
             @click="selectTab(tab.tab_id)"
+            @dblclick.stop="startTabRename(tab)"
           >
             {{ tabLabel(tab) }}
           </button>
