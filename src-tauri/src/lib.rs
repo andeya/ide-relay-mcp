@@ -60,9 +60,9 @@ pub use config::{
     collapse_window_for_edge_hide, desktop_cursor_outside_outer_window,
     mouse_in_dock_edge_peek_zone_window_only, position_main_window_for_dock, read_close_to_tray,
     read_dock_edge_hide, read_mcp_paused, read_ui_locale, read_window_always_on_top,
-    read_window_dock, window_nearest_horizontal_screen_edge_side,
-    window_outer_straddles_screen_edge, write_close_to_tray, write_dock_edge_hide,
-    write_mcp_paused, write_ui_locale, write_window_always_on_top, write_window_dock,
+    read_window_dock, window_nearer_horizontal_edge_side, window_outer_straddles_screen_edge,
+    write_close_to_tray, write_dock_edge_hide, write_mcp_paused, write_ui_locale,
+    write_window_always_on_top, write_window_dock,
 };
 pub use path_persistence::{
     persist_relay_cli_path, relay_path_config_reason, relay_path_persistently_configured,
