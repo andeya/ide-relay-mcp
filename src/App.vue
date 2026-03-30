@@ -224,7 +224,9 @@ function cancelTabRename() {
 
 const tabTooltip = ref<{ text: string; x: number; y: number } | null>(null);
 let tabTooltipTimer: ReturnType<typeof setTimeout> | null = null;
-function onTabMouseEnter(ev: MouseEvent, tab: { tab_id: string; title?: string }) {
+function onTabMouseEnter(ev: MouseEvent, tabId: string) {
+  const tab = tabs.value.find(t => t.tab_id === tabId);
+  if (!tab) { tabTooltip.value = null; return; }
   const full = tabFullTitle(tab);
   if (!full) { tabTooltip.value = null; return; }
   const el = ev.currentTarget as HTMLElement;
@@ -1036,7 +1038,7 @@ onBeforeUnmount(() => {
             :aria-selected="tab.tab_id === activeTabId"
             @click="onTabClick(tab.tab_id)"
             @dblclick.stop="startTabRename(tab)"
-            @mouseenter="onTabMouseEnter($event, tab)"
+            @mouseenter="onTabMouseEnter($event, tab.tab_id)"
             @mouseleave="onTabMouseLeave"
           >
             {{ tabLabel(tab) }}
