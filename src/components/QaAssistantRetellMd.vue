@@ -3,7 +3,7 @@
  * Assistant retell: Markdown (default) / raw toggle + copy button.
  * Computed once per retell change to avoid re-parsing on unrelated parent updates.
  */
-import { computed, ref } from "vue";
+import { computed, ref, onBeforeUnmount } from "vue";
 import { safeMarkdownToHtml } from "../utils/safeMarkdown";
 
 const props = defineProps<{
@@ -13,18 +13,25 @@ const props = defineProps<{
 const html = computed(() => safeMarkdownToHtml(props.retell ?? ""));
 const showRaw = ref(false);
 const copied = ref(false);
+let copiedTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function copyRetell() {
   try {
     await navigator.clipboard.writeText(props.retell ?? "");
     copied.value = true;
-    setTimeout(() => {
+    if (copiedTimer) clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
       copied.value = false;
+      copiedTimer = null;
     }, 1500);
   } catch {
     /* clipboard API may be unavailable in some environments */
   }
 }
+
+onBeforeUnmount(() => {
+  if (copiedTimer) clearTimeout(copiedTimer);
+});
 </script>
 
 <template>
@@ -74,7 +81,7 @@ async function copyRetell() {
         </svg>
       </button>
     </div>
-    <pre v-if="showRaw" class="qaRoundMd qaRoundMd--agent retellRawPre">{{ retell }}</pre>
+    <pre v-if="showRaw" class="qaRoundMd qaRoundMd--agent retellRawPre">{{ retell.trim() }}</pre>
     <div v-else class="qaRoundMd qaRoundMd--agent" v-html="html" />
   </div>
 </template>

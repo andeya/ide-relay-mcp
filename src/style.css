@@ -1563,6 +1563,11 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   background: rgba(100, 116, 139, 0.25);
 }
 
+.retellToolBtn:focus-visible {
+  outline: 2px solid rgba(129, 140, 248, 0.7);
+  outline-offset: 1px;
+}
+
 .retellToolBtn--active {
   color: #a5b4fc;
   background: rgba(129, 140, 248, 0.18);
