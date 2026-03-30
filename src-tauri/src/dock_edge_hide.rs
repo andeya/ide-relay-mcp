@@ -113,10 +113,61 @@ pub fn expand_if_collapsed(app: &AppHandle) -> Result<bool, String> {
 }
 
 pub fn handle_main_window_focus(app: &AppHandle, focused: bool) {
-    if !focused {
+    if focused {
+        let _ = expand_if_collapsed(app);
+    } else {
+        collapse_on_focus_lost(app);
+    }
+}
+
+/// Tuck when the window loses focus (user clicked another app).
+///
+/// Same guards as [`collapse_after_leave`] except the cursor-outside-window
+/// check is skipped — focus loss is a definitive signal that the user has
+/// moved to another application.
+fn collapse_on_focus_lost(app: &AppHandle) {
+    if !crate::read_dock_edge_hide() {
         return;
     }
-    let _ = expand_if_collapsed(app);
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    let Some(state) = app.try_state::<Mutex<EdgeHideState>>() else {
+        return;
+    };
+    let g = match state.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    if g.collapsed {
+        return;
+    }
+    if unix_ms() < g.suppress_collapse_until_ms {
+        return;
+    }
+    drop(g);
+
+    let side = match crate::window_nearest_horizontal_screen_edge_side(&win) {
+        Ok(Some(s)) => s,
+        _ => return,
+    };
+
+    if crate::collapse_window_for_edge_hide(&win, &side).is_err() {
+        return;
+    }
+
+    let Ok(mut g) = state.lock() else { return };
+    if g.collapsed {
+        return;
+    }
+    let now = unix_ms();
+    g.collapsed = true;
+    g.tuck_side = Some(side);
+    g.suppress_peek_expand_until_ms = now.saturating_add(POST_COLLAPSE_PEEK_SUPPRESS_MS);
+    drop(g);
+
+    let _ = win.set_always_on_top(true);
+    set_peek_fast_poll(true);
 }
 
 pub fn try_expand_from_peek_hover(app: &AppHandle) {
