@@ -227,9 +227,11 @@ let tabTooltipTimer: ReturnType<typeof setTimeout> | null = null;
 function onTabMouseEnter(ev: MouseEvent, tab: { tab_id: string; title?: string }) {
   const full = tabFullTitle(tab);
   if (!full) { tabTooltip.value = null; return; }
-  const label = tabLabel(tab);
-  if (label.includes(full)) { tabTooltip.value = null; return; }
   const el = ev.currentTarget as HTMLElement;
+  const visuallyTruncated = el.scrollWidth > el.clientWidth;
+  const label = tabLabel(tab);
+  const jsTruncated = !label.includes(full);
+  if (!visuallyTruncated && !jsTruncated) { tabTooltip.value = null; return; }
   if (tabTooltipTimer) clearTimeout(tabTooltipTimer);
   tabTooltipTimer = setTimeout(() => {
     const rect = el.getBoundingClientRect();
