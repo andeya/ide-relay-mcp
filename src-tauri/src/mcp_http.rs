@@ -151,14 +151,6 @@ pub fn ensure_gui_endpoint(max_wait: Duration) -> Result<GuiEndpoint> {
             spawned = true;
         }
 
-        if !has_ide && spawned {
-            anyhow::bail!("No running Relay GUI found. Start a GUI with `relay gui-<ide>` first.");
-        }
-
-        if !has_ide {
-            spawned = true;
-        }
-
         thread::sleep(Duration::from_millis(120));
     }
 }
