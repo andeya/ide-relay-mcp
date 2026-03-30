@@ -1574,6 +1574,12 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   border-color: rgba(129, 140, 248, 0.35);
 }
 
+.retellToolBtn--activeUser {
+  color: #5eead4;
+  background: rgba(94, 234, 212, 0.14);
+  border-color: rgba(94, 234, 212, 0.32);
+}
+
 .retellToolDivider {
   display: inline-block;
   width: 1px;
