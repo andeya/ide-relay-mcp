@@ -629,6 +629,20 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   color: #a5f3fc;
 }
 
+.tabRenameInput {
+  width: 100%;
+  max-width: 168px;
+  box-sizing: border-box;
+  padding: 0.32rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid rgba(74, 222, 128, 0.55);
+  background: rgba(15, 23, 42, 0.85);
+  color: #f1f5f9;
+  font: inherit;
+  font-size: 0.8rem;
+  outline: none;
+}
+
 .mainFeedbackZone {
   flex: 0 1 auto;
   min-height: 0;
