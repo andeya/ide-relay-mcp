@@ -30,12 +30,13 @@ const BODY_ZH = `**宿主与界面**：MCP 宿主为 \`relay mcp-<ide>\`（stdio
 | \`relay_mcp_session_id\` | string                                         | 若已有则必传；否则省略或 \`""\`                 | 来源：上一次工具返回 JSON 的 \`relay_mcp_session_id\`。省略或 \`""\` = 新标签页；非空 = 合并到该标签页。                                                          |
 | \`commands\`           | array of { name, id, category?, description? } | **无 session（新标签）**：每次调用**必须**带上本字段（数组）；内容应为当前宿主/IDE **能够枚举到的全部** commands，供 Relay 输入框斜杠补全。**仅当宿主确实无法提供任何项时**才允许 \`[]\`；**不得**在仍能拿到列表时偷懒传空。**有 session**：可选；若传入则按 \`id\` 与标签内已有列表合并去重。 |
 | \`skills\`            | array of { name, id, category?, description? } | 与 \`commands\` 相同规则，对象均为当前宿主能获得的 **skills**。 |
+| \`title\`             | string                                         | **仅新标签（无 session）时可选**。≤60 字符的短描述标题，概括本次聊天上下文（如 \`"修复登录页 CSS"\`）。若提供，Relay 用它替代默认的 MM-DD HH:mm:ss 时间戳作为标签页标题。有 session 时忽略。 |
 
 ### [RETURN] 工具结果
 
 - **正常**：JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<用户回答>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`；无附件时省略 \`attachments\`。\`path\` 在 MCP 返回中可为 Windows 路径；若 MCP 启动参数含 \`--exe_in_wsl\`（如 \`args\` 为 \`["mcp-<ide>", "--exe_in_wsl"]\`），则可能已改写为 WSL 的 \`/mnt/...\`。\`cmd_skill_count\` = 当前该标签页已保存的 **commands + skills** 条数（ slash 补全列表大小）。
 - **清单为空时的再传**：若某次返回中 \`cmd_skill_count === 0\`（且非暂停哨兵），下一轮调用**必须**再次带上 \`commands\` 与 \`skills\`，并填入当前 IDE **能够枚举到的全部**项（**仅当确实无法提供任何项时**才为 \`[]\`），以恢复斜杠补全。
-- **其它**：\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = **MM-DD HH:mm:ss**。\`human\` 为用户回答（关闭/超时可为空）。
+- **其它**：\`relay_mcp_session_id\` 为毫秒时间戳，Relay 标签 = agent 提供的 \`title\`（若有），否则 **MM-DD HH:mm:ss**。\`human\` 为用户回答（关闭/超时可为空）。
 - **后置条件**：保存 \`relay_mcp_session_id\`，下一次调用时传入；若 \`human\` 非空或 \`attachments\` 非空，则当作用户输入并回复；**仅当 human 与 attachments 均为空（或 attachments 不存在）时本回合结束**。
 - **哨兵**：若**整段**结果包含 \`<<<RELAY_MCP_PAUSED>>>\`，则不得再次调用，直到用户在 Relay 设置中恢复。
 
@@ -71,12 +72,13 @@ const BODY_EN = `**Host & UI**: Host is \`relay mcp-<ide>\` (stdio), where \`<id
 | \`relay_mcp_session_id\` | string                                         | If you have it: YES; else omit or \`""\`           | From previous tool return JSON. Omit or \`""\` = new tab; non-empty = merge into that tab.                                                                     |
 | \`commands\`           | array of { name, id, category?, description? } | **No session (new tab)**: **must** include this property every call; array **must list every IDE/host command you can obtain** for Relay slash-completion. Use \`[]\` **only if** the host truly exposes none — **do not** send empty when you could populate. **With session**: optional; if sent, merged into that tab (dedupe by \`id\`). |
 | \`skills\`             | array of { name, id, category?, description? } | Same rules as \`commands\`, for **skills** the host can expose. |
+| \`title\`              | string                                         | **New tab only (no session), optional.** ≤60-char short title summarising the chat context (e.g. \`"Fix login page CSS"\`). When provided, Relay displays it instead of the default MM-DD HH:mm:ss timestamp. Ignored when session already exists. |
 
 ### [RETURN] Tool result
 
 - **Normal**: JSON \`{ "relay_mcp_session_id": "<ms>", "human": "<Answer text>", "cmd_skill_count": <number> [, "attachments": [{ "kind": "image"|"file", "path": "..." }] ] }\`; omit \`attachments\` when none. \`path\` is Windows-local from the GUI; if the MCP process was started with \`--exe_in_wsl\` (e.g. \`args\` = \`["mcp-<ide>", "--exe_in_wsl"]\`), MCP may rewrite paths to WSL \`/mnt/...\` before the IDE sees the tool result. \`cmd_skill_count\` = number of \`commands\` + \`skills\` currently stored on that Relay tab (slash-completion list size).
 - **Re-list when zero**: If \`cmd_skill_count === 0\` on a return (and not the pause sentinel), the **next** call **must** again include \`commands\` and \`skills\` filled with every item the IDE **can** enumerate — use \`[]\` **only** when the host truly provides none.
-- **Also**: \`relay_mcp_session_id\`: ms timestamp. Tab label = **MM-DD HH:mm:ss**. \`human\`: Answer (empty on dismiss/timeout).
+- **Also**: \`relay_mcp_session_id\`: ms timestamp. Tab label = agent-provided \`title\` if given, else **MM-DD HH:mm:ss**. \`human\`: Answer (empty on dismiss/timeout).
 - **Postcondition**: Store \`relay_mcp_session_id\`; pass it on the **next** call. If \`human\` is non-empty or \`attachments\` is non-empty, treat as user input and reply; **the turn ends only when both are empty** (or attachments absent).
 - **Sentinel**: If the **entire** result contains \`<<<RELAY_MCP_PAUSED>>>\`, do not call again until the user resumes in Relay Settings.
 
