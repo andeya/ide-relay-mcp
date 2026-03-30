@@ -225,11 +225,10 @@ function cancelTabRename() {
 const tabTooltip = ref<{ text: string; x: number; y: number } | null>(null);
 let tabTooltipTimer: ReturnType<typeof setTimeout> | null = null;
 function onTabMouseEnter(ev: MouseEvent, tab: { tab_id: string; title?: string }) {
-  const full = tab.title?.trim() || "";
-  if (!full || full.length <= 18) {
-    tabTooltip.value = null;
-    return;
-  }
+  const full = tabFullTitle(tab);
+  if (!full) { tabTooltip.value = null; return; }
+  const label = tabLabel(tab);
+  if (label.includes(full)) { tabTooltip.value = null; return; }
   const el = ev.currentTarget as HTMLElement;
   if (tabTooltipTimer) clearTimeout(tabTooltipTimer);
   tabTooltipTimer = setTimeout(() => {
