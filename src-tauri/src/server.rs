@@ -433,10 +433,10 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
                     "tools": [
                         {
                             "name": TOOL_NAME,
-                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id, human, cmd_skill_count, and optional attachments [{kind, path}]. Reply when human or attachments is non-empty; turn ends only when both are empty. Paths point at Relay's saved files (Windows). When relay mcp-<ide> is started with --exe_in_wsl, paths may be rewritten to /mnt/<drive>/... for WSL agents. New tab (no session): always include commands and skills arrays filled with every item the IDE/host can expose; use [] only if truly none. If cmd_skill_count was 0 on the last reply, next call must repopulate both arrays the same way. With session id: commands/skills optional; when sent, merged (dedupe by id).",
+                            "description": "Human-in-the-loop: opens Relay for your Answer. Returns JSON with relay_mcp_session_id, human, cmd_skill_count, and optional attachments [{kind, path}]. Reply when human or attachments is non-empty; turn ends only when both are empty. Paths point at Relay's saved files (Windows). When relay mcp-<ide> is started with --exe_in_wsl, paths may be rewritten to /mnt/<drive>/... for WSL agents. If you don't have a stored relay_mcp_session_id, review previous results in this conversation first. New tab or cmd_skill_count 0: actively query the IDE/host for commands and skills lists, then include full results; use [] only if truly none. With session and cmd_skill_count > 0: commands/skills optional; when sent, merged (dedupe by id).",
                             "inputSchema": {
                                 "type": "object",
-                                "description": "retell required. New session: include commands and skills with full IDE-provided lists when possible; [] only when host exposes no items. After cmd_skill_count 0, next call must include both arrays repopulated the same way. With relay_mcp_session_id: pass it; commands/skills optional unless repopulating after zero.",
+                                "description": "retell required. If no stored relay_mcp_session_id, review previous results in this conversation first. New tab or cmd_skill_count 0: actively query IDE for commands and skills, include full results; [] only when host exposes no items. With relay_mcp_session_id and cmd_skill_count > 0: pass session id; commands/skills optional.",
                                 "properties": {
                                     "retell": {
                                         "type": "string",
@@ -444,11 +444,11 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
                                     },
                                     "relay_mcp_session_id": {
                                         "type": "string",
-                                        "description": "Omit or empty string for a new tab; otherwise pass the id from the previous tool result. If the last cmd_skill_count was 0, next call must again send commands and skills (full lists when possible, else [] only if none exist)."
+                                        "description": "If you don't have a stored value, review all previous relay_interactive_feedback results in this conversation and reuse the most recent relay_mcp_session_id. Omit or empty string for a new tab; non-empty merges into that tab."
                                     },
                                     "commands": {
                                         "type": "array",
-                                        "description": "New tab: required as a property every call—array must list every IDE command you can obtain for slash-completion; use [] only if the host truly provides none (do not send empty when data exists). With session: optional; if sent, merged into this tab (dedupe by id). Shape: [{name, id, category?, description?}].",
+                                        "description": "New tab or last cmd_skill_count was 0: must first actively query the IDE/host for its available commands, then include the full result. Use [] only if the host truly provides none (do not send empty when data exists). With session and cmd_skill_count > 0: optional; if sent, merged (dedupe by id). Shape: [{name, id, category?, description?}].",
                                         "items": {
                                             "type": "object",
                                             "properties": {
@@ -461,7 +461,7 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
                                     },
                                     "skills": {
                                         "type": "array",
-                                        "description": "Same rules as commands: new tab must include the array populated with every IDE skill you can obtain; [] only if none exist. With session: optional; merge (dedupe by id) if sent.",
+                                        "description": "Same rules as commands: new tab or cmd_skill_count 0 requires actively querying the host's skills list first, then sending the full result; [] only if none exist. With session and cmd_skill_count > 0: optional; merge (dedupe by id) if sent.",
                                         "items": {
                                             "type": "object",
                                             "properties": {
@@ -474,7 +474,7 @@ fn dispatch_message(ctx: &mut RouterCtx, msg: &Value) -> Result<()> {
                                     },
                                     "title": {
                                         "type": "string",
-                                        "description": "Short descriptive title for this session tab (<=60 chars). New tab only (no session); strongly recommended. Relay displays it instead of the default MM-DD HH:mm:ss timestamp. Summarize the chat context, e.g. 'Fix login page CSS'. Agents should always provide this when creating a new tab. Ignored when session already exists."
+                                        "description": "Required when creating a new tab (no relay_mcp_session_id). Short descriptive title for this session tab (<=60 chars). Summarize the chat context, e.g. 'Fix login page CSS'. Optional with session: updates the tab label unless the user manually renamed it."
                                     }
                                 },
                                 "required": ["retell"]

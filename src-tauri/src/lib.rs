@@ -167,8 +167,11 @@ pub struct LaunchState {
     pub retell: String,
     /// Correlates with HTTP wait channel; empty for hub preview.
     pub request_id: String,
-    /// Tab strip label: MM-DD HH:mm:ss from [`format_session_id_as_title`] on `relay_mcp_session_id`.
+    /// Tab strip label — set from AI-provided title or [`format_session_id_as_title`] fallback.
     pub title: String,
+    /// True after the user manually renames this tab (prevents AI title overwrite).
+    #[serde(skip)]
+    pub title_renamed_by_user: bool,
     pub tab_id: String,
     /// Merge key; generated as ms timestamp for new tabs, reused when merging.
     pub relay_mcp_session_id: String,
@@ -555,6 +558,7 @@ pub fn launch_state_preview() -> LaunchState {
             .to_string(),
         request_id: String::new(),
         title: "Chat".to_string(),
+        title_renamed_by_user: false,
         tab_id: new_tab_id(),
         relay_mcp_session_id: String::new(),
         is_preview: true,
@@ -692,6 +696,7 @@ mod reconcile_qa_rounds_tests {
                 retell: "".into(),
                 request_id: "".into(),
                 title: "".into(),
+                title_renamed_by_user: false,
                 tab_id: "t".into(),
                 relay_mcp_session_id: "".into(),
                 is_preview: false,
@@ -729,6 +734,7 @@ mod feedback_tool_result_tests {
             retell: "r".into(),
             request_id: "req".into(),
             title: "t".into(),
+            title_renamed_by_user: false,
             tab_id: "tid".into(),
             relay_mcp_session_id: "1700000000000".into(),
             is_preview: false,

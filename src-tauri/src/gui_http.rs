@@ -461,6 +461,7 @@ impl RelayGuiRuntime {
             return Ok(());
         };
         t.title = new_title;
+        t.title_renamed_by_user = true;
         drop(g);
         emit_tabs(app);
         Ok(())
@@ -637,6 +638,11 @@ fn post_feedback_apply_state(
         t.tab_id = tab_id.clone();
         t.commands = merge_command_items(t.commands.clone(), commands.clone());
         t.skills = merge_command_items(t.skills.clone(), skills.clone());
+        if !t.title_renamed_by_user {
+            if let Some(new_title) = title.as_ref().map(|s| truncate_title(s)).filter(|s| !s.is_empty()) {
+                t.title = new_title;
+            }
+        }
         if merge_was_active {
             g.active_tab_id = tab_id.clone();
         }
@@ -656,6 +662,7 @@ fn post_feedback_apply_state(
             retell: retell.clone(),
             request_id: rid.clone(),
             title,
+            title_renamed_by_user: false,
             tab_id: tid.clone(),
             relay_mcp_session_id: sid.clone(),
             is_preview: false,

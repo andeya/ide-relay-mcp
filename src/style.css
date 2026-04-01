@@ -555,33 +555,54 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
 }
 
 .tabBtn.active {
+  --_tab-glow: rgba(74, 222, 128, 0.28);
   background: rgba(34, 197, 94, 0.14);
   border-color: rgba(74, 222, 128, 0.32);
   color: #bbf7d0;
+  font-weight: 500;
+  box-shadow: 0 0 7px -1px var(--_tab-glow);
+}
+
+.tabBtn.active::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 18%;
+  right: 18%;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 /* Hue overrides for selected tab — higher specificity than .tabBtn.active */
 .tabBtn.active.tabBtn--hue-active {
+  --_tab-glow: rgba(52, 211, 153, 0.32);
   background: rgba(4, 120, 87, 0.28);
   border-color: rgba(52, 211, 153, 0.55);
   color: #6ee7b7;
 }
 .tabBtn.active.tabBtn--hue-idle {
+  --_tab-glow: rgba(129, 140, 248, 0.32);
   background: rgba(36, 32, 86, 0.50);
   border-color: rgba(129, 140, 248, 0.50);
   color: #a5b4fc;
 }
 .tabBtn.active.tabBtn--hue-expired {
+  --_tab-glow: rgba(248, 113, 113, 0.28);
   background: rgba(127, 29, 29, 0.30);
   border-color: rgba(248, 113, 113, 0.50);
   color: #fca5a5;
 }
 .tabBtn.active.tabBtn--hue-hub {
+  --_tab-glow: rgba(45, 212, 191, 0.28);
   background: rgba(15, 118, 110, 0.24);
   border-color: rgba(45, 212, 191, 0.40);
   color: #99f6e4;
 }
 .tabBtn.active.tabBtn--hue-loading {
+  --_tab-glow: rgba(34, 211, 238, 0.32);
   background: rgba(14, 116, 144, 0.28);
   border-color: rgba(34, 211, 238, 0.55);
   color: #a5f3fc;
