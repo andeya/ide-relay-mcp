@@ -329,8 +329,7 @@ fn install_claude_code_rule(content: &str) -> Result<()> {
         fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
     }
     let path = claude_code_rule_file_path()?;
-    fs::write(&path, content).with_context(|| format!("write {}", path.display()))?;
-    Ok(())
+    mcp_setup::atomic_write_rule_file(&path, content)
 }
 
 fn uninstall_claude_code_rule() -> Result<()> {

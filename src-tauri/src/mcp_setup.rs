@@ -7,6 +7,7 @@ use crate::{gui_binary_name, relay_cli_directory};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 fn config_path_error_hint() -> String {
@@ -285,8 +286,7 @@ pub fn install_cursor_rule(content: &str) -> Result<()> {
         fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
     }
     let path = dir.join(CURSOR_RULE_FILENAME);
-    fs::write(&path, content).with_context(|| format!("write {}", path.display()))?;
-    Ok(())
+    atomic_write_rule_file(&path, content)
 }
 
 pub fn uninstall_cursor_rule() -> Result<()> {
@@ -295,4 +295,80 @@ pub fn uninstall_cursor_rule() -> Result<()> {
         fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
     }
     Ok(())
+}
+
+/// Write a rule file atomically: write to a `.tmp` sibling, sync to disk, then
+/// rename over the target.  This generates reliable FS change events on Windows
+/// (rename produces both `FILE_ACTION_REMOVED` + `FILE_ACTION_ADDED`), which
+/// ensures Cursor's file watcher picks up the update promptly instead of relying
+/// on in-place `FILE_ACTION_MODIFIED` events that ReadDirectoryChangesW can miss.
+pub fn atomic_write_rule_file(target: &Path, content: &str) -> Result<()> {
+    let tmp = {
+        let mut name = target.file_name().unwrap_or_default().to_os_string();
+        name.push(".tmp");
+        target.with_file_name(name)
+    };
+    let mut f = fs::File::create(&tmp).with_context(|| format!("create tmp {}", tmp.display()))?;
+    f.write_all(content.as_bytes())
+        .with_context(|| format!("write tmp {}", tmp.display()))?;
+    f.sync_all()
+        .with_context(|| format!("sync tmp {}", tmp.display()))?;
+    drop(f);
+
+    // On Windows, fs::rename replaces existing target atomically on NTFS.
+    if let Err(e) = fs::rename(&tmp, target) {
+        // Fallback: remove target first, then rename (non-atomic but still works).
+        let _ = fs::remove_file(target);
+        fs::rename(&tmp, target).with_context(|| {
+            format!(
+                "rename {} -> {} (after remove fallback): {e}",
+                tmp.display(),
+                target.display()
+            )
+        })?;
+    }
+
+    // Touch the parent directory mtime so Cursor's directory watcher triggers a
+    // rescan even if it missed the rename event.
+    #[cfg(windows)]
+    if let Some(parent) = target.parent() {
+        touch_directory_mtime(parent);
+    }
+
+    Ok(())
+}
+
+/// Update the last-write-time of a directory to now.  Best-effort; failures are
+/// silently ignored because this is an optimisation hint, not a correctness need.
+#[cfg(windows)]
+fn touch_directory_mtime(dir: &Path) {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::Storage::FileSystem::{
+        SetFileTime, FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+    };
+
+    let Ok(f) = fs::OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(dir)
+    else {
+        return;
+    };
+    let handle = f.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+    let now = {
+        let d = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        // Windows FILETIME: 100-ns intervals since 1601-01-01.
+        let ticks = d.as_nanos() / 100 + 116_444_736_000_000_000;
+        FILETIME {
+            dwLowDateTime: ticks as u32,
+            dwHighDateTime: (ticks >> 32) as u32,
+        }
+    };
+    unsafe {
+        SetFileTime(handle, std::ptr::null(), std::ptr::null(), &now);
+    }
 }

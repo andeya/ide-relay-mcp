@@ -46,7 +46,9 @@ export function useIdeBinding() {
 
   function recheckVersion() {
     const ruleContent = getRelayRulePromptBilingual("loop", ideKind.value || undefined);
-    invoke("recheck_version_upgrade", { ruleContent }).catch(() => {});
+    invoke("recheck_version_upgrade", { ruleContent }).catch((e) => {
+      console.warn("recheck_version_upgrade failed:", e);
+    });
   }
 
   const supportsMcpInject = computed(

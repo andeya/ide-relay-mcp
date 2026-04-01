@@ -1,6 +1,6 @@
 [package]
 name = "relay-mcp"
-version = "1.4.4"
+version = "1.4.5"
 edition = "2021"
 authors = ["andeya <andeyalee@outlook.com>"]
 build = "build.rs"
