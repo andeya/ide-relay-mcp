@@ -639,7 +639,11 @@ fn post_feedback_apply_state(
         t.commands = merge_command_items(t.commands.clone(), commands.clone());
         t.skills = merge_command_items(t.skills.clone(), skills.clone());
         if !t.title_renamed_by_user {
-            if let Some(new_title) = title.as_ref().map(|s| truncate_title(s)).filter(|s| !s.is_empty()) {
+            if let Some(new_title) = title
+                .as_ref()
+                .map(|s| truncate_title(s))
+                .filter(|s| !s.is_empty())
+            {
                 t.title = new_title;
             }
         }
