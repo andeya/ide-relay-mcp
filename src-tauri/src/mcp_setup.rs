@@ -261,6 +261,73 @@ pub fn uninstall_relay_mcp_windsurf() -> Result<()> {
     uninstall_relay_mcp_at(&windsurf_mcp_json_path()?)
 }
 
+// --- Claude Code ~/.claude.json + ~/.claude/CLAUDE.md ---
+
+fn claude_code_home_dir() -> Result<PathBuf> {
+    Ok(home_dir()?.join(".claude"))
+}
+
+pub fn claude_code_mcp_json_path() -> Result<PathBuf> {
+    Ok(home_dir()?.join(".claude.json"))
+}
+
+pub fn claude_code_has_relay_mcp() -> bool {
+    claude_code_mcp_json_path()
+        .ok()
+        .map(|p| relay_mcp_configured_and_command_matches(&p))
+        .unwrap_or(false)
+}
+
+/// When Claude Code relay-mcp is not configured, returns reason for the user to fix manually.
+pub fn claude_code_relay_mcp_reason() -> Option<String> {
+    let path = match claude_code_mcp_json_path() {
+        Ok(p) => p,
+        Err(_) => return Some(config_path_error_hint()),
+    };
+    relay_mcp_reason(&path)
+}
+
+pub fn install_relay_mcp_claude_code() -> Result<()> {
+    install_relay_mcp_at(
+        &claude_code_mcp_json_path()?,
+        "~/.claude.json is not valid JSON — fix or rename before installing",
+    )
+}
+
+pub fn uninstall_relay_mcp_claude_code() -> Result<()> {
+    uninstall_relay_mcp_at(&claude_code_mcp_json_path()?)
+}
+
+const CLAUDE_CODE_RULE_FILENAME: &str = "CLAUDE.md";
+
+pub fn claude_code_rule_file_path() -> Result<PathBuf> {
+    Ok(claude_code_home_dir()?.join(CLAUDE_CODE_RULE_FILENAME))
+}
+
+pub fn claude_code_rule_installed() -> bool {
+    claude_code_rule_file_path()
+        .ok()
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
+pub fn install_claude_code_rule(content: &str) -> Result<()> {
+    let dir = claude_code_home_dir()?;
+    if !dir.exists() {
+        fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+    }
+    let path = claude_code_rule_file_path()?;
+    atomic_write_rule_file(&path, content)
+}
+
+pub fn uninstall_claude_code_rule() -> Result<()> {
+    let path = claude_code_rule_file_path()?;
+    if path.exists() {
+        fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
+    }
+    Ok(())
+}
+
 // --- Cursor rule prompt sync: ~/.cursor/rules/ ---
 
 const CURSOR_RULE_FILENAME: &str = "relay-interactive-feedback.mdc";

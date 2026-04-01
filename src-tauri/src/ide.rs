@@ -162,7 +162,7 @@ pub fn version_changed() -> bool {
 pub fn mcp_json_path(ide: IdeKind) -> Result<PathBuf> {
     match ide {
         IdeKind::Cursor => mcp_setup::cursor_mcp_json_path(),
-        IdeKind::ClaudeCode => claude_code_mcp_json_path(),
+        IdeKind::ClaudeCode => mcp_setup::claude_code_mcp_json_path(),
         IdeKind::Windsurf => mcp_setup::windsurf_mcp_json_path(),
         IdeKind::Other => anyhow::bail!("MCP injection not supported for Other IDE"),
     }
@@ -171,7 +171,7 @@ pub fn mcp_json_path(ide: IdeKind) -> Result<PathBuf> {
 pub fn has_relay_mcp(ide: IdeKind) -> bool {
     match ide {
         IdeKind::Cursor => mcp_setup::cursor_has_relay_mcp(),
-        IdeKind::ClaudeCode => claude_code_has_relay_mcp(),
+        IdeKind::ClaudeCode => mcp_setup::claude_code_has_relay_mcp(),
         IdeKind::Windsurf => mcp_setup::windsurf_has_relay_mcp(),
         IdeKind::Other => false,
     }
@@ -180,7 +180,7 @@ pub fn has_relay_mcp(ide: IdeKind) -> bool {
 pub fn install_relay_mcp(ide: IdeKind) -> Result<()> {
     match ide {
         IdeKind::Cursor => mcp_setup::install_relay_mcp_cursor(),
-        IdeKind::ClaudeCode => install_relay_mcp_claude_code(),
+        IdeKind::ClaudeCode => mcp_setup::install_relay_mcp_claude_code(),
         IdeKind::Windsurf => mcp_setup::install_relay_mcp_windsurf(),
         IdeKind::Other => anyhow::bail!("MCP injection not supported for Other IDE"),
     }
@@ -189,7 +189,7 @@ pub fn install_relay_mcp(ide: IdeKind) -> Result<()> {
 pub fn uninstall_relay_mcp(ide: IdeKind) -> Result<()> {
     match ide {
         IdeKind::Cursor => mcp_setup::uninstall_relay_mcp_cursor(),
-        IdeKind::ClaudeCode => uninstall_relay_mcp_claude_code(),
+        IdeKind::ClaudeCode => mcp_setup::uninstall_relay_mcp_claude_code(),
         IdeKind::Windsurf => mcp_setup::uninstall_relay_mcp_windsurf(),
         IdeKind::Other => anyhow::bail!("MCP injection not supported for Other IDE"),
     }
@@ -202,7 +202,7 @@ pub fn uninstall_relay_mcp(ide: IdeKind) -> Result<()> {
 pub fn rule_file_path(ide: IdeKind) -> Result<PathBuf> {
     match ide {
         IdeKind::Cursor => mcp_setup::cursor_rule_file_path(),
-        IdeKind::ClaudeCode => claude_code_rule_file_path(),
+        IdeKind::ClaudeCode => mcp_setup::claude_code_rule_file_path(),
         _ => anyhow::bail!("Rule prompts not supported for {}", ide.label()),
     }
 }
@@ -210,7 +210,7 @@ pub fn rule_file_path(ide: IdeKind) -> Result<PathBuf> {
 pub fn rule_installed(ide: IdeKind) -> bool {
     match ide {
         IdeKind::Cursor => mcp_setup::cursor_rule_installed(),
-        IdeKind::ClaudeCode => claude_code_rule_installed(),
+        IdeKind::ClaudeCode => mcp_setup::claude_code_rule_installed(),
         _ => false,
     }
 }
@@ -218,7 +218,7 @@ pub fn rule_installed(ide: IdeKind) -> bool {
 pub fn install_rule(ide: IdeKind, content: &str) -> Result<()> {
     match ide {
         IdeKind::Cursor => mcp_setup::install_cursor_rule(content),
-        IdeKind::ClaudeCode => install_claude_code_rule(content),
+        IdeKind::ClaudeCode => mcp_setup::install_claude_code_rule(content),
         _ => anyhow::bail!("Rule prompts not supported for {}", ide.label()),
     }
 }
@@ -226,118 +226,9 @@ pub fn install_rule(ide: IdeKind, content: &str) -> Result<()> {
 pub fn uninstall_rule(ide: IdeKind) -> Result<()> {
     match ide {
         IdeKind::Cursor => mcp_setup::uninstall_cursor_rule(),
-        IdeKind::ClaudeCode => uninstall_claude_code_rule(),
+        IdeKind::ClaudeCode => mcp_setup::uninstall_claude_code_rule(),
         _ => anyhow::bail!("Rule prompts not supported for {}", ide.label()),
     }
-}
-
-// ---------------------------------------------------------------------------
-// Claude Code specifics
-// ---------------------------------------------------------------------------
-
-fn claude_code_home_dir() -> Result<PathBuf> {
-    let home = mcp_setup::home_dir()?;
-    Ok(home.join(".claude"))
-}
-
-/// Claude Code MCP: user-level config at ~/.claude.json
-fn claude_code_mcp_json_path() -> Result<PathBuf> {
-    let home = mcp_setup::home_dir()?;
-    Ok(home.join(".claude.json"))
-}
-
-fn claude_code_has_relay_mcp() -> bool {
-    claude_code_mcp_json_path()
-        .ok()
-        .map(|p| {
-            if !p.exists() {
-                return false;
-            }
-            let Ok(text) = fs::read_to_string(&p) else {
-                return false;
-            };
-            let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) else {
-                return false;
-            };
-            root.get("mcpServers")
-                .and_then(|s| s.get("relay-mcp"))
-                .is_some()
-        })
-        .unwrap_or(false)
-}
-
-fn install_relay_mcp_claude_code() -> Result<()> {
-    let path = claude_code_mcp_json_path()?;
-    let entry = mcp_setup::relay_mcp_entry()?;
-
-    let mut root: serde_json::Value = if path.exists() {
-        let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-        serde_json::from_str(&text)
-            .with_context(|| "~/.claude.json is not valid JSON — fix or rename before installing")?
-    } else {
-        serde_json::json!({})
-    };
-
-    let servers = root
-        .as_object_mut()
-        .context("root is not an object")?
-        .entry("mcpServers")
-        .or_insert_with(|| serde_json::json!({}));
-    servers
-        .as_object_mut()
-        .context("mcpServers is not an object")?
-        .insert("relay-mcp".to_string(), entry);
-
-    let json = serde_json::to_string_pretty(&root).context("serialize")?;
-    fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
-    Ok(())
-}
-
-fn uninstall_relay_mcp_claude_code() -> Result<()> {
-    let path = claude_code_mcp_json_path()?;
-    if !path.exists() {
-        return Ok(());
-    }
-    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let mut root: serde_json::Value =
-        serde_json::from_str(&text).with_context(|| "parse ~/.claude.json")?;
-    if let Some(servers) = root.get_mut("mcpServers").and_then(|s| s.as_object_mut()) {
-        servers.remove("relay-mcp");
-    }
-    let json = serde_json::to_string_pretty(&root).context("serialize")?;
-    fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
-    Ok(())
-}
-
-// Claude Code rules: ~/.claude/CLAUDE.md (user-level global)
-const CLAUDE_CODE_RULE_FILENAME: &str = "CLAUDE.md";
-
-fn claude_code_rule_file_path() -> Result<PathBuf> {
-    Ok(claude_code_home_dir()?.join(CLAUDE_CODE_RULE_FILENAME))
-}
-
-fn claude_code_rule_installed() -> bool {
-    claude_code_rule_file_path()
-        .ok()
-        .map(|p| p.exists())
-        .unwrap_or(false)
-}
-
-fn install_claude_code_rule(content: &str) -> Result<()> {
-    let dir = claude_code_home_dir()?;
-    if !dir.exists() {
-        fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
-    }
-    let path = claude_code_rule_file_path()?;
-    mcp_setup::atomic_write_rule_file(&path, content)
-}
-
-fn uninstall_claude_code_rule() -> Result<()> {
-    let path = claude_code_rule_file_path()?;
-    if path.exists() {
-        fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
