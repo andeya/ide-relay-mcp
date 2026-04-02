@@ -75,6 +75,15 @@ Launch Relay and pick your IDE. Each mode unlocks IDE-specific features — one-
 
 **1. Install** — Grab the [latest release](https://github.com/andeya/ide-relay-mcp/releases/latest) (macOS, Linux, Windows) or [build from source](#build).
 
+**macOS — Gatekeeper / quarantine:** CI-built `.app` bundles are **not** Apple-notarized (that requires a paid **Developer ID** certificate). Downloads from the browser get the `com.apple.quarantine` attribute, which can trigger “can’t be opened” or “damaged” warnings. Without a paid cert there is **no** fully automatic fix for all users; options are:
+
+- **Recommended:** In Finder, **Control-click (or right-click) the app → Open** and confirm once (stores an exception for that app).
+- **CLI (one-time):** clear quarantine after copying the app to `Applications` (adjust the path if yours differs):
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Relay.app"
+```
+
 **2. Launch & choose IDE** — Run `relay` and click your IDE card, or go directly:
 
 ```bash
