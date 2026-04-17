@@ -180,6 +180,9 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
     "Open when an MCP request is active — then tap to submit (Enter).",
   composerSubmitDisabledIdle:
     "Submit is available once an AI request is active.",
+  composerRelayExitTitle:
+    "End the turn with an empty reply (same as clearing the composer and submitting). Draft text and pending attachments are discarded.",
+  composerRelayExitAria: "Exit relay with empty reply",
   qaSkipped: "Closed with no reply",
   qaEmptySubmit: "Submitted with no text",
   placeholder: "Write your reply…",
@@ -285,7 +288,6 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   usageSettingsIdeLoginHint: "Please log in to Cursor IDE to enable usage tracking.",
   usageSettingsTokenConfigured: "Connected to Cursor IDE",
   usageSettingsRefreshTitle: "Refresh policy",
-  usageSettingsRefreshOnNewSession: "Refresh when a new Relay session starts",
   usageSettingsRefreshInterval: "Auto-refresh interval",
   usageSettingsRefreshIntervalUnit: "min",
   usageRefreshing: "Refreshing…",

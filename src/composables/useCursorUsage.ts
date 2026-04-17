@@ -7,6 +7,7 @@ import type {
   CursorUsageEventsPage,
   CursorUsageSettings,
   CursorUsageEvent,
+  FeedbackTabsState,
 } from "../types/relay-app";
 
 export type UsageToastPayload = {
@@ -34,8 +35,7 @@ export function useCursorUsage(
   const loadingEvents = ref(false);
   const error = ref("");
   const settings = ref<CursorUsageSettings>({
-    refresh_on_new_session: true,
-    refresh_interval_minutes: 30,
+    refresh_interval_minutes: 10,
   });
   const popoverOpen = ref(false);
   const lastRefreshed = ref<Date | null>(null);
@@ -43,8 +43,11 @@ export function useCursorUsage(
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let tabsUnlisten: UnlistenFn | null = null;
   let lastTabCount = -1;
-  let throttleUntil = 0;
+  /** After first refresh attempt so we do not treat initial tab list as "new tabs". */
   let initialRefreshDone = false;
+  /** Min interval between usage refreshes triggered by new Relay tabs (ms). */
+  const NEW_TAB_REFRESH_MIN_MS = 60_000;
+  let throttleUntil = 0;
 
   const usageCapsuleLabel = computed(() => {
     const s = usageSummary.value;
@@ -60,14 +63,15 @@ export function useCursorUsage(
     return s.individualUsage.plan.remaining <= 0;
   });
 
-  const planProgressPct = computed(() => {
+  /** Used/limit as %; can exceed 100 when IDE-reported requests are over the plan cap. */
+  const planUsagePct = computed(() => {
     const s = usageSummary.value;
     if (!s || s.individualUsage.plan.limit <= 0) return 0;
-    return Math.min(
-      100,
-      (s.individualUsage.plan.used / s.individualUsage.plan.limit) * 100,
-    );
+    return (s.individualUsage.plan.used / s.individualUsage.plan.limit) * 100;
   });
+
+  /** Progress bar width only (capped so layout stays valid). */
+  const planProgressPct = computed(() => Math.min(100, planUsagePct.value));
 
   const cycleStartDate = computed(() => {
     const s = usageSummary.value;
@@ -171,7 +175,6 @@ export function useCursorUsage(
         "fetch_cursor_usage_via_ide",
       );
       lastRefreshed.value = new Date();
-      initialRefreshDone = true;
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       error.value = detail;
@@ -182,6 +185,7 @@ export function useCursorUsage(
       }
     } finally {
       loading.value = false;
+      initialRefreshDone = true;
       if (!willRetry) resetRefreshTimer();
     }
   }
@@ -237,14 +241,22 @@ export function useCursorUsage(
   }
 
   async function setupTabListener() {
-    tabsUnlisten = await listen("relay_tabs_changed", (ev) => {
-      if (!settings.value.refresh_on_new_session) return;
-      const payload = ev.payload as { tabs?: unknown[] } | undefined;
-      const count = payload?.tabs?.length ?? -1;
-      if (lastTabCount >= 0 && count > lastTabCount && initialRefreshDone) {
+    tabsUnlisten = await listen("relay_tabs_changed", async () => {
+      let count = -1;
+      try {
+        const state = await invoke<FeedbackTabsState>("get_feedback_tabs");
+        count = state.tabs.length;
+      } catch {
+        return;
+      }
+      if (lastTabCount < 0) {
+        lastTabCount = count;
+        return;
+      }
+      if (initialRefreshDone && count > lastTabCount) {
         const now = Date.now();
         if (now > throttleUntil) {
-          throttleUntil = now + 2000;
+          throttleUntil = now + NEW_TAB_REFRESH_MIN_MS;
           void refreshUsage();
         }
       }
@@ -282,6 +294,7 @@ export function useCursorUsage(
     lastRefreshed,
     usageCapsuleLabel,
     usageCapsuleWarn,
+    planUsagePct,
     planProgressPct,
     cycleResetDate,
     daysUntilReset,

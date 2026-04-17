@@ -122,7 +122,8 @@ export type CursorUsageEventsPage = {
 };
 
 export type CursorUsageSettings = {
-  refresh_on_new_session: boolean;
+  /** Legacy field from older Relay builds; ignored by the UI. */
+  refresh_on_new_session?: boolean;
   refresh_interval_minutes: number;
 };
 

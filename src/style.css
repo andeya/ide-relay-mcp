@@ -437,11 +437,19 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   overflow: hidden;
 }
 
+/* min-height: 0 is required so this flex item can shrink below its content and
+ * keep overflow-y: auto as an internal scrollport. Otherwise WebKit may use a
+ * content-based minimum size, the chat region grows with every message, and the
+ * composer is pushed below the clipped main column (looks like a "broken" UI). */
 .mainContextZoneScroll .mainSummaryScroll {
   flex: 1 1 0;
-  min-height: 200px;
+  min-height: 0;
   max-height: none;
   overflow-y: auto;
+}
+
+.mainContextZoneScroll .mainSummaryScroll.mainSummaryScroll--empty {
+  min-height: 200px;
 }
 
 .mainFooterFixed {
@@ -1133,6 +1141,15 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   cursor: not-allowed;
 }
 
+.composerIconBtnExit {
+  color: #cbd5e1;
+}
+
+.composerSendSpinner--exit {
+  border-color: rgba(148, 163, 184, 0.45);
+  border-top-color: #e2e8f0;
+}
+
 .composerIconBtnSend {
   width: 32px;
   height: 32px;
@@ -1540,6 +1557,13 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   word-break: break-word;
 }
 
+/* safeMarkdown.ts fallback when marked/DOMPurify throws */
+.qaRoundMd .qaRoundMdFallback {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .qaRoundMd--agent {
   color: #e2e8f0;
 }
@@ -1684,10 +1708,20 @@ html.relay-window-unfocused .settingsCheckBtn--busy .settingsCheckIcon {
   font-size: inherit;
 }
 
+/* Non-navigating “links”: markdown renders <span.qaMdNoLink>; raw <a> / data-detectors get blocked below. */
+.qaMdNoLink {
+  color: inherit;
+  cursor: text;
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(148, 163, 184, 0.45);
+}
+
+/* WebView data-detectors or pasted HTML may still inject <a> — never leave the app on click */
 .qaRoundMd a {
-  color: #93c5fd;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  color: inherit;
+  text-decoration: none;
+  pointer-events: none;
+  cursor: text;
 }
 
 .qaRoundMd blockquote {

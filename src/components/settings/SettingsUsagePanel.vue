@@ -36,12 +36,6 @@ const S = computed(() => props.strings);
 
 const INTERVAL_OPTIONS = [5, 10, 15, 30, 60] as const;
 
-function onRefreshOnNewSessionChange(ev: Event) {
-  const checked = (ev.target as HTMLInputElement).checked;
-  settings.value = { ...settings.value, refresh_on_new_session: checked };
-  void saveSettings();
-}
-
 function onRefreshIntervalChange(ev: Event) {
   const val = Number((ev.target as HTMLSelectElement).value);
   settings.value = { ...settings.value, refresh_interval_minutes: val };
@@ -152,24 +146,6 @@ watch(isActive, (active) => {
           <h4 class="usageSettingsCardTitle">
             {{ S.usageSettingsRefreshTitle }}
           </h4>
-
-          <label class="usageToggleRow">
-            <span
-              class="usageToggleTrack"
-              :class="{ 'usageToggleTrack--on': settings.refresh_on_new_session }"
-              role="switch"
-              :aria-checked="settings.refresh_on_new_session"
-            >
-              <span class="usageToggleThumb" />
-            </span>
-            <input
-              type="checkbox"
-              class="usageToggleNative"
-              :checked="settings.refresh_on_new_session"
-              @change="onRefreshOnNewSessionChange"
-            />
-            <span>{{ S.usageSettingsRefreshOnNewSession }}</span>
-          </label>
 
           <div class="usageIntervalRow">
             <span>{{ S.usageSettingsRefreshInterval }}</span>

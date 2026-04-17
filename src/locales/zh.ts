@@ -174,6 +174,9 @@ export default {
   composerSubmitting: "正在提交…",
   composerSubmitDisabledPreview: "有 MCP 请求后可点此提交（或按 Enter）。",
   composerSubmitDisabledIdle: "等待AI请求到达后可提交。",
+  composerRelayExitTitle:
+    "空回复结束本回合（与清空输入后提交相同）；当前草稿与待传附件会被丢弃。",
+  composerRelayExitAria: "空回复退出回环",
   qaSkipped: "已关闭（未填写回复）",
   qaEmptySubmit: "已提交（无文字）",
   placeholder: "写下你的回复…",
@@ -277,7 +280,6 @@ export default {
   usageSettingsIdeLoginHint: "请先登录 Cursor IDE 以启用用量追踪。",
   usageSettingsTokenConfigured: "已连接 Cursor IDE",
   usageSettingsRefreshTitle: "刷新策略",
-  usageSettingsRefreshOnNewSession: "新增 Relay 会话时自动刷新",
   usageSettingsRefreshInterval: "自动刷新间隔",
   usageSettingsRefreshIntervalUnit: "分钟",
   usageRefreshing: "正在刷新…",

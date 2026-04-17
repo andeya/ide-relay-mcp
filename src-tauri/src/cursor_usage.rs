@@ -39,14 +39,14 @@ fn default_true() -> bool {
     true
 }
 fn default_interval() -> u32 {
-    30
+    10
 }
 
 impl Default for CursorUsageSettings {
     fn default() -> Self {
         Self {
             refresh_on_new_session: true,
-            refresh_interval_minutes: 30,
+            refresh_interval_minutes: 10,
         }
     }
 }
@@ -475,9 +475,16 @@ pub fn fetch_usage_via_ide_api(token: &str) -> Result<CursorUsageSummary> {
     };
 
     if let Some(web_summary) = web_result {
+        // Keep `individual_usage.plan` from IDE `auth/usage` (gpt-4 `num_requests` /
+        // `max_request_usage`): that matches the Pro-style "fast premium request" cap (e.g. 500).
+        // `cursor.com/api/usage-summary` `plan` is a different aggregate (often much larger, e.g.
+        // 2000) and must not replace the request counter shown to users as "套餐请求数".
         summary.individual_usage.on_demand = web_summary.individual_usage.on_demand;
         if web_summary.team_usage.is_some() {
             summary.team_usage = web_summary.team_usage;
+        }
+        if !web_summary.billing_cycle_start.is_empty() {
+            summary.billing_cycle_start = web_summary.billing_cycle_start;
         }
         if !web_summary.billing_cycle_end.is_empty() {
             summary.billing_cycle_end = web_summary.billing_cycle_end;

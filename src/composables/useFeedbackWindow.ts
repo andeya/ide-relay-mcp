@@ -705,6 +705,83 @@ export function useFeedbackWindow() {
     }
   }
 
+  /**
+   * End the relay turn with empty human and no attachments (discards composer + pending attachments).
+   * Same backend effect as clearing the input and submitting.
+   */
+  async function submitRelayExit() {
+    if (submitting.value) return;
+    const tab = launch.value;
+    const id = activeTabId.value;
+    if (!tab || !id || closing) return;
+    if (tab.is_preview) return;
+    if (!tab.request_id?.trim()) return;
+    if (status.value === "idle") return;
+
+    submitting.value = true;
+    try {
+      if (expired.value) {
+        try {
+          const draftKey = draftKeyForTab(tab, id);
+          await invoke("dismiss_feedback_tab", { tabId: id });
+          revokeAllPreviews();
+          pendingFileDrops.value = [];
+          feedback.value = "";
+          delete feedbackByTab.value[draftKey];
+          const rest = { ...pendingImagesByTab.value };
+          delete rest[draftKey];
+          pendingImagesByTab.value = rest;
+          const restFd = { ...pendingFileDropsByTab.value };
+          delete restFd[draftKey];
+          pendingFileDropsByTab.value = restFd;
+          await reloadTabs();
+          if (!tabsState.value?.tabs.length) {
+            await closeWindow();
+          }
+        } catch {
+          await closeWindow();
+        }
+        return;
+      }
+
+      const draftKey = draftKeyForTab(tab, id);
+      revokeAllPreviews();
+      pendingFileDrops.value = [];
+      feedback.value = "";
+      delete feedbackByTab.value[draftKey];
+      const restImg = { ...pendingImagesByTab.value };
+      delete restImg[draftKey];
+      pendingImagesByTab.value = restImg;
+      const restFdTab = { ...pendingFileDropsByTab.value };
+      delete restFdTab[draftKey];
+      pendingFileDropsByTab.value = restFdTab;
+
+      try {
+        await invoke("submit_tab_feedback", {
+          tabId: id,
+          human: "",
+          attachments: [],
+        });
+        try {
+          await reloadTabs();
+        } catch {
+          return;
+        }
+        if (!tabsState.value?.tabs.length) {
+          await closeWindow();
+        } else {
+          status.value = null;
+          await refreshStatus();
+          void nextTick(() => relayComposerRef.value?.focus());
+        }
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : String(err);
+      }
+    } finally {
+      submitting.value = false;
+    }
+  }
+
   /** Tab strip close: no confirm; hover-only close button reduces mis-clicks. */
   async function requestCloseTab(tab: LaunchState) {
     const tabId = tab.tab_id;
@@ -1177,6 +1254,7 @@ export function useFeedbackWindow() {
     closeWindow: closeTabOrWindow,
     requestCloseTab,
     submit,
+    submitRelayExit,
     onDragOver,
     onDragLeave,
     onDrop,

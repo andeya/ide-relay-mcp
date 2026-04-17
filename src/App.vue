@@ -82,7 +82,6 @@ const shellLeaveDebounceMs = ref(120);
 const mcpPaused = ref(false);
 const mcpPauseBusy = ref(false);
 const mcpPauseErr = ref("");
-const qaScrollEndRef = ref<HTMLElement | null>(null);
 const summaryScrolling = ref(false);
 let summaryScrollTimer: ReturnType<typeof setTimeout> | undefined;
 const summaryCanScrollUp = ref(false);
@@ -156,6 +155,7 @@ const {
   hasPendingFileDropErrors,
   status,
   submit,
+  submitRelayExit,
   requestCloseTab,
   onDragOver,
   onDragLeave,
@@ -345,11 +345,10 @@ function onSummaryScroll() {
 function scrollQaToBottom() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      const end = qaScrollEndRef.value;
       const el = summaryScrollRef.value;
-      if (end) {
-        end.scrollIntoView({ block: "end", behavior: "instant" });
-      } else if (el) {
+      if (el) {
+        /* Avoid scrollIntoView: it can scroll multiple ancestors; prefer the known
+         * chat scrollport only (same as scroll chaining bugs in nested layouts). */
         el.scrollTop = el.scrollHeight;
       }
     });
@@ -479,6 +478,7 @@ const {
   usageEventsTotal,
   usageEventsPage,
   loadingEvents: usageLoadingEvents,
+  planUsagePct,
   planProgressPct,
   cycleResetDate,
   daysUntilReset,
@@ -1153,11 +1153,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </article>
-            <div
-              ref="qaScrollEndRef"
-              class="qaScrollEndAnchor"
-              aria-hidden="true"
-            />
+            <div class="qaScrollEndAnchor" aria-hidden="true" />
           </div>
           <div
             v-else
@@ -1402,6 +1398,51 @@ onBeforeUnmount(() => {
                         <path
                           d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.64 16.76a2 2 0 0 1-2.83-2.83l8.49-8.49"
                         />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="composerIconBtn composerIconBtnExit"
+                      :title="
+                        submitting
+                          ? strings.composerSubmitting
+                          : isHubPage
+                            ? strings.composerSubmitDisabledPreview
+                            : composerDrafting
+                              ? strings.composerSubmitDisabledIdle
+                              : strings.composerRelayExitTitle
+                      "
+                      :aria-label="
+                        submitting
+                          ? strings.composerSubmitting
+                          : isHubPage
+                            ? strings.composerSubmitDisabledPreview
+                            : composerDrafting
+                              ? strings.composerSubmitDisabledIdle
+                              : strings.composerRelayExitAria
+                      "
+                      :disabled="isHubPage || (!isHubPage && composerDrafting) || submitting"
+                      @click="void submitRelayExit()"
+                    >
+                      <span
+                        v-if="submitting"
+                        class="composerSendSpinner composerSendSpinner--exit"
+                        aria-hidden="true"
+                      />
+                      <svg
+                        v-else
+                        class="composerIconSvg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
                       </svg>
                     </button>
                     <button
@@ -1948,7 +1989,7 @@ onBeforeUnmount(() => {
             <div class="usageProgressLabelRow">
               <span class="usageProgressLabel">
                 {{ Math.round(usageSummary.individualUsage.plan.used) }} / {{ Math.round(usageSummary.individualUsage.plan.limit) }}
-                <span class="usageProgressPct">({{ planProgressPct.toFixed(1) }}%)</span>
+                <span class="usageProgressPct">({{ planUsagePct.toFixed(1) }}%)</span>
               </span>
               <span class="usageProgressRemaining">
                 {{ Math.round(usageSummary.individualUsage.plan.remaining) }} {{ strings.usagePlanRemaining }}
@@ -1958,8 +1999,8 @@ onBeforeUnmount(() => {
               <div
                 class="usageProgressBar"
                 :class="{
-                  'usageProgressBar--warn': planProgressPct > 80,
-                  'usageProgressBar--danger': planProgressPct > 95,
+                  'usageProgressBar--warn': planUsagePct > 80,
+                  'usageProgressBar--danger': planUsagePct > 95,
                 }"
                 :style="{ width: planProgressPct + '%' }"
               />
