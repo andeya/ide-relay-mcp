@@ -56,21 +56,6 @@ const ideNeedsSelection = computed(() => ideLoaded.value && ideKind.value === nu
 const ideSwitchError = ref("");
 const ideSwitchBusy = ref(false);
 
-async function doSwitchIde(ide: IdeKind) {
-  if (ideSwitchBusy.value) return;
-  ideSwitchBusy.value = true;
-  ideSwitchError.value = "";
-  try {
-    await ideSwitchIde(ide);
-    showIdeSelectionOverlay.value = false;
-    window.location.reload();
-  } catch (e) {
-    ideSwitchError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    ideSwitchBusy.value = false;
-  }
-}
-
 const showIdeSelectionOverlay = ref(false);
 const lightboxSrc = ref<string | null>(null);
 const windowDock = ref<"left" | "center" | "right">("left");
@@ -408,6 +393,21 @@ const {
 } = useMcpAndPathSettings(ideLabel, ideKind);
 
 const { strings } = useAppStrings(ideLabel, ideKind);
+
+async function doSwitchIde(ide: IdeKind) {
+  if (ideSwitchBusy.value) return;
+  ideSwitchBusy.value = true;
+  ideSwitchError.value = "";
+  try {
+    await ideSwitchIde(ide);
+    showIdeSelectionOverlay.value = false;
+    await refreshMcpHub();
+  } catch (e) {
+    ideSwitchError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    ideSwitchBusy.value = false;
+  }
+}
 
 const showUninstallConfirm = ref(false);
 const showIdeUninstallConfirm = ref(false);
@@ -801,8 +801,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <div v-if="!ideLoaded" class="ideBootScreen" role="status" aria-live="polite">
+    <div class="ideBootSpinner" aria-hidden="true" />
+    <p class="ideBootText">{{ strings.loading }}</p>
+  </div>
   <IdeSelectionPage
-    v-if="ideNeedsSelection"
+    v-else-if="ideNeedsSelection"
     :strings="strings"
     :error="ideSwitchError"
     :busy="ideSwitchBusy"

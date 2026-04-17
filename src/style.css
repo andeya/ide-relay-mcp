@@ -4354,6 +4354,34 @@ textarea[readonly] {
   font-size: 0.72rem;
 }
 
+/* ===== IDE binding boot (before get_ide_binding returns) ===== */
+
+.ideBootScreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 100vh;
+  padding: 2rem;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+.ideBootSpinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid rgba(129, 140, 248, 0.25);
+  border-top-color: #818cf8;
+  border-radius: 50%;
+  animation: usageSpin 0.7s linear infinite;
+}
+
+.ideBootText {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
 /* ===== IDE Selection Page ===== */
 
 .ideSelectionPage {
