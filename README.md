@@ -41,15 +41,15 @@ Relay adds a **human-in-the-loop (HITL) checkpoint** to any MCP-capable agent. T
 
 ### Key advantages
 
-| | |
-|---|---|
-| **Works with any MCP IDE** | First-class support for **Cursor**, **Claude Code**, **Windsurf**, and a generic mode for others. |
-| **100% local** | All data stays on your machine — loopback HTTP only, zero telemetry, no phone-home. |
-| **One resident GUI** | A single persistent window (not a popup per request) with multi-tab session management. |
-| **No ARG_MAX limits** | `retell` travels as HTTP JSON body (up to 16 MiB), not shell argv. |
-| **Session continuity** | `relay_mcp_session_id` links turns into coherent sessions with **MM-DD HH:mm:ss** tab labels. |
-| **Rich feedback** | Text, screenshots, file attachments — everything the agent needs in one round trip. |
-| **Save your plan quota** | Catch mistakes early and guide precisely — no more wasted correction rounds burning through premium requests. |
+|                            |                                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Works with any MCP IDE** | First-class support for **Cursor**, **Claude Code**, **Windsurf**, and a generic mode for others.             |
+| **100% local**             | All data stays on your machine — loopback HTTP only, zero telemetry, no phone-home.                           |
+| **One resident GUI**       | A single persistent window (not a popup per request) with multi-tab session management.                       |
+| **No ARG_MAX limits**      | `retell` travels as HTTP JSON body (up to 16 MiB), not shell argv.                                            |
+| **Session continuity**     | `relay_mcp_session_id` links turns into coherent sessions with **MM-DD HH:mm:ss** tab labels.                 |
+| **Rich feedback**          | Text, screenshots, file attachments — everything the agent needs in one round trip.                           |
+| **Save your plan quota**   | Catch mistakes early and guide precisely — no more wasted correction rounds burning through premium requests. |
 
 ---
 
@@ -62,12 +62,12 @@ Launch Relay and pick your IDE. Each mode unlocks IDE-specific features — one-
 </p>
 <p align="center"><sub>Click a card to enter that IDE mode — all settings, CLI commands, and MCP config adapt automatically.</sub></p>
 
-| IDE | MCP injection | Rule prompts | Usage monitoring |
-|-----|:---:|:---:|:---:|
-| **Cursor** | ✅ | ✅ | ✅ |
-| **Claude Code** | ✅ | ✅ | — |
-| **Windsurf** | ✅ | — | — |
-| **Other** | manual | — | — |
+| IDE             | MCP injection | Rule prompts | Usage monitoring |
+| --------------- | :-----------: | :----------: | :--------------: |
+| **Cursor**      |      ✅       |      ✅      |        ✅        |
+| **Claude Code** |      ✅       |      ✅      |        —         |
+| **Windsurf**    |      ✅       |      —       |        —         |
+| **Other**       |    manual     |      —       |        —         |
 
 ---
 
@@ -124,6 +124,39 @@ Or use **Settings → Environment & MCP** inside Relay for one-click setup and t
 </p>
 <p align="center"><sub><strong>Settings → Rule prompts</strong> — one-click install into your IDE's rule configuration.</sub></p>
 
+**Cursor rule file** — One-click install writes **`relay-interactive-feedback.mdc`** under **user** `~/.cursor/rules/` (Windows: `%USERPROFILE%\.cursor\rules\`). That path is separate from a repo’s `.cursor/rules/`; copy or symlink there if you only use **project** rules.
+
+**Agent still skips `relay_interactive_feedback`?** Ensure MCP server **`relay-mcp`** is enabled; approve the tool when prompted (or set `"autoApprove": ["relay_interactive_feedback"]`); reload Cursor after editing the rule file on disk. Rule files guide the model — they are not hard guarantees.
+
+---
+
+## Relay human-in-the-loop (end-to-end)
+
+After Quick start steps 2–4, each turn follows this path (transport detail: [docs/HTTP_IPC.md](docs/HTTP_IPC.md); vocabulary: [docs/TERMINOLOGY.md](docs/TERMINOLOGY.md)):
+
+```mermaid
+sequenceDiagram
+  participant Agent
+  participant Mcp as relay_mcp-ide
+  participant Http as GUI_HTTP_127.0.0.1
+  participant You
+
+  Agent->>Mcp: tools/call relay_interactive_feedback (retell, session, commands/skills…)
+  Mcp->>Http: POST /v1/feedback → request_id
+  Http->>You: tab shows retell
+  You->>Http: Answer / dismiss / idle cutoff
+  Http-->>Mcp: GET …/wait → JSON result
+  Mcp-->>Agent: same tools/call response
+```
+
+1. **MCP runs** — The IDE launches **`relay mcp-<cli_id>`** (stdio), e.g. **`mcp-cursor`**. The matching GUI is **`relay gui-<cli_id>`** (often already open).
+2. **Agent calls the tool** — Non-empty **`retell`**. **New session:** omit **`relay_mcp_session_id`** (or empty) and send **`commands`** and **`skills`** (each may be `[]` only if the host truly exposes nothing). **Continue:** pass the **`relay_mcp_session_id`** from the previous result.
+3. **MCP reaches the GUI** — Reads **`gui_endpoint_<cli_id>.json`** in your [Configuration & paths](#configuration--paths) directory (e.g. **`gui_endpoint_cursor.json`**), or spawns **`relay gui-<cli_id>`** and waits ≤ ~45 s. Then **`POST /v1/feedback`** and blocks on **`GET /v1/feedback/wait/:id`** until the tab completes.
+4. **You interact** — Submit **Answer**, attach files, dismiss, or let the ~60 min idle cleanup return empty **`human`** (same as dismiss from the agent’s perspective).
+5. **Same JSON-RPC returns** — Body includes **`relay_mcp_session_id`**, **`human`**, **`cmd_skill_count`**, optional **`attachments`**. The next turn **must** send that **`relay_mcp_session_id`** unless starting a new tab.
+
+**Rules vs MCP:** Step 4’s **rule prompt** install writes **`relay-interactive-feedback.mdc`** under **user** `~/.cursor/rules/` (Cursor only). Rules encourage the loop; **`relay-mcp`** in MCP settings **executes** it.
+
 ---
 
 ## Architecture
@@ -139,19 +172,19 @@ flowchart LR
 ```
 
 - **`relay mcp-{ide}`** — Stdio MCP server (`clap`). Handles `initialize`, `tools/list`, `tools/call`. Concurrent human rounds on one connection. Optional auto-reply rules.
-- **`relay` / `relay gui-{ide}`** — Tauri app + HTTP on `127.0.0.1:0`. Writes `gui_endpoint_{ide}.json` with `{ port, token, pid }`; cleans up on exit.
+- **`relay` / `relay gui-<cli_id>`** — Tauri app + HTTP on `127.0.0.1:0`. Writes **`gui_endpoint_<cli_id>.json`** (e.g. `gui_endpoint_cursor.json`) with `{ port, token, pid }`; cleans up on exit.
 - **Bridge** — MCP reads the endpoint file; if missing, spawns `gui-{ide}` and polls up to ~45 s. Then `POST /v1/feedback` → `GET /v1/feedback/wait/:id`. The wait resolves on submit, dismiss, supersede, or ~60 min idle.
 
 ---
 
 ## MCP tool: `relay_interactive_feedback`
 
-| Argument | Required | Meaning |
-|---|---|---|
-| **`retell`** | **yes** (non-empty) | This turn's user-visible assistant reply, verbatim. |
-| **`relay_mcp_session_id`** | if you have one | Continue the same session; returned in the JSON result. |
-| **`commands`** | new tab: **required** | Array of IDE commands for slash-completion. `[]` only if the host truly has none. |
-| **`skills`** | same as commands | Array of IDE skills. Same merge/dedupe rules. |
+| Argument                   | Required              | Meaning                                                                           |
+| -------------------------- | --------------------- | --------------------------------------------------------------------------------- |
+| **`retell`**               | **yes** (non-empty)   | This turn's user-visible assistant reply, verbatim.                               |
+| **`relay_mcp_session_id`** | if you have one       | Continue the same session; returned in the JSON result.                           |
+| **`commands`**             | new tab: **required** | Array of IDE commands for slash-completion. `[]` only if the host truly has none. |
+| **`skills`**               | same as commands      | Array of IDE skills. Same merge/dedupe rules.                                     |
 
 **Pause MCP** (Settings): sentinel `<<<RELAY_MCP_PAUSED>>>` — do not call again until resumed.
 
@@ -180,15 +213,15 @@ flowchart LR
 
 ## CLI reference
 
-| Command | Role |
-|---|---|
-| `relay` | Open IDE selection page |
-| `relay gui-cursor` | Launch GUI in Cursor mode |
-| `relay gui-claudecode` | Launch GUI in Claude Code mode |
-| `relay gui-windsurf` | Launch GUI in Windsurf mode |
-| `relay mcp-cursor` | MCP stdio server for Cursor (what the IDE runs) |
-| `relay mcp-claudecode` | MCP stdio server for Claude Code |
-| `relay mcp-windsurf` | MCP stdio server for Windsurf |
+| Command                       | Role                                                   |
+| ----------------------------- | ------------------------------------------------------ |
+| `relay`                       | Open IDE selection page                                |
+| `relay gui-cursor`            | Launch GUI in Cursor mode                              |
+| `relay gui-claudecode`        | Launch GUI in Claude Code mode                         |
+| `relay gui-windsurf`          | Launch GUI in Windsurf mode                            |
+| `relay mcp-cursor`            | MCP stdio server for Cursor (what the IDE runs)        |
+| `relay mcp-claudecode`        | MCP stdio server for Claude Code                       |
+| `relay mcp-windsurf`          | MCP stdio server for Windsurf                          |
 | `relay feedback --retell "…"` | Terminal tryout; `--timeout`, `--relay-mcp-session-id` |
 
 Only one GUI process per IDE mode is allowed; bare `relay` (no mode) can run multiple instances.
@@ -199,13 +232,13 @@ Only one GUI process per IDE mode is allowed; bare `relay` (no mode) can run mul
 
 Data lives under your OS application-data directory (`directories::ProjectDirs` → `config_dir()`):
 
-| OS | Path |
-|---|---|
-| macOS | `~/Library/Application Support/com.relay.relay-mcp/` |
-| Linux | `~/.config/relay-mcp/` |
-| Windows | `%APPDATA%\relay\relay-mcp\config\` |
+| OS      | Path                                                 |
+| ------- | ---------------------------------------------------- |
+| macOS   | `~/Library/Application Support/com.relay.relay-mcp/` |
+| Linux   | `~/.config/relay-mcp/`                               |
+| Windows | `%APPDATA%\relay\relay-mcp\config\`                  |
 
-Key files: `feedback_log.txt`, `qa_archive/*.jsonl`, `ui_locale.json`, `gui_endpoint_{ide}.json`, `relay_gui_{ide}_alive.marker`, `mcp_pause.json`, `attachment_retention.json`, `auto_reply_*.txt`.
+Key files: `feedback_log.txt`, `qa_archive/*.jsonl`, `ui_locale.json`, **`gui_endpoint_<cli_id>.json`** (e.g. `gui_endpoint_cursor.json`), **`relay_gui_<cli_id>_alive.marker`**, `mcp_pause.json`, `attachment_retention.json`, `auto_reply_*.txt`, legacy `gui_endpoint.json` when applicable.
 
 ---
 
@@ -237,12 +270,12 @@ CI: lint, typecheck, Vite, `cargo fmt`, `clippy -D warnings`, `cargo test` — s
 
 ## Documentation
 
-| Doc | Content |
-|---|---|
-| [docs/HTTP_IPC.md](docs/HTTP_IPC.md) | HTTP API, timeouts, WSL path rewrite |
-| [docs/RELAY_MCP_SESSION_ID.md](docs/RELAY_MCP_SESSION_ID.md) | Session ID & tab labels |
-| [docs/TERMINOLOGY.md](docs/TERMINOLOGY.md) | Vocabulary |
-| [docs/RELEASING.md](docs/RELEASING.md) | Releases & CI |
+| Doc                                                          | Content                                |
+| ------------------------------------------------------------ | -------------------------------------- |
+| [docs/HTTP_IPC.md](docs/HTTP_IPC.md)                         | HTTP API, timeouts, WSL path rewrite   |
+| [docs/RELAY_MCP_SESSION_ID.md](docs/RELAY_MCP_SESSION_ID.md) | Session ID & tab labels                |
+| [docs/TERMINOLOGY.md](docs/TERMINOLOGY.md)                   | Vocabulary + binaries / endpoint files |
+| [docs/RELEASING.md](docs/RELEASING.md)                       | Releases & CI                          |
 
 ---
 

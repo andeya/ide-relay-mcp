@@ -17,7 +17,7 @@ export default {
 
   rulePromptsTitle: "Rule prompts",
   rulePromptsLead:
-    "Bilingual (中英合本) rule for relay_interactive_feedback. Copy pastes the **whole** block; paste it **at the top** of IDE rules or use a rule file that loads first (e.g. `00-relay-mcp.mdc`). Tool: relay_interactive_feedback — wire MCP under Environment & MCP.",
+    "Bilingual (中英合本) rule for relay_interactive_feedback. Copy pastes the **whole** block; paste it **at the top** of IDE rules or use the user rule file `.cursor/rules/relay-interactive-feedback.mdc` (same filename as Relay one-click install). Tool: relay_interactive_feedback — wire MCP under Environment & MCP.",
   rulePromptsSectionIde: "How to configure in {ide}",
   rulePromptsModeLoop: "Default (strict loop)",
   rulePromptsModeLoopDesc:
@@ -44,7 +44,7 @@ export default {
 
   rulePromptsIdeGuideCursor: `**How to use in Cursor**
 
-- **Rules**: Settings \u2192 **Rules** \u2192 User or Project \u2192 paste the rule block **at the top** (or use \`.cursor/rules/00-relay-mcp.mdc\` so it loads first). The rule declares highest priority for relay_interactive_feedback.
+- **Rules**: Settings \u2192 **Rules** \u2192 User or Project \u2192 paste the rule block **at the top** (or use \`.cursor/rules/relay-interactive-feedback.mdc\`, the same path Relay writes when you install from here). The rule declares highest priority for relay_interactive_feedback.
 - **MCP file** \`{mcpPath}\`
 - \`command\` = local \`relay\` (absolute path); \`args\` = \`["mcp-cursor"]\`; suggest \`autoApprove\`: \`relay_interactive_feedback\`
 - **WSL**: If the IDE/agent runs **inside WSL** and \`command\` points at **Windows** \`relay.exe\`, set \`args\` to \`["mcp-cursor", "--exe_in_wsl"]\` so attachment paths become \`/mnt/...\`.`,

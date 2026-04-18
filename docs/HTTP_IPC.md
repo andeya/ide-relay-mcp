@@ -1,36 +1,39 @@
 # MCP ↔ GUI: localhost HTTP
 
-Architecture: the **MCP process** (`relay mcp`) and **GUI process** (`relay` / `relay gui`) coordinate only via HTTP on **127.0.0.1** plus on-disk **`gui_endpoint.json`** — no secondary child processes per request, no handshake txt, no `tab_inbox.jsonl`.
+Architecture: the **MCP process** (`relay mcp-<ide>`) and **GUI process** (`relay` / `relay gui-<cli_id>`) coordinate only via HTTP on **127.0.0.1** plus on-disk **`gui_endpoint_<cli_id>.json`** (see Discovery) — no secondary child processes per request, no handshake txt, no `tab_inbox.jsonl`.
 
 ```mermaid
 sequenceDiagram
     participant IDE as IDE_MCP
-    participant Mcp as relay_mcp
+    participant Mcp as relay_mcp-ide
     participant Http as GUI_HTTP
     participant UI as Vue_UI
 
     IDE->>Mcp: tools/call relay_interactive_feedback
-    Mcp->>Mcp: read gui_endpoint.json or spawn relay gui
+    Mcp->>Mcp: read gui_endpoint_<cli_id>.json or spawn relay gui-<cli_id>
     Mcp->>Http: POST /v1/feedback
     Http->>UI: emit relay_tabs_changed
     Mcp->>Http: GET /v1/feedback/wait/:id
     UI->>Http: submit_tab_feedback
     Http-->>Mcp: JSON { relay_mcp_session_id, human, cmd_skill_count [, attachments] }
-    Note right of Mcp: optional rewrite attachments[].path for WSL (relay mcp --exe_in_wsl)
+    Note right of Mcp: optional rewrite attachments[].path for WSL (relay mcp-<ide> … --exe_in_wsl)
     Mcp-->>IDE: tool result
 ```
 
 ## Discovery and startup
 
-- Path: `{user_data_dir}/gui_endpoint.json`
+- **Endpoint file(s)** (under the app `config_dir()` — same tree as [README / Configuration & paths](../README.md#configuration--paths)):
+  - **`relay mcp-<ide>`** (e.g. `relay mcp-cursor`): **`gui_endpoint_<cli_id>.json`** — e.g. `gui_endpoint_cursor.json`, `gui_endpoint_claudecode.json`, `gui_endpoint_windsurf.json`, `gui_endpoint_other.json`. **`cli_id`** matches the `gui-<cli_id>` subcommand (`cursor`, `claudecode`, `windsurf`, `other`).
+  - **No IDE mode** (e.g. some bare invocations): may use legacy **`gui_endpoint.json`**.
+  - **`relay feedback`** (no IDE pre-selected): scans **all** `gui_endpoint_*.json` plus `gui_endpoint.json` until it finds a healthy GUI.
 - Contents: `{ "port": u16, "token": string, "pid": u32 }`
 - GUI binds **`127.0.0.1:0`**, writes a random token to the file; file is removed on process exit.
-- **`relay mcp`** reads this file before each tool call; if missing or health fails, it **`spawn`s the current exe with arg `gui`**, polls until timeout (~**45s** in `ensure_gui_endpoint`).
+- **`relay mcp-<ide>`** reads its IDE’s file before each tool call; if missing or health fails, it **spawns** **`relay gui-<cli_id>`** and polls until timeout (~**45s** in `ensure_gui_endpoint`).
 - **Security**: loopback only; token in user data dir reduces accidental connection to the wrong local process; **does not** stop a malicious local process (same as any local IPC).
 
 ## Auth
 
-- All APIs: `Authorization: Bearer <token>` (must match `gui_endpoint.json`).
+- All APIs: `Authorization: Bearer <token>` (must match the token in the active **`gui_endpoint_*.json`** / **`gui_endpoint.json`** file).
 
 ## API
 
@@ -55,31 +58,33 @@ sequenceDiagram
 
 ## MCP flow
 
-1. Read `gui_endpoint.json`; if absent, spawn **`relay gui`** and poll.
+1. Read this process’s **`gui_endpoint_<cli_id>.json`** (see Discovery); if absent or unhealthy, spawn **`relay gui-<cli_id>`** and poll.
 2. `POST /v1/feedback` → `request_id`
 3. `GET .../wait/:request_id` — long-lived response driven by GUI state (see above), not a fixed HTTP “61 minute” client timer.
-4. Optionally transform JSON for the IDE: **`attachments[].path`** may be rewritten for **WSL-hosted agents** using Windows `relay.exe` when **`relay mcp --exe_in_wsl`** is used. The HTTP response body from step 3 is unchanged on disk/logging semantics except as consumed by MCP.
+4. Optionally transform JSON for the IDE: **`attachments[].path`** may be rewritten for **WSL-hosted agents** using Windows `relay.exe` when **`relay mcp-<ide> … --exe_in_wsl`** is used. The HTTP response body from step 3 is unchanged on disk/logging semantics except as consumed by MCP.
 5. String returned as `tools/call` result.
 
-### MCP-only: WSL path rewrite (`relay mcp --exe_in_wsl`)
+### MCP-only: WSL path rewrite (`relay mcp-<ide> … --exe_in_wsl`)
 
-**Windows builds only.** Start **`relay mcp`** with the **`--exe_in_wsl`** flag (after `mcp` in argv). Use this when the IDE runs the MCP client **inside WSL** but **`relay.exe` is the Windows binary**: agents need **`path`** strings they can open from Linux (e.g. `/mnt/c/Users/...` instead of `C:\Users\...`).
+**Windows builds only.** Start **`relay mcp-<cli_id>`** with **`--exe_in_wsl`** immediately **after** the `mcp-*` subcommand in argv (e.g. `mcp-cursor`, `mcp-claudecode`). Use this when the IDE runs the MCP client **inside WSL** but **`relay.exe` is the Windows binary**: agents need **`path`** strings they can open from Linux (e.g. `/mnt/c/Users/...` instead of `C:\Users\...`).
 
-| Mode | Behavior |
-| ---- | -------- |
-| **`relay mcp --exe_in_wsl`** | Replace each **`attachments[].path`** with the WSL `/mnt/<drive>/...` form when the value is a Windows drive path; if the string is only a Relay attachment filename or relative fragment, **`relay mcp`** first resolves it to a canonical Windows path (same rules as reading attachments), then maps it. UNC paths are left unchanged. |
-| **`relay mcp`** (flag omitted) | **Off** — paths in the tool result match the HTTP body (Windows). |
+| Mode                                           | Behavior                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`relay mcp-<ide> … --exe_in_wsl`**           | Replace each **`attachments[].path`** with the WSL `/mnt/<drive>/...` form when the value is a Windows drive path; if the string is only a Relay attachment filename or relative fragment, **`relay mcp-<ide>`** first resolves it to a canonical Windows path (same rules as reading attachments), then maps it. UNC paths are left unchanged. |
+| **`relay mcp-<ide>`** (`--exe_in_wsl` omitted) | **Off** — paths in the tool result match the HTTP body (Windows).                                                                                                                                                                                                                                                                               |
 
 **Why a CLI flag:** Environment variables from `mcp.json` are not reliably passed through to a Windows **`relay.exe`** when the IDE spawns it from WSL (e.g. `/mnt/c/.../relay.exe`). **`--exe_in_wsl`** is part of the process argv, so it always reaches the binary.
 
 ### Example: `mcp.json` (Cursor / WSL agent + Windows `relay.exe`)
+
+Use the same **`mcp-<cli_id>`** argv as on Windows/macOS/Linux (see [`mcp_setup.rs` / CLI](../src-tauri/src/mcp_setup.rs)); append **`--exe_in_wsl`** after that subcommand when the MCP client runs **inside WSL** but **`relay.exe`** is the Windows binary:
 
 ```json
 {
   "mcpServers": {
     "relay-mcp": {
       "command": "/mnt/c/Users/You/AppData/Local/Relay/relay.exe",
-      "args": ["mcp", "--exe_in_wsl"],
+      "args": ["mcp-cursor", "--exe_in_wsl"],
       "autoApprove": ["relay_interactive_feedback"]
     }
   }
@@ -88,7 +93,7 @@ sequenceDiagram
 
 Use a Windows path for **`command`** when the MCP host runs on Windows; use **`/mnt/c/...`** when the host runs inside WSL. Optional **`env`** on the server entry is unrelated to this feature.
 
-**Other IDEs:** Same idea — add **`--exe_in_wsl`** to the **`args`** array after **`mcp`**.
+**Other IDEs:** e.g. `["mcp-claudecode", "--exe_in_wsl"]`, `["mcp-windsurf", "--exe_in_wsl"]`, `["mcp-other", "--exe_in_wsl"]` — always **after** the `mcp-*` subcommand.
 
 ### MCP client (`relay mcp` → ureq)
 

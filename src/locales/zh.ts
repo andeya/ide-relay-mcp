@@ -17,7 +17,7 @@ export default {
 
   rulePromptsTitle: "规则提示词",
   rulePromptsLead:
-    "relay_interactive_feedback 的规则为**中英合本**。复制会粘贴**整段**内容；请将规则**置于顶部**或使用优先加载的规则文件（如 `00-relay-mcp.mdc`）。MCP：relay_interactive_feedback，接入见「环境与 MCP」。",
+    "relay_interactive_feedback 的规则为**中英合本**。复制会粘贴**整段**内容；请将规则**置于顶部**或使用用户目录 `.cursor/rules/relay-interactive-feedback.mdc`（与 Relay 一键安装写入的文件名一致）。MCP：relay_interactive_feedback，接入见「环境与 MCP」。",
   rulePromptsSectionIde: "{ide} 配置方式",
   rulePromptsModeLoop: "默认（严格循环）",
   rulePromptsModeLoopDesc:
@@ -44,7 +44,7 @@ export default {
 
   rulePromptsIdeGuideCursor: `**\u5728 Cursor \u4e2d\u4f7f\u7528**
 
-- **\u89c4\u5219**\uff1aSettings \u2192 **Rules** \u2192 User rules \u6216 Project rules \u2192 \u5c06\u89c4\u5219\u5168\u6587**\u7c98\u8d34\u5230\u89c4\u5219\u9876\u90e8**\uff08\u6216\u4f7f\u7528 \`.cursor/rules/00-relay-mcp.mdc\` \u4ee5\u4f18\u5148\u52a0\u8f7d\uff09\u3002\u8be5\u89c4\u5219\u58f0\u660e relay_interactive_feedback \u6700\u9ad8\u4f18\u5148\u7ea7\u3002
+- **\u89c4\u5219**\uff1aSettings \u2192 **Rules** \u2192 User rules \u6216 Project rules \u2192 \u5c06\u89c4\u5219\u5168\u6587**\u7c98\u8d34\u5230\u89c4\u5219\u9876\u90e8**\uff08\u6216\u4f7f\u7528 \`.cursor/rules/relay-interactive-feedback.mdc\`\uff0c\u4e0e Relay \u300c\u5b89\u88c5\u5230 Cursor\u300d\u5199\u5165\u7684\u6587\u4ef6\u4e00\u81f4\uff09\u3002\u8be5\u89c4\u5219\u58f0\u660e relay_interactive_feedback \u6700\u9ad8\u4f18\u5148\u7ea7\u3002
 - **MCP \u6587\u4ef6** \`{mcpPath}\`
 - \`command\` = \u672c\u673a \`relay\`\uff08\u7edd\u5bf9\u8def\u5f84\uff09\uff1b\`args\` = \`["mcp-cursor"]\`\uff1b\u5efa\u8bae \`autoApprove\`\uff1a\`relay_interactive_feedback\`
 - **WSL**\uff1a\u82e5 IDE/Agent \u8dd1\u5728 **WSL** \u5185\u3001\u800c \`command\` \u6307\u5411 **Windows** \u7684 \`relay.exe\`\uff0c\u8bf7\u5c06 \`args\` \u6539\u4e3a \`["mcp-cursor", "--exe_in_wsl"]\`\uff0c\u5de5\u5177\u7ed3\u679c\u91cc\u7684\u9644\u4ef6 \`path\` \u624d\u4f1a\u53d8\u6210 \`/mnt/...\`\u3002`,

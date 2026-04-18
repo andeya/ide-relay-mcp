@@ -19,13 +19,13 @@ Single source of truth for product copy and docs. Transport details: **[HTTP_IPC
 
 ## 2. Binaries & modes
 
-| Term                          | Definition                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------ |
-| **`relay` / `relay gui`**     | Hub window + **local HTTP server** (`gui_endpoint.json`: port + Bearer token). |
-| **`relay mcp`**               | stdio MCP server (`args`: `["mcp"]`). Talks to GUI only via that HTTP API.     |
-| **`relay feedback --retell`** | Terminal tryout; opens GUI if needed; Answer on stdout.                        |
+| Term                               | Definition                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`relay` / `relay gui-<cli_id>`** | Hub window + **local HTTP** on loopback. Writes **`gui_endpoint_<cli_id>.json`** (e.g. `gui_endpoint_cursor.json`) under app **`config_dir()`** with `{ port, token, pid }`. Bare hub may still use legacy **`gui_endpoint.json`**.                                                                                                    |
+| **`relay mcp-<cli_id>`**           | Stdio MCP server; IDE **`mcp.json`** uses **`args`** such as **`["mcp-cursor"]`**, **`["mcp-claudecode"]`**, **`["mcp-windsurf"]`**, **`["mcp-other"]`**. Optional **`--exe_in_wsl`** after that subcommand (Windows `relay.exe` + WSL-hosted MCP client). Talks to the GUI **only** via Bearer HTTP — see [HTTP_IPC.md](HTTP_IPC.md). |
+| **`relay feedback --retell`**      | Terminal tryout; scans **`gui_endpoint_*.json`** / **`gui_endpoint.json`** for a healthy GUI or waits for one; Answer on stdout.                                                                                                                                                                                                       |
 
-There is **no** `relay window` subcommand; the IDE never spawns per-request GUI processes.
+There is **no** `relay window` subcommand; long waits use one resident GUI plus HTTP, not a per-request subprocess UI.
 
 ---
 
@@ -42,5 +42,5 @@ There is **no** `relay window` subcommand; the IDE never spawns per-request GUI 
 
 - [ ] **`retell`** = current-turn assistant reply (content itself), non-empty
 - [ ] **PATH block** = BEGIN/END in rc (Unix), RelayMCPPath in HKCU\Environment (Windows); legacy single-line marker still supported on Unix
-- [ ] **`relay_mcp_session_id`** = session merge key; tool returns JSON `{relay_mcp_session_id, human, cmd_skill_count}` (optional `attachments` `{kind, path}`; MCP may rewrite paths for WSL when `relay mcp --exe_in_wsl`); pass id on next call; if **`cmd_skill_count` is 0**, next call must repass commands+skills; tab label **MM-DD HH:mm:ss** (**RELAY_MCP_SESSION_ID.md**)
+- [ ] **`relay_mcp_session_id`** = session merge key; tool returns JSON `{relay_mcp_session_id, human, cmd_skill_count}` (optional `attachments` `{kind, path}`; MCP may rewrite paths for WSL when **`relay mcp-<ide> … --exe_in_wsl`**); pass id on next call; if **`cmd_skill_count` is 0**, next call must repass commands+skills; tab label **MM-DD HH:mm:ss** (**RELAY_MCP_SESSION_ID.md**)
 - [ ] Code comments in **English** where they explain implementation
