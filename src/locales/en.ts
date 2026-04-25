@@ -146,6 +146,8 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
 
   mainHintPreview:
     "When a tab is waiting for your reply, type here. Enter to send · ⌘/Ctrl+Enter to send and close the tab.",
+  mainHintPreviewMod:
+    "When a tab is waiting for your reply, type here. Enter: new line · ⌘/Ctrl+Enter to send · ⌘/Ctrl+Shift+Enter: send & close tab.",
   tabStripAria: "Feedback tabs",
   tabCloseAria: "Close this tab",
   tabCloseTitle: "Close tab (shown when hovering this tab)",
@@ -158,8 +160,12 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   composerAriaRegion: "Your reply",
   composerHint:
     "Enter submits · Shift+Enter: new line · ⌘/Ctrl+Enter: submit & close tab · paste or attach images/files",
+  composerHintMod:
+    "Enter: new line · ⌘/Ctrl+Enter: submit · ⌘/Ctrl+Shift+Enter: submit & close tab · paste or attach images/files",
   composerHintDraft:
     "Draft while waiting; when a request arrives, Enter submits · while waiting, only Shift+Enter adds a line · paste or attach images/files",
+  composerHintDraftMod:
+    "Draft while waiting; when a request arrives, ⌘/Ctrl+Enter submits · while waiting, Enter/Shift+Enter adds a line · paste or attach images/files",
   composerImageAria: "Image attachments preview",
   composerAttach: "Attach images or files",
   composerThumbRemove: "Remove image",
@@ -174,17 +180,27 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   imageLightboxClose: "Close preview",
   composerSubmitIconTitle:
     "Submit (Enter). Submit and close tab: ⌘ or Ctrl + Enter.",
+  composerSubmitIconTitleMod:
+    "Submit (⌘/Ctrl+Enter). Submit and close tab: ⌘/Ctrl+Shift+Enter.",
   composerSubmitIconAria: "Submit answer",
   composerSubmitting: "Submitting…",
   composerSubmitDisabledPreview:
     "Open when an MCP request is active — then tap to submit (Enter).",
+  composerSubmitDisabledPreviewMod:
+    "Open when an MCP request is active — then tap to submit (⌘/Ctrl+Enter).",
   composerSubmitDisabledIdle:
     "Submit is available once an AI request is active.",
   composerRelayExitTitle:
     "End the turn with an empty reply (same as clearing the composer and submitting). Draft text and pending attachments are discarded.",
   composerRelayExitAria: "Exit relay with empty reply",
   qaSkipped: "Closed with no reply",
+  qaSkippedIdle:
+    "Auto-ended after idle (empty reply sent to the IDE). Start a new chat turn in the IDE to continue.",
   qaEmptySubmit: "Submitted with no text",
+  composerRoundEndedHint:
+    "This MCP round already ended (idle timeout or dismiss). Send a new message in the IDE or trigger the tool again — your draft was not delivered.",
+  idleTimeoutToast:
+    "Human-in-the-loop round auto-ended after idle. The IDE received an empty reply.",
   placeholder: "Write your reply…",
   slashListboxAria: "Commands",
   slashNoMatch: "No matching command or skill",
@@ -209,6 +225,17 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   appTrayCloseToTray: "Minimize to tray on close",
   appTrayCloseToTrayHint:
     "When enabled, closing the window hides it to the system tray instead of quitting the app.",
+
+  appMcpWaitTitle: "MCP wait (human-in-the-loop)",
+  appIdleTimeoutLabel: "Auto-complete wait after no activity",
+  appIdleTimeoutHint:
+    "If you do not submit an Answer within this many minutes, Relay completes the HTTP wait with an empty reply (same as dismiss). Set 0 to disable auto-timeout (conversation stays open forever). Applies to new feedback requests.",
+  appIdleTimeoutSaved: "Idle timeout saved.",
+  appEnterSubmitTitle: "Submit shortcut",
+  appEnterSubmitLabel: "Enter key behavior",
+  appEnterSubmitPlain: "Enter submits · Shift+Enter: new line",
+  appEnterSubmitModOnly: "⌘/Ctrl+Enter submits · Enter: new line",
+  appEnterSubmitSaved: "Submit shortcut saved.",
 
   cacheTitle: "Storage & cache",
   cacheSubtitle:

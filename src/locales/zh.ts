@@ -146,6 +146,8 @@ export default {
 
   mainHintPreview:
     "有待回复的标签时在此输入。Enter 发送 · ⌘/Ctrl+Enter 发送并关闭该标签。",
+  mainHintPreviewMod:
+    "有待回复的标签时在此输入。Enter 换行 · ⌘/Ctrl+Enter 发送 · ⌘/Ctrl+Shift+Enter 发送并关闭标签。",
   tabStripAria: "反馈标签",
   tabCloseAria: "关闭此标签",
   tabCloseTitle: "关闭标签（悬停本标签后显示）",
@@ -156,8 +158,12 @@ export default {
   composerAriaRegion: "你的回复输入区",
   composerHint:
     "Enter 提交 · Shift+Enter 换行 · ⌘/Ctrl+Enter 提交并关标签页 · 粘贴或附加图片/文件",
+  composerHintMod:
+    "Enter 换行 · ⌘/Ctrl+Enter 提交 · ⌘/Ctrl+Shift+Enter 提交并关标签页 · 粘贴或附加图片/文件",
   composerHintDraft:
     "可先起草；请求到达后 Enter 提交 · 等待期间仅 Shift+Enter 换行 · 可粘贴或附加图片/文件",
+  composerHintDraftMod:
+    "可先起草；请求到达后 ⌘/Ctrl+Enter 提交 · 等待期间 Enter/Shift+Enter 换行 · 可粘贴或附加图片/文件",
   composerImageAria: "待发送图片预览",
   composerAttach: "附加图片或文件",
   composerThumbRemove: "移除图片",
@@ -170,15 +176,22 @@ export default {
   composerImageZoomTitle: "点击放大查看",
   imageLightboxClose: "关闭预览",
   composerSubmitIconTitle: "提交（Enter）；提交并关标签页：⌘/Ctrl+Enter。",
+  composerSubmitIconTitleMod: "提交（⌘/Ctrl+Enter）；提交并关标签页：⌘/Ctrl+Shift+Enter。",
   composerSubmitIconAria: "提交回复",
   composerSubmitting: "正在提交…",
   composerSubmitDisabledPreview: "有 MCP 请求后可点此提交（或按 Enter）。",
+  composerSubmitDisabledPreviewMod: "有 MCP 请求后可点此提交（或按 ⌘/Ctrl+Enter）。",
   composerSubmitDisabledIdle: "等待AI请求到达后可提交。",
   composerRelayExitTitle:
     "空回复结束本回合（与清空输入后提交相同）；当前草稿与待传附件会被丢弃。",
   composerRelayExitAria: "空回复退出回环",
   qaSkipped: "已关闭（未填写回复）",
+  qaSkippedIdle:
+    "因长时间无操作已自动结束（已向 IDE 发送空回复）。请在 IDE 中新开一轮对话以继续。",
   qaEmptySubmit: "已提交（无文字）",
+  composerRoundEndedHint:
+    "本轮 MCP 人机请求已结束（超时或已关闭）。请在 IDE 中发送新消息或再次触发工具——当前草稿未送达。",
+  idleTimeoutToast: "人机回合因空闲已自动结束，IDE 侧已收到空回复。",
   placeholder: "写下你的回复…",
   slashListboxAria: "命令",
   slashNoMatch: "无匹配的命令或技能",
@@ -201,6 +214,17 @@ export default {
   appTrayTitle: "系统托盘",
   appTrayCloseToTray: "关闭时最小化到系统托盘",
   appTrayCloseToTrayHint: "开启后，关闭窗口不会退出应用，而是隐藏到系统托盘。",
+
+  appMcpWaitTitle: "MCP 等待（人机回环）",
+  appIdleTimeoutLabel: "无操作后自动结束等待",
+  appIdleTimeoutHint:
+    "若在此时间内未提交 Answer，Relay 会以空回复结束本次 HTTP 等待（与手动关闭等效）。设为 0 表示禁用自动结束（对话永久保持）。适用于新反馈请求。",
+  appIdleTimeoutSaved: "已保存空闲超时设置。",
+  appEnterSubmitTitle: "提交快捷键",
+  appEnterSubmitLabel: "Enter 键行为",
+  appEnterSubmitPlain: "Enter 提交 · Shift+Enter 换行",
+  appEnterSubmitModOnly: "⌘/Ctrl+Enter 提交 · Enter 换行",
+  appEnterSubmitSaved: "已保存提交快捷键设置。",
 
   cacheTitle: "存储与缓存",
   cacheSubtitle:

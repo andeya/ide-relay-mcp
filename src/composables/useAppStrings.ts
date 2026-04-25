@@ -5,14 +5,15 @@ import { computed, type Ref } from "vue";
 import { locale, t } from "../i18n";
 import type { IdeKind } from "../types/relay-app";
 
-export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null>) {
+export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null>, enterSubmitModOnly?: Ref<boolean>) {
   const strings = computed(() => {
     void locale.value;
     const ide = ideLabel.value || "IDE";
     const ideCliId = ideKind.value || "other";
+    const modOnly = enterSubmitModOnly?.value ?? false;
     return {
       appTitle: t("appTitle"),
-      mainHintPreview: t("mainHintPreview"),
+      mainHintPreview: modOnly ? t("mainHintPreviewMod") : t("mainHintPreview"),
       tabStripAria: t("tabStripAria"),
       tabCloseAria: t("tabCloseAria"),
       tabCloseTitle: t("tabCloseTitle"),
@@ -32,26 +33,27 @@ export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null
       qaUserTurnMe: t("qaUserTurnMe"),
       qaNoRetellYet: t("qaNoRetellYet"),
       composerAriaRegion: t("composerAriaRegion"),
-      composerHint: t("composerHint"),
+      composerHint: modOnly ? t("composerHintMod") : t("composerHint"),
       composerAttach: t("composerAttach"),
       composerThumbRemove: t("composerThumbRemove"),
       composerFileDropAria: t("composerFileDropAria"),
       composerFileDropRemove: t("composerFileDropRemove"),
       composerImageZoomTitle: t("composerImageZoomTitle"),
       imageLightboxClose: t("imageLightboxClose"),
-      composerSubmitIconTitle: t("composerSubmitIconTitle"),
+      composerSubmitIconTitle: modOnly ? t("composerSubmitIconTitleMod") : t("composerSubmitIconTitle"),
       composerSubmitIconAria: t("composerSubmitIconAria"),
       composerSubmitting: t("composerSubmitting"),
-      composerSubmitDisabledPreview: t("composerSubmitDisabledPreview"),
+      composerSubmitDisabledPreview: modOnly ? t("composerSubmitDisabledPreviewMod") : t("composerSubmitDisabledPreview"),
       composerImageAria: t("composerImageAria"),
       qaSkipped: t("qaSkipped"),
+      qaSkippedIdle: t("qaSkippedIdle"),
       qaEmptySubmit: t("qaEmptySubmit"),
       placeholder: t("placeholder"),
       slashListboxAria: t("slashListboxAria"),
       slashNoMatch: t("slashNoMatch"),
       slashNoCommandsForSession: t("slashNoCommandsForSession"),
       slashDropdownHint: t("slashDropdownHint"),
-      composerHintDraft: t("composerHintDraft"),
+      composerHintDraft: modOnly ? t("composerHintDraftMod") : t("composerHintDraft"),
       composerSubmitDisabledIdle: t("composerSubmitDisabledIdle"),
       composerRelayExitTitle: t("composerRelayExitTitle"),
       composerRelayExitAria: t("composerRelayExitAria"),
@@ -127,6 +129,15 @@ export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null
       appTrayTitle: t("appTrayTitle"),
       appTrayCloseToTray: t("appTrayCloseToTray"),
       appTrayCloseToTrayHint: t("appTrayCloseToTrayHint"),
+      appMcpWaitTitle: t("appMcpWaitTitle"),
+      appIdleTimeoutLabel: t("appIdleTimeoutLabel"),
+      appIdleTimeoutHint: t("appIdleTimeoutHint"),
+      appIdleTimeoutSaved: t("appIdleTimeoutSaved"),
+      appEnterSubmitTitle: t("appEnterSubmitTitle"),
+      appEnterSubmitLabel: t("appEnterSubmitLabel"),
+      appEnterSubmitPlain: t("appEnterSubmitPlain"),
+      appEnterSubmitModOnly: t("appEnterSubmitModOnly"),
+      appEnterSubmitSaved: t("appEnterSubmitSaved"),
       cacheTitle: t("cacheTitle"),
       cacheSubtitle: t("cacheSubtitle"),
       cacheLead: t("cacheLead"),
