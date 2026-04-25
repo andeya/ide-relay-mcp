@@ -160,72 +160,72 @@ async function onEnterSubmitChange(ev: Event) {
 <template>
   <div>
     <div v-show="appSegmentActive" class="segPanel segPanel--app">
-      <div class="cachePage">
-        <section class="cachePolicyCard settingsCard">
-          <h4 class="cacheSectionLabel">{{ S.appTrayTitle }}</h4>
-          <label class="usageToggleRow">
-            <span
-              class="usageToggleTrack"
-              :class="{ 'usageToggleTrack--on': closeToTray }"
-              role="switch"
-              :aria-checked="closeToTray"
-            >
-              <span class="usageToggleThumb" />
-            </span>
-            <input
-              type="checkbox"
-              class="usageToggleNative"
-              :checked="closeToTray"
-              @change="onCloseToTrayChange"
-            />
-            <span>{{ S.appTrayCloseToTray }}</span>
-          </label>
-          <p class="cachePolicyLead">{{ S.appTrayCloseToTrayHint }}</p>
-        </section>
+        <div class="cachePage">
+          <section class="cachePolicyCard settingsCard">
+            <h4 class="cacheSectionLabel">{{ S.appTrayTitle }}</h4>
+            <p class="cachePolicyLead">{{ S.appTrayCloseToTrayHint }}</p>
+            <label class="usageToggleRow">
+              <span
+                class="usageToggleTrack"
+                :class="{ 'usageToggleTrack--on': closeToTray }"
+                role="switch"
+                :aria-checked="closeToTray"
+              >
+                <span class="usageToggleThumb" />
+              </span>
+              <input
+                type="checkbox"
+                class="usageToggleNative"
+                :checked="closeToTray"
+                @change="onCloseToTrayChange"
+              />
+              <span class="toggleLabel">{{ S.appTrayCloseToTray }}</span>
+            </label>
+          </section>
 
-        <section class="cachePolicyCard settingsCard">
-          <h4 class="cacheSectionLabel">{{ S.appMcpWaitTitle }}</h4>
-          <p class="cachePolicyLead">{{ S.appIdleTimeoutHint }}</p>
-          <div class="appIdleTimeoutRow">
-            <label class="appIdleTimeoutLabel" for="relayIdleTimeoutMin">{{
-              S.appIdleTimeoutLabel
-            }}</label>
-            <input
-              id="relayIdleTimeoutMin"
-              v-model.number="idleTimeoutMin"
-              type="number"
-              class="appIdleTimeoutInput"
-              :min="APP_IDLE_MIN"
-              :max="APP_IDLE_MAX"
-              :disabled="idleTimeoutBusy"
-              @blur="onIdleTimeoutBlur"
-            />
-            <span class="cacheDays" aria-hidden="true">min</span>
-          </div>
-        </section>
+          <section class="cachePolicyCard settingsCard">
+            <h4 class="cacheSectionLabel">{{ S.appMcpWaitTitle }}</h4>
+            <p class="cachePolicyLead">{{ S.appIdleTimeoutHint }}</p>
+            <div class="appIdleTimeoutRow">
+              <label class="appIdleTimeoutLabel" for="relayIdleTimeoutMin">{{
+                S.appIdleTimeoutLabel
+              }}</label>
+              <input
+                id="relayIdleTimeoutMin"
+                v-model.number="idleTimeoutMin"
+                type="number"
+                class="appIdleTimeoutInput"
+                :min="APP_IDLE_MIN"
+                :max="APP_IDLE_MAX"
+                :disabled="idleTimeoutBusy"
+                @blur="onIdleTimeoutBlur"
+              />
+              <span class="cacheDays" aria-hidden="true">min</span>
+            </div>
+          </section>
 
-        <section class="cachePolicyCard settingsCard">
-          <h4 class="cacheSectionLabel">{{ S.appEnterSubmitTitle }}</h4>
-          <p class="cachePolicyLead">{{ S.appEnterSubmitLabel }}</p>
-          <label class="usageToggleRow">
-            <span
-              class="usageToggleTrack"
-              :class="{ 'usageToggleTrack--on': enterSubmitModOnly }"
-              role="switch"
-              :aria-checked="enterSubmitModOnly"
-            >
-              <span class="usageToggleThumb" />
-            </span>
-            <input
-              type="checkbox"
-              class="usageToggleNative"
-              :checked="enterSubmitModOnly"
-              :disabled="enterSubmitBusy"
-              @change="onEnterSubmitChange"
-            />
-            <span>{{ enterSubmitModOnly ? S.appEnterSubmitModOnly : S.appEnterSubmitPlain }}</span>
-          </label>
-        </section>
+          <section class="cachePolicyCard settingsCard">
+            <h4 class="cacheSectionLabel">{{ S.appEnterSubmitTitle }}</h4>
+            <p class="cachePolicyLead">{{ S.appEnterSubmitLabel }}</p>
+            <label class="usageToggleRow">
+              <span
+                class="usageToggleTrack"
+                :class="{ 'usageToggleTrack--on': enterSubmitModOnly }"
+                role="switch"
+                :aria-checked="enterSubmitModOnly"
+              >
+                <span class="usageToggleThumb" />
+              </span>
+              <input
+                type="checkbox"
+                class="usageToggleNative"
+                :checked="enterSubmitModOnly"
+                :disabled="enterSubmitBusy"
+                @change="onEnterSubmitChange"
+              />
+              <span class="toggleLabel">{{ enterSubmitModOnly ? S.appEnterSubmitModOnly : S.appEnterSubmitPlain }}</span>
+            </label>
+          </section>
 
         <header class="cachePageHero">
           <div class="cachePageHeroRow">
@@ -458,22 +458,57 @@ async function onEnterSubmitChange(ev: Event) {
 </template>
 
 <style scoped>
+.toggleLabel {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+.usageToggleRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+  cursor: pointer;
+}
+
 .appIdleTimeoutRow {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-  margin-top: 0.75rem;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.1);
 }
+
 .appIdleTimeoutLabel {
-  flex: 1 1 12rem;
+  flex: 1 1 auto;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e2e8f0;
 }
+
 .appIdleTimeoutInput {
-  width: 5rem;
-  padding: 0.35rem 0.5rem;
-  border-radius: 8px;
-  border: 1px solid var(--relay-border-muted, #3a3f4a);
-  background: var(--relay-surface-2, #1e222a);
+  width: 5.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.65);
   color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.appIdleTimeoutInput:focus-visible {
+  outline: none;
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+}
+
+.appIdleTimeoutInput:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 </style>
