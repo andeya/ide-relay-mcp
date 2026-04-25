@@ -127,8 +127,8 @@ watch(isActive, (active) => {
         </header>
 
         <!-- Auth status card -->
-        <section class="usageSettingsCard setupMcpPauseCard">
-          <h4 class="usageSettingsCardTitle">{{ S.usageSettingsTokenTitle }}</h4>
+        <section class="usageSettingsCard cachePolicyCard">
+          <h4 class="cacheSectionLabel">{{ S.usageSettingsTokenTitle }}</h4>
           <p class="usageSettingsHint">{{ S.usageSettingsAutoHint }}</p>
 
           <div v-if="error" class="usageTokenStatus">
@@ -142,15 +142,17 @@ watch(isActive, (active) => {
         </section>
 
         <!-- Refresh policy card -->
-        <section class="usageSettingsCard setupMcpPauseCard">
-          <h4 class="usageSettingsCardTitle">
+        <section class="usageSettingsCard cachePolicyCard">
+          <h4 class="cacheSectionLabel">
             {{ S.usageSettingsRefreshTitle }}
           </h4>
+          <p class="usageSettingsHint">{{ S.usageSettingsRefreshHint }}</p>
 
           <div class="usageIntervalRow">
-            <span>{{ S.usageSettingsRefreshInterval }}</span>
+            <label class="usageIntervalLabel" for="usageRefreshInterval">{{ S.usageSettingsRefreshInterval }}</label>
             <div class="usageSelectWrap">
               <select
+                id="usageRefreshInterval"
                 :value="settings.refresh_interval_minutes"
                 class="usageIntervalSelect"
                 @change="onRefreshIntervalChange"
@@ -171,9 +173,9 @@ watch(isActive, (active) => {
         <!-- Usage preview -->
         <section
           v-if="usageSummary"
-          class="usageSettingsCard usagePreviewCard"
+          class="usageSettingsCard cachePolicyCard usagePreviewCard"
         >
-          <h4 class="usageSettingsCardTitle">{{ S.usageMonthSummary }}</h4>
+          <h4 class="cacheSectionLabel">{{ S.usageMonthSummary }}</h4>
           <div class="usagePreviewGrid">
             <div class="usagePreviewItem">
               <span class="usagePreviewLabel">{{ S.usageMembership }}</span>
@@ -232,8 +234,8 @@ watch(isActive, (active) => {
         </section>
 
         <!-- Recent usage events -->
-        <section v-if="usageSummary" class="usageSettingsCard setupMcpPauseCard">
-          <h4 class="usageSettingsCardTitle">{{ S.usageRecentTitle }}</h4>
+        <section v-if="usageSummary" class="usageSettingsCard cachePolicyCard">
+          <h4 class="cacheSectionLabel">{{ S.usageRecentTitle }}</h4>
           <div v-if="usageEvents.length" class="usageEventsTable">
             <div
               v-for="(ev, idx) in usageEvents"
