@@ -1,6 +1,8 @@
 /**
- * Multi-tab feedback: when a tab has a pending MCP request, plain Enter submits; Shift+Enter = newline;
- * ⌘/Ctrl+Enter = submit and close this tab. Idle tabs (no request_id) draft with Enter = newline.
+ * Multi-tab feedback: default mode — plain Enter submits; Shift+Enter = newline;
+ * ⌘/Ctrl+Enter = submit and close tab. When "Enter requires modifier" is enabled,
+ * Enter = newline and ⌘/Ctrl+Enter = submit; ⌘/Ctrl+Shift+Enter = submit & close.
+ * Idle tabs (no request_id) draft with Enter = newline.
  */
 import type { ComponentPublicInstance } from "vue";
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
@@ -233,6 +235,7 @@ export function useFeedbackWindow() {
           retell: s,
           reply: "",
           skipped: false,
+          idle_timeout: false,
           submitted: false,
           tab_id: tab.tab_id,
           relay_mcp_session_id: tab.relay_mcp_session_id || "",
@@ -276,10 +279,33 @@ export function useFeedbackWindow() {
    * Hub (`is_preview`): composer is read-only; swallow stays true so plain Enter does not insert.
    * `submit(false)` returns immediately on preview — Enter has no visible effect (⌘/Ctrl+Enter closes via `submit(true)`).
    */
+  const enterSubmitModOnly = ref(false);
+
+  function loadEnterSubmitSetting() {
+    invoke<boolean>("get_enter_submit_requires_mod")
+      .then((v) => {
+        enterSubmitModOnly.value = v;
+      })
+      .catch(() => {
+        /* keep default false */
+      });
+  }
+
+  loadEnterSubmitSetting();
+
+  const onEnterSubmitChanged = (e: Event) => {
+    enterSubmitModOnly.value = (e as CustomEvent<boolean>).detail;
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("relay-enter-submit-changed", onEnterSubmitChanged);
+  }
+
   const composerSwallowPlainEnter = computed(() => {
     if (submitting.value) return true;
     if (hasPendingFileDropErrors.value) return true;
     if (launch.value?.is_preview) return true;
+    if (enterSubmitModOnly.value) return true;
     if (!launch.value?.request_id?.trim()) return false;
     if (status.value === "idle") return false;
     return true;
@@ -622,6 +648,13 @@ export function useFeedbackWindow() {
       return;
     }
     if (!tab.request_id?.trim()) {
+      const hasDraft =
+        feedback.value.trim().length > 0 ||
+        pendingImages.value.length > 0 ||
+        pendingFileDrops.value.length > 0;
+      if (hasDraft) {
+        error.value = t("composerRoundEndedHint");
+      }
       return;
     }
     /** Drafting: no submit until MCP request is active */
@@ -1129,13 +1162,16 @@ export function useFeedbackWindow() {
       return;
     }
 
+    if (enterSubmitModOnly.value && !event.metaKey && !event.ctrlKey) {
+      return;
+    }
+
     if (!composerSwallowPlainEnter.value) {
       return;
     }
 
     event.preventDefault();
-    const submitAndCloseTab = event.metaKey || event.ctrlKey;
-    void submit(submitAndCloseTab);
+    void submit(event.metaKey || event.ctrlKey);
   }
 
   async function pollCycle() {
@@ -1210,6 +1246,9 @@ export function useFeedbackWindow() {
     }
     unlistenTabs?.();
     unlistenDragDrop?.();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("relay-enter-submit-changed", onEnterSubmitChanged);
+    }
     revokeAllPreviews();
     pendingFileDrops.value = [];
   });
@@ -1249,6 +1288,7 @@ export function useFeedbackWindow() {
     expired,
     composerDrafting,
     composerSwallowPlainEnter,
+    enterSubmitModOnly,
     hasPendingFileDropErrors,
     setWindowTitle,
     closeWindow: closeTabOrWindow,

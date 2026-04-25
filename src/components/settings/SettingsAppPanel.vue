@@ -48,6 +48,7 @@ const {
 const S = computed(() => props.strings);
 
 const closeToTray = ref(true);
+const closeToTrayBusy = ref(false);
 watch(
   isActive,
   async (active) => {
@@ -61,18 +62,97 @@ watch(
   },
   { immediate: true },
 );
-let closeToTrayBusy = false;
 async function onCloseToTrayChange(ev: Event) {
-  if (closeToTrayBusy) return;
-  closeToTrayBusy = true;
+  if (closeToTrayBusy.value) return;
+  closeToTrayBusy.value = true;
   const checked = (ev.target as HTMLInputElement).checked;
   closeToTray.value = checked;
   try {
     await invoke("set_close_to_tray", { enabled: checked });
   } catch {
     closeToTray.value = !checked;
+    props.pushToast({ type: "err", text: "保存失败，请重试" });
   } finally {
-    closeToTrayBusy = false;
+    closeToTrayBusy.value = false;
+  }
+}
+
+const idleTimeoutMin = ref(60);
+const idleTimeoutBusy = ref(false);
+const APP_IDLE_MIN = 0;
+const APP_IDLE_MAX = 1440;
+
+watch(
+  isActive,
+  async (active) => {
+    if (active) {
+      try {
+        const v = await invoke<number>("get_feedback_idle_timeout_minutes");
+        idleTimeoutMin.value = clampIdleTimeout(v);
+      } catch {
+        idleTimeoutMin.value = 60;
+      }
+    }
+  },
+  { immediate: true },
+);
+
+function clampIdleTimeout(n: number): number {
+  if (!Number.isFinite(n)) return 60;
+  return Math.min(APP_IDLE_MAX, Math.max(APP_IDLE_MIN, Math.round(n)));
+}
+
+async function persistIdleTimeout() {
+  if (idleTimeoutBusy.value) return;
+  idleTimeoutBusy.value = true;
+  const next = clampIdleTimeout(Number(idleTimeoutMin.value));
+  idleTimeoutMin.value = next;
+  try {
+    await invoke("set_feedback_idle_timeout_minutes", { minutes: next });
+    props.pushToast({ type: "ok", text: props.strings.appIdleTimeoutSaved });
+  } catch {
+    /* ignore */
+  } finally {
+    idleTimeoutBusy.value = false;
+  }
+}
+
+function onIdleTimeoutBlur() {
+  void persistIdleTimeout();
+}
+
+const enterSubmitModOnly = ref(false);
+const enterSubmitBusy = ref(false);
+
+watch(
+  isActive,
+  async (active) => {
+    if (active) {
+      try {
+        enterSubmitModOnly.value = await invoke<boolean>("get_enter_submit_requires_mod");
+      } catch {
+        enterSubmitModOnly.value = false;
+      }
+    }
+  },
+  { immediate: true },
+);
+
+async function onEnterSubmitChange(ev: Event) {
+  if (enterSubmitBusy.value) return;
+  enterSubmitBusy.value = true;
+  const checked = (ev.target as HTMLInputElement).checked;
+  enterSubmitModOnly.value = checked;
+  try {
+    await invoke("set_enter_submit_requires_mod", { enabled: checked });
+    props.pushToast({ type: "ok", text: props.strings.appEnterSubmitSaved });
+    window.dispatchEvent(
+      new CustomEvent("relay-enter-submit-changed", { detail: checked }),
+    );
+  } catch {
+    enterSubmitModOnly.value = !checked;
+  } finally {
+    enterSubmitBusy.value = false;
   }
 }
 </script>
@@ -101,6 +181,50 @@ async function onCloseToTrayChange(ev: Event) {
             <span>{{ S.appTrayCloseToTray }}</span>
           </label>
           <p class="cachePolicyLead">{{ S.appTrayCloseToTrayHint }}</p>
+        </section>
+
+        <section class="cachePolicyCard settingsCard">
+          <h4 class="cacheSectionLabel">{{ S.appMcpWaitTitle }}</h4>
+          <p class="cachePolicyLead">{{ S.appIdleTimeoutHint }}</p>
+          <div class="appIdleTimeoutRow">
+            <label class="appIdleTimeoutLabel" for="relayIdleTimeoutMin">{{
+              S.appIdleTimeoutLabel
+            }}</label>
+            <input
+              id="relayIdleTimeoutMin"
+              v-model.number="idleTimeoutMin"
+              type="number"
+              class="appIdleTimeoutInput"
+              :min="APP_IDLE_MIN"
+              :max="APP_IDLE_MAX"
+              :disabled="idleTimeoutBusy"
+              @blur="onIdleTimeoutBlur"
+            />
+            <span class="cacheDays" aria-hidden="true">min</span>
+          </div>
+        </section>
+
+        <section class="cachePolicyCard settingsCard">
+          <h4 class="cacheSectionLabel">{{ S.appEnterSubmitTitle }}</h4>
+          <p class="cachePolicyLead">{{ S.appEnterSubmitLabel }}</p>
+          <label class="usageToggleRow">
+            <span
+              class="usageToggleTrack"
+              :class="{ 'usageToggleTrack--on': enterSubmitModOnly }"
+              role="switch"
+              :aria-checked="enterSubmitModOnly"
+            >
+              <span class="usageToggleThumb" />
+            </span>
+            <input
+              type="checkbox"
+              class="usageToggleNative"
+              :checked="enterSubmitModOnly"
+              :disabled="enterSubmitBusy"
+              @change="onEnterSubmitChange"
+            />
+            <span>{{ enterSubmitModOnly ? S.appEnterSubmitModOnly : S.appEnterSubmitPlain }}</span>
+          </label>
         </section>
 
         <header class="cachePageHero">
@@ -332,3 +456,24 @@ async function onCloseToTrayChange(ev: Event) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.appIdleTimeoutRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+}
+.appIdleTimeoutLabel {
+  flex: 1 1 12rem;
+}
+.appIdleTimeoutInput {
+  width: 5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--relay-border-muted, #3a3f4a);
+  background: var(--relay-surface-2, #1e222a);
+  color: inherit;
+}
+</style>

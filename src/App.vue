@@ -11,6 +11,7 @@ import {
   watch,
 } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { locale, t } from "./i18n";
 import { useAppStrings } from "./composables/useAppStrings";
 import { useFeedbackWindow } from "./composables/useFeedbackWindow";
@@ -137,6 +138,7 @@ const {
   expired,
   composerDrafting,
   composerSwallowPlainEnter,
+  enterSubmitModOnly,
   hasPendingFileDropErrors,
   status,
   submit,
@@ -392,7 +394,7 @@ const {
   configureRelayPath,
 } = useMcpAndPathSettings(ideLabel, ideKind);
 
-const { strings } = useAppStrings(ideLabel, ideKind);
+const { strings } = useAppStrings(ideLabel, ideKind, enterSubmitModOnly);
 
 async function doSwitchIde(ide: IdeKind) {
   if (ideSwitchBusy.value) return;
@@ -453,6 +455,7 @@ const settingsRefreshToast = ref<{
   text: string;
 } | null>(null);
 let settingsRefreshToastTimer: ReturnType<typeof setTimeout> | undefined;
+let unlistenIdleTimeout: (() => void) | undefined;
 
 function pushSettingsToast(p: SettingsToastPayload) {
   if (settingsRefreshToastTimer) clearTimeout(settingsRefreshToastTimer);
@@ -783,6 +786,12 @@ onMounted(async () => {
 
     void refreshMcpPaused();
     window.addEventListener("keydown", onGlobalKeydown);
+    unlistenIdleTimeout = await listen("relay_idle_timeout", () => {
+      pushSettingsToast({
+        type: "warn",
+        text: t("idleTimeoutToast"),
+      });
+    });
     await nextTick();
     updateSummaryScrollHints();
   } catch (err) {
@@ -792,6 +801,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  unlistenIdleTimeout?.();
+  unlistenIdleTimeout = undefined;
   window.removeEventListener("keydown", onGlobalKeydown);
   if (settingsRefreshToastTimer) clearTimeout(settingsRefreshToastTimer);
   if (shellLeaveTimer !== null) clearTimeout(shellLeaveTimer);
@@ -1122,7 +1133,13 @@ onBeforeUnmount(() => {
                     strings.qaUserTurnMe
                   }}</span>
                   <div class="qaChatBubble qaChatBubble--me qaChatBubble--meMuted">
-                    <p class="qaRoundMuted">{{ strings.qaSkipped }}</p>
+                    <p class="qaRoundMuted">
+                      {{
+                        round.idle_timeout
+                          ? strings.qaSkippedIdle
+                          : strings.qaSkipped
+                      }}
+                    </p>
                   </div>
                 </div>
               </div>
