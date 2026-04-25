@@ -1802,10 +1802,18 @@ h1 {
 
 .installHubCard {
   margin-bottom: 18px;
-  padding: 18px 20px;
-  border-radius: 14px;
+  padding: 22px 22px 24px;
+  border-radius: 16px;
   border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.6);
+  background: linear-gradient(
+    175deg,
+    rgba(30, 41, 59, 0.38) 0%,
+    rgba(15, 23, 42, 0.65) 100%
+  );
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 16px 48px rgba(0, 0, 0, 0.16);
 }
 
 .installHubTitle {
@@ -1817,10 +1825,10 @@ h1 {
 }
 
 .installHubDesc {
-  margin: 0 0 14px;
-  font-size: 0.875rem;
+  margin: 0 0 12px;
+  font-size: 0.8125rem;
   color: #94a3b8;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 .segPanel--app {
@@ -1910,12 +1918,11 @@ h1 {
 }
 
 .cacheSectionLabel {
-  margin: 0 0 14px;
-  font-size: 0.65rem;
-  font-weight: 750;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #64748b;
+  margin: 0 0 12px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  line-height: 1.35;
 }
 
 .cacheBigCards {
@@ -2089,9 +2096,10 @@ h1 {
 
 .cachePolicyLead,
 .cacheManualLead {
-  margin-top: 0;
-  margin-bottom: 16px;
-  line-height: 1.58;
+  margin: 0 0 16px;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  color: #94a3b8;
 }
 
 .cacheRetentionLabel {
@@ -2828,15 +2836,18 @@ textarea[readonly] {
 
 .setupMcpPauseCard {
   margin: 0 0 20px;
-  padding: 16px 18px;
-  border-radius: 14px;
-  border: 1px solid rgba(94, 234, 212, 0.18);
+  padding: 22px 22px 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
   background: linear-gradient(
-    160deg,
-    rgba(15, 118, 110, 0.1) 0%,
-    rgba(15, 23, 42, 0.55) 100%
+    175deg,
+    rgba(30, 41, 59, 0.38) 0%,
+    rgba(15, 23, 42, 0.65) 100%
   );
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 16px 48px rgba(0, 0, 0, 0.16);
 }
 
 .setupMcpPauseHead {
@@ -4076,20 +4087,21 @@ textarea[readonly] {
 }
 
 .usageSettingsCardTitle {
-  margin: 0;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #e2e8f0;
+  margin: 0 0 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  line-height: 1.35;
 }
 
 .usageSettingsHint {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   color: #94a3b8;
-  line-height: 1.45;
+  line-height: 1.6;
 }
 
-.usageTokenStatus {
+.usageSettingsCard {
   display: flex;
   align-items: center;
   gap: 8px;
