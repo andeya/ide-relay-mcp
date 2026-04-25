@@ -281,6 +281,26 @@ fn set_close_to_tray(enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_feedback_idle_timeout_minutes() -> u32 {
+    relay_mcp::config::read_feedback_idle_timeout_minutes()
+}
+
+#[tauri::command]
+fn set_feedback_idle_timeout_minutes(minutes: u32) -> Result<(), String> {
+    relay_mcp::config::write_feedback_idle_timeout_minutes(minutes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_enter_submit_requires_mod() -> bool {
+    relay_mcp::config::read_enter_submit_requires_mod()
+}
+
+#[tauri::command]
+fn set_enter_submit_requires_mod(enabled: bool) -> Result<(), String> {
+    relay_mcp::config::write_enter_submit_requires_mod(enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_mcp_paused() -> bool {
     relay_mcp::read_mcp_paused()
 }
@@ -715,6 +735,7 @@ fn run_tauri(initial: LaunchState) {
             retell: initial.retell.trim().to_string(),
             reply: String::new(),
             skipped: false,
+            idle_timeout: false,
             submitted: false,
             tab_id: tid,
             relay_mcp_session_id: String::new(),
@@ -805,6 +826,10 @@ fn run_tauri(initial: LaunchState) {
             set_window_always_on_top,
             get_close_to_tray,
             set_close_to_tray,
+            get_feedback_idle_timeout_minutes,
+            set_feedback_idle_timeout_minutes,
+            get_enter_submit_requires_mod,
+            set_enter_submit_requires_mod,
             get_dock_edge_hide,
             get_dock_edge_hide_ui_timing,
             set_dock_edge_hide,

@@ -4,6 +4,7 @@
 //! ## Timeouts
 //! - `GET /v1/feedback/wait/:id` is **completed by the GUI** (submit, dismiss, supersede,
 //!   or ~60 min idle via orphan cleanup in `gui_http`). The HTTP route itself has no short socket timeout.
+//! - GUI idle orphan timing is **configurable** (minutes, Settings → Application); MCP still treats the result like dismiss when it fires.
 //! - This module sets a **24 h** read timeout on that GET as a **transport failsafe** only.
 
 use anyhow::{anyhow, Context, Result};

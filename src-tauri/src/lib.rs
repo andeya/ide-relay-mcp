@@ -200,6 +200,9 @@ pub struct QaRound {
     pub reply: String,
     #[serde(default)]
     pub skipped: bool,
+    /// True when this skip was caused by HTTP idle orphan cleanup (empty human to MCP).
+    #[serde(default)]
+    pub idle_timeout: bool,
     #[serde(default)]
     pub submitted: bool,
     pub tab_id: String,
@@ -328,6 +331,7 @@ pub fn apply_hydration_bundle(g: &mut FeedbackTabsState, bundle: &QaHydrationBun
                 retell: retell.clone(),
                 reply: reply.clone(),
                 skipped: *skipped_flag,
+                idle_timeout: false,
                 submitted: true,
                 tab_id: tab.tab_id.clone(),
                 relay_mcp_session_id: sid.to_string(),
@@ -368,6 +372,7 @@ pub fn push_qa_round(
         retell: s.to_string(),
         reply: String::new(),
         skipped: false,
+        idle_timeout: false,
         submitted: false,
         tab_id: tab_id.to_string(),
         relay_mcp_session_id: relay_mcp_session_id.to_string(),
@@ -414,6 +419,7 @@ pub fn apply_reply_for_tab(
     reply: &str,
     attachments: &[QaAttachmentRef],
     skipped: bool,
+    idle_timeout: bool,
 ) {
     for r in g.qa_rounds.iter_mut().rev() {
         if r.tab_id == tab_id && !r.submitted {
@@ -421,9 +427,11 @@ pub fn apply_reply_for_tab(
             r.reply_at = crate::storage::timestamp_string();
             if skipped {
                 r.skipped = true;
+                r.idle_timeout = idle_timeout;
                 r.reply.clear();
                 r.reply_attachments.clear();
             } else {
+                r.idle_timeout = false;
                 r.reply = reply.to_string();
                 r.reply_attachments = attachments.to_vec();
             }
@@ -656,6 +664,7 @@ mod reconcile_qa_rounds_tests {
                 retell: "a".into(),
                 reply: "b".into(),
                 skipped: false,
+                idle_timeout: false,
                 submitted: true,
                 tab_id: "old".into(),
                 relay_mcp_session_id: sid.into(),
@@ -708,6 +717,7 @@ mod reconcile_qa_rounds_tests {
                 retell: "x".into(),
                 reply: "y".into(),
                 skipped: false,
+                idle_timeout: false,
                 submitted: false,
                 tab_id: "t".into(),
                 relay_mcp_session_id: "".into(),

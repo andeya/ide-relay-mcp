@@ -28,9 +28,6 @@ use tauri::Emitter;
 use tokio::sync::oneshot;
 use tower_http::limit::RequestBodyLimitLayer;
 
-/// HTTP wait can hang until user acts; drop stale waiter channels after this duration (+ slack in orphan timer).
-const FEEDBACK_HTTP_WAIT_MAX_SECS: u64 = 60 * 60;
-
 /// Stable JSON body when no tab matches (must stay in sync with [`crate::feedback_tool_result_string`] shape).
 fn empty_tool_result_fallback() -> String {
     serde_json::json!({
@@ -414,7 +411,7 @@ impl RelayGuiRuntime {
         let human_plain = strip_legacy_relay_marker_tail(&human);
         let result_string = feedback_tool_result_string(&t, &human_plain, &attachments);
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
-        apply_reply_for_tab(&mut g, tab_id, &human_plain, &attachments, false);
+        apply_reply_for_tab(&mut g, tab_id, &human_plain, &attachments, false, false);
         drop(g);
         self.complete_request(&rid, result_string);
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
@@ -440,7 +437,7 @@ impl RelayGuiRuntime {
             self.complete_request(&t.request_id, empty_result);
         }
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
-        apply_reply_for_tab(&mut g, tab_id, "", &[], true);
+        apply_reply_for_tab(&mut g, tab_id, "", &[], true, false);
         finish_tab_remove_empty_close(&mut g, tab_id, app);
         emit_tabs(app);
         Ok(())
@@ -486,7 +483,7 @@ impl RelayGuiRuntime {
             self.complete_request(&t.request_id, empty_result);
         }
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
-        apply_reply_for_tab(&mut g, tab_id, "", &[], true);
+        apply_reply_for_tab(&mut g, tab_id, "", &[], true, false);
         finish_tab_remove_empty_close(&mut g, tab_id, app);
         emit_tabs(app);
         Ok(())
@@ -712,16 +709,22 @@ fn feedback_orphan_wait_cleanup(inner: Arc<RelayGuiInner>, rid: String) {
     }
     if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid).cloned() {
         if !t.is_preview {
-            apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true);
+            apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true, true);
             finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner.app);
         }
     }
     emit_tabs(&inner.app);
+    let _ = inner.app.emit("relay_idle_timeout", ());
 }
 
 fn spawn_feedback_orphan_wait_timer(inner: Arc<RelayGuiInner>, rid: String) {
+    let mins = crate::config::read_feedback_idle_timeout_minutes() as u64;
+    if mins == 0 {
+        return; // keep-alive mode: never auto-timeout
+    }
+    let wait_secs = mins.saturating_mul(60).saturating_add(20);
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(FEEDBACK_HTTP_WAIT_MAX_SECS + 20)).await;
+        tokio::time::sleep(Duration::from_secs(wait_secs)).await;
         let _ = tokio::task::spawn_blocking(move || feedback_orphan_wait_cleanup(inner, rid)).await;
     });
 }
@@ -846,7 +849,7 @@ async fn wait_feedback(
                 let mut g = lock_tabs(&inner_cleanup);
                 if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid_cleanup).cloned() {
                     if !t.is_preview {
-                        apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true);
+                        apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true, false);
                         finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner_cleanup.app);
                     }
                 }

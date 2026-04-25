@@ -11,6 +11,9 @@ use tauri::{PhysicalPosition, WebviewWindow};
 /// each other's updates.
 static DOCK_CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
+/// Serialises read-modify-write cycles on `feedback_ipc.json`.
+static FEEDBACK_CONFIG_LOCK: Mutex<()> = Mutex::new(());
+
 /// Visible strip (px) when the window is tucked to left/right edge.
 pub const DOCK_EDGE_HIDE_PEEK_PX: i32 = 14;
 
@@ -72,6 +75,90 @@ use crate::user_data_dir;
 pub const UI_LOCALE_FILE: &str = "ui_locale.json";
 pub const WINDOW_DOCK_FILE: &str = "window_dock.json";
 pub const MCP_PAUSE_FILE: &str = "mcp_pause.json";
+pub const FEEDBACK_IPC_FILE: &str = "feedback_ipc.json";
+
+/// GUI HTTP wait orphan timer: clamp minutes to avoid extreme values.
+/// 0 means "never timeout" (keep-alive mode).
+pub const FEEDBACK_IDLE_TIMEOUT_MINUTES_MIN: u32 = 0;
+pub const FEEDBACK_IDLE_TIMEOUT_MINUTES_MAX: u32 = 24 * 60;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FeedbackIpcConfig {
+    /// Minutes after `POST /v1/feedback` with no completion before wait is forced (empty human).
+    /// 0 means "never timeout" (keep-alive mode).
+    #[serde(default = "default_idle_timeout_minutes")]
+    pub idle_timeout_minutes: u32,
+    /// When true, plain Enter inserts a newline and Cmd/Ctrl+Enter submits.
+    /// When false (default), plain Enter submits and Shift+Enter inserts a newline.
+    #[serde(default)]
+    pub enter_submit_requires_mod: bool,
+}
+
+fn default_idle_timeout_minutes() -> u32 {
+    60
+}
+
+fn clamp_idle_timeout_minutes(minutes: u32) -> u32 {
+    minutes.clamp(
+        FEEDBACK_IDLE_TIMEOUT_MINUTES_MIN,
+        FEEDBACK_IDLE_TIMEOUT_MINUTES_MAX,
+    )
+}
+
+fn default_feedback_ipc_config() -> FeedbackIpcConfig {
+    FeedbackIpcConfig {
+        idle_timeout_minutes: default_idle_timeout_minutes(),
+        enter_submit_requires_mod: false,
+    }
+}
+
+pub fn read_feedback_ipc_config_or_default() -> FeedbackIpcConfig {
+    let Ok(dir) = user_data_dir() else {
+        return default_feedback_ipc_config();
+    };
+    let path = dir.join(FEEDBACK_IPC_FILE);
+    let text = match fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return default_feedback_ipc_config(),
+    };
+    let mut cfg: FeedbackIpcConfig =
+        serde_json::from_str(&text).unwrap_or_else(|_| default_feedback_ipc_config());
+    cfg.idle_timeout_minutes = clamp_idle_timeout_minutes(cfg.idle_timeout_minutes);
+    cfg
+}
+
+/// Minutes for GUI orphan HTTP wait (each feedback POST schedules an independent timer).
+pub fn read_feedback_idle_timeout_minutes() -> u32 {
+    read_feedback_ipc_config_or_default().idle_timeout_minutes
+}
+
+/// Atomically read-modify-write `feedback_ipc.json` under [`FEEDBACK_CONFIG_LOCK`].
+fn update_feedback_ipc_config(f: impl FnOnce(&mut FeedbackIpcConfig)) -> Result<()> {
+    let _guard = FEEDBACK_CONFIG_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = user_data_dir()?;
+    fs::create_dir_all(&dir)?;
+    let path = dir.join(FEEDBACK_IPC_FILE);
+    let mut cfg = read_feedback_ipc_config_or_default();
+    f(&mut cfg);
+    fs::write(path, serde_json::to_string_pretty(&cfg)?)?;
+    Ok(())
+}
+
+/// Minutes for GUI orphan HTTP wait (each feedback POST schedules an independent timer).
+pub fn write_feedback_idle_timeout_minutes(minutes: u32) -> Result<()> {
+    let m = clamp_idle_timeout_minutes(minutes);
+    update_feedback_ipc_config(|cfg| cfg.idle_timeout_minutes = m)
+}
+
+pub fn read_enter_submit_requires_mod() -> bool {
+    read_feedback_ipc_config_or_default().enter_submit_requires_mod
+}
+
+pub fn write_enter_submit_requires_mod(enabled: bool) -> Result<()> {
+    update_feedback_ipc_config(|cfg| cfg.enter_submit_requires_mod = enabled)
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UiLocaleConfig {

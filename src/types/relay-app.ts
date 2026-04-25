@@ -42,6 +42,8 @@ export type QaRound = {
   retell: string;
   reply: string;
   skipped?: boolean;
+  /** HTTP wait ended by idle orphan (empty human to IDE). */
+  idle_timeout?: boolean;
   submitted?: boolean;
   tab_id: string;
   relay_mcp_session_id?: string;
