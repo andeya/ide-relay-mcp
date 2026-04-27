@@ -391,6 +391,15 @@ async function preemptAllRemotesToHere() {
   }
 }
 
+function sessionsForConnection(conn: RemoteConnection): ActiveMcpSession[] {
+  const target = conn.ssh_target;
+  const host = target.includes("@") ? target.split("@")[1] : target;
+  return sessions.value.filter((s) =>
+    s.mcp_origin === "remote" && s.mcp_hostname &&
+    (s.mcp_hostname === host || s.mcp_hostname.includes(host) || host.includes(s.mcp_hostname))
+  );
+}
+
 interface ConnectionGroup {
   key: string;
   origin: string;
@@ -557,6 +566,18 @@ onBeforeUnmount(() => {
               v-if="isPreempted(conn.id)"
               class="remoteDetailChip remoteDetailChip--routing"
             >{{ S.remoteRoutingRemote }}</span>
+          </div>
+          <!-- Matched active sessions from this remote connection -->
+          <div v-if="sessionsForConnection(conn).length" class="remoteCardSessions">
+            <div
+              v-for="s in sessionsForConnection(conn)"
+              :key="s.request_id"
+              class="remoteCardSessionItem"
+            >
+              <span class="sessionOriginDot sessionOriginDot--remote" />
+              <span class="remoteCardSessionTitle">{{ s.title }}</span>
+              <span v-if="s.connected_at" class="remoteCardSessionTime">{{ s.connected_at }}</span>
+            </div>
           </div>
         </div>
 
@@ -1091,6 +1112,33 @@ onBeforeUnmount(() => {
 }
 
 /* Preempt toggle button */
+/* Sessions matched to a remote card */
+.remoteCardSessions {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.06);
+}
+.remoteCardSessionItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+.remoteCardSessionTitle {
+  flex: 1;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remoteCardSessionTime {
+  font-size: 0.625rem;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
 .remotePreemptBtn {
   padding: 4px 10px !important;
   font-size: 0.75rem !important;
