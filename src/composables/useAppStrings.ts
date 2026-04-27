@@ -2,8 +2,22 @@
  * Reactive UI strings for App.vue (reactive to locale).
  */
 import { computed, type Ref } from "vue";
-import { locale, t } from "../i18n";
+import { locale, t, type LocaleKey } from "../i18n";
 import type { IdeKind } from "../types/relay-app";
+
+function detectSubmitModifierLabel(): "⌘" | "Ctrl" {
+  if (typeof navigator === "undefined") return "Ctrl";
+  const uaData = (navigator as Navigator & { userAgentData?: { platform?: string } })
+    .userAgentData;
+  const platform = `${uaData?.platform ?? ""} ${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`.toLowerCase();
+  return platform.includes("mac") ? "⌘" : "Ctrl";
+}
+
+function localizeModifierInText(input: string, modifier: "⌘" | "Ctrl"): string {
+  return input
+    .split("⌘/Ctrl").join(modifier)
+    .split("⌘ or Ctrl").join(modifier);
+}
 
 export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null>, enterSubmitModOnly?: Ref<boolean>) {
   const strings = computed(() => {
@@ -11,9 +25,12 @@ export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null
     const ide = ideLabel.value || "IDE";
     const ideCliId = ideKind.value || "other";
     const modOnly = enterSubmitModOnly?.value ?? false;
+    const submitModifier = detectSubmitModifierLabel();
+    const shortcutText = (key: LocaleKey) =>
+      localizeModifierInText(t(key), submitModifier);
     return {
       appTitle: t("appTitle"),
-      mainHintPreview: modOnly ? t("mainHintPreviewMod") : t("mainHintPreview"),
+      mainHintPreview: modOnly ? shortcutText("mainHintPreviewMod") : shortcutText("mainHintPreview"),
       tabStripAria: t("tabStripAria"),
       tabCloseAria: t("tabCloseAria"),
       tabCloseTitle: t("tabCloseTitle"),
@@ -33,17 +50,21 @@ export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null
       qaUserTurnMe: t("qaUserTurnMe"),
       qaNoRetellYet: t("qaNoRetellYet"),
       composerAriaRegion: t("composerAriaRegion"),
-      composerHint: modOnly ? t("composerHintMod") : t("composerHint"),
+      composerHint: modOnly ? shortcutText("composerHintMod") : shortcutText("composerHint"),
       composerAttach: t("composerAttach"),
       composerThumbRemove: t("composerThumbRemove"),
       composerFileDropAria: t("composerFileDropAria"),
       composerFileDropRemove: t("composerFileDropRemove"),
       composerImageZoomTitle: t("composerImageZoomTitle"),
       imageLightboxClose: t("imageLightboxClose"),
-      composerSubmitIconTitle: modOnly ? t("composerSubmitIconTitleMod") : t("composerSubmitIconTitle"),
+      composerSubmitIconTitle: modOnly
+        ? shortcutText("composerSubmitIconTitleMod")
+        : shortcutText("composerSubmitIconTitle"),
       composerSubmitIconAria: t("composerSubmitIconAria"),
       composerSubmitting: t("composerSubmitting"),
-      composerSubmitDisabledPreview: modOnly ? t("composerSubmitDisabledPreviewMod") : t("composerSubmitDisabledPreview"),
+      composerSubmitDisabledPreview: modOnly
+        ? shortcutText("composerSubmitDisabledPreviewMod")
+        : shortcutText("composerSubmitDisabledPreview"),
       composerImageAria: t("composerImageAria"),
       qaSkipped: t("qaSkipped"),
       qaSkippedIdle: t("qaSkippedIdle"),
@@ -53,7 +74,9 @@ export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null
       slashNoMatch: t("slashNoMatch"),
       slashNoCommandsForSession: t("slashNoCommandsForSession"),
       slashDropdownHint: t("slashDropdownHint"),
-      composerHintDraft: modOnly ? t("composerHintDraftMod") : t("composerHintDraft"),
+      composerHintDraft: modOnly
+        ? shortcutText("composerHintDraftMod")
+        : shortcutText("composerHintDraft"),
       composerSubmitDisabledIdle: t("composerSubmitDisabledIdle"),
       composerRelayExitTitle: t("composerRelayExitTitle"),
       composerRelayExitAria: t("composerRelayExitAria"),
@@ -137,7 +160,7 @@ export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null
       appEnterSubmitTitle: t("appEnterSubmitTitle"),
       appEnterSubmitLabel: t("appEnterSubmitLabel"),
       appEnterSubmitPlain: t("appEnterSubmitPlain"),
-      appEnterSubmitModOnly: t("appEnterSubmitModOnly"),
+      appEnterSubmitModOnly: shortcutText("appEnterSubmitModOnly"),
       appEnterSubmitSaved: t("appEnterSubmitSaved"),
       appSaveErr: t("appSaveErr"),
       cacheTitle: t("cacheTitle"),
