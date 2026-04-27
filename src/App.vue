@@ -1493,6 +1493,7 @@ onBeforeUnmount(() => {
                                 : strings.composerSubmitIconAria
                       "
                       :disabled="
+                        submitting ||
                         isHubPage ||
                         (!isHubPage && composerDrafting) ||
                         hasPendingFileDropErrors

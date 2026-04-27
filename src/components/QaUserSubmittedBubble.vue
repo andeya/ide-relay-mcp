@@ -7,6 +7,7 @@ import { computed, ref, onBeforeUnmount } from "vue";
 import type { QaRound } from "../types/relay-app";
 import { parsedUserReplyFromRound } from "../utils/parseRelayFeedbackReply";
 import { safeMarkdownToHtml } from "../utils/safeMarkdown";
+import { t } from "../i18n";
 import QaReplyAttachments from "./QaReplyAttachments.vue";
 
 const props = defineProps<{
@@ -52,7 +53,7 @@ onBeforeUnmount(() => {
           class="retellToolBtn"
           :class="{ 'retellToolBtn--active retellToolBtn--activeUser': !showRaw }"
           :aria-pressed="!showRaw"
-          title="Markdown"
+          :title="t('retellViewMd')"
           @click="showRaw = false"
         >
           <svg width="14" height="12" viewBox="0 0 208 128" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -66,7 +67,7 @@ onBeforeUnmount(() => {
           class="retellToolBtn"
           :class="{ 'retellToolBtn--active retellToolBtn--activeUser': showRaw }"
           :aria-pressed="showRaw"
-          title="Raw"
+          :title="t('retellViewRaw')"
           @click="showRaw = true"
         >
           <svg width="14" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -77,7 +78,7 @@ onBeforeUnmount(() => {
         <button
           class="retellToolBtn retellCopyBtn"
           :class="{ 'retellCopyBtn--ok': copied }"
-          :title="copied ? 'Copied!' : 'Copy'"
+          :title="copied ? t('retellCopied') : t('retellCopy')"
           @click="copyText"
         >
           <svg v-if="copied" width="13" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">

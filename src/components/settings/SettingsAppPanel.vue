@@ -111,7 +111,7 @@ async function persistIdleTimeout() {
     await invoke("set_feedback_idle_timeout_minutes", { minutes: next });
     props.pushToast({ type: "ok", text: props.strings.appIdleTimeoutSaved });
   } catch {
-    /* ignore */
+    props.pushToast({ type: "err", text: props.strings.appSaveErr });
   } finally {
     idleTimeoutBusy.value = false;
   }
@@ -200,7 +200,7 @@ async function onEnterSubmitChange(ev: Event) {
                 :disabled="idleTimeoutBusy"
                 @blur="onIdleTimeoutBlur"
               />
-              <span class="cacheDays" aria-hidden="true">min</span>
+              <span class="cacheDays" aria-hidden="true">{{ S.appIdleTimeoutUnit }}</span>
             </div>
           </section>
 

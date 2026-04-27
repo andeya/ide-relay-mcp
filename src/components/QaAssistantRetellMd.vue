@@ -5,6 +5,7 @@
  */
 import { computed, ref, onBeforeUnmount } from "vue";
 import { safeMarkdownToHtml } from "../utils/safeMarkdown";
+import { t } from "../i18n";
 
 const props = defineProps<{
   retell: string;
@@ -41,7 +42,7 @@ onBeforeUnmount(() => {
         class="retellToolBtn"
         :class="{ 'retellToolBtn--active': !showRaw }"
         :aria-pressed="!showRaw"
-        title="Markdown"
+        :title="t('retellViewMd')"
         @click="showRaw = false"
       >
         <!-- Markdown "M↓" logo -->
@@ -56,7 +57,7 @@ onBeforeUnmount(() => {
         class="retellToolBtn"
         :class="{ 'retellToolBtn--active': showRaw }"
         :aria-pressed="showRaw"
-        title="Raw"
+        :title="t('retellViewRaw')"
         @click="showRaw = true"
       >
         <!-- Code brackets </> -->
@@ -68,7 +69,7 @@ onBeforeUnmount(() => {
       <button
         class="retellToolBtn retellCopyBtn"
         :class="{ 'retellCopyBtn--ok': copied }"
-        :title="copied ? 'Copied!' : 'Copy'"
+        :title="copied ? t('retellCopied') : t('retellCopy')"
         @click="copyRetell"
       >
         <!-- Check mark when copied, clipboard otherwise -->
