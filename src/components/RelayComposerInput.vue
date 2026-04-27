@@ -116,7 +116,6 @@ function mountEditor() {
     emit("keydown", e);
     if (
       (e.key === "Enter" || e.code === "NumpadEnter") &&
-      !e.shiftKey &&
       e.defaultPrevented
     ) {
       e.stopImmediatePropagation();

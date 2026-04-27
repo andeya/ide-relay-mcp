@@ -305,7 +305,7 @@ export function useFeedbackWindow() {
     if (submitting.value) return true;
     if (hasPendingFileDropErrors.value) return true;
     if (launch.value?.is_preview) return true;
-    if (enterSubmitModOnly.value) return true;
+    if (enterSubmitModOnly.value) return false;
     if (!launch.value?.request_id?.trim()) return false;
     if (status.value === "idle") return false;
     return true;
@@ -1155,23 +1155,32 @@ export function useFeedbackWindow() {
     const isEnter = event.key === "Enter" || event.code === "NumpadEnter";
     if (!isEnter) return;
 
-    if (event.shiftKey) return;
+    const hasModifier = event.metaKey || event.ctrlKey;
 
     if (submitting.value || hasPendingFileDropErrors.value) {
       event.preventDefault();
       return;
     }
 
-    if (enterSubmitModOnly.value && !event.metaKey && !event.ctrlKey) {
+    if (enterSubmitModOnly.value) {
+      // "Enter requires modifier" mode:
+      //   Enter / Shift+Enter → newline (CM handles)
+      //   Cmd/Ctrl+Enter → submit
+      //   Cmd/Ctrl+Shift+Enter → submit + close tab
+      if (!hasModifier) return;
+      event.preventDefault();
+      void submit(event.shiftKey);
       return;
     }
 
-    if (!composerSwallowPlainEnter.value) {
-      return;
-    }
-
+    // Default mode:
+    //   Enter → submit (when active)
+    //   Shift+Enter → newline (CM handles)
+    //   Cmd/Ctrl+Enter → submit + close tab
+    if (event.shiftKey) return;
+    if (!composerSwallowPlainEnter.value) return;
     event.preventDefault();
-    void submit(event.metaKey || event.ctrlKey);
+    void submit(hasModifier);
   }
 
   async function pollCycle() {
