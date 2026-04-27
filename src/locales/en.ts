@@ -148,6 +148,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
     "When a tab is waiting for your reply, type here. Enter to send · ⌘/Ctrl+Enter to send and close the tab.",
   mainHintPreviewMod:
     "When a tab is waiting for your reply, type here. Enter: new line · ⌘/Ctrl+Enter to send · ⌘/Ctrl+Shift+Enter: send & close tab.",
+  tabHubLabel: "Hub",
   tabStripAria: "Feedback tabs",
   tabCloseAria: "Close this tab",
   tabCloseTitle: "Close tab (shown when hovering this tab)",
@@ -236,6 +237,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   appEnterSubmitPlain: "Enter submits · Shift+Enter: new line",
   appEnterSubmitModOnly: "⌘/Ctrl+Enter submits · Enter: new line",
   appEnterSubmitSaved: "Submit shortcut saved.",
+  appSaveErr: "Save failed. Please try again.",
 
   cacheTitle: "Storage & cache",
   cacheSubtitle:
@@ -315,6 +317,8 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   usageSettingsIdeLoginHint: "Please log in to Cursor IDE to enable usage tracking.",
   usageSettingsTokenConfigured: "Connected to Cursor IDE",
   usageSettingsRefreshTitle: "Refresh policy",
+  usageSettingsRefreshHint:
+    "Set how often Relay auto-refreshes usage data. A refresh also triggers when a new tab arrives.",
   usageSettingsRefreshInterval: "Auto-refresh interval",
   usageSettingsRefreshIntervalUnit: "min",
   usageRefreshing: "Refreshing…",
@@ -337,4 +341,38 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   ideOtherDesc: "Manual MCP configuration",
   ideSettingsChangeBtn: "Switch IDE",
   ideSelectPlaceholder: "Select IDE",
+
+  // Remote SSH
+  segRemote: "Remote IDE",
+  remoteTitle: "Remote IDE Connections",
+  remoteLead:
+    "Connect to IDE instances on remote machines via SSH reverse tunnels. Your GUI on this machine will serve as the human-in-the-loop interface for remote MCP processes.",
+  remoteAddBtn: "+ Add Remote IDE",
+  remoteEmptyHint:
+    "No remote connections configured. Click the button above to add one.",
+  remoteConnectBtn: "Connect",
+  remoteDisconnectBtn: "Disconnect",
+  remoteRemoveBtn: "Remove",
+  remoteTestBtn: "Test SSH",
+  remoteTestingBtn: "Testing…",
+  remoteTestOk: "SSH connection successful.",
+  remoteTestFail: "SSH connection failed:",
+  remoteAddTitle: "Add Remote IDE Connection",
+  remoteSshTarget: "SSH target (user@host)",
+  remoteSshPort: "SSH port",
+  remoteSshKey: "SSH key path (optional)",
+  remoteProxyJump: "ProxyJump (optional)",
+  remoteIdeKind: "IDE type",
+  remoteRelayPath: "Remote relay data path (optional, auto-detect)",
+  remoteCancelBtn: "Cancel",
+  remoteSaveBtn: "Save",
+  remoteStatusConnected: "Connected",
+  remoteStatusConnecting: "Connecting…",
+  remoteStatusDisconnected: "Disconnected",
+  remoteStatusReconnecting: "Reconnecting…",
+  remoteStatusError: "Error",
+  remoteRemoveConfirm: "Are you sure you want to remove this remote connection?",
+  remoteRemoveConfirmBtn: "Remove",
+  remoteSaveErr: "Failed to save remote connection.",
+  remoteRemoveErr: "Failed to remove remote connection.",
 };

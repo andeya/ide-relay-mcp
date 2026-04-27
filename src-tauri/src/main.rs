@@ -713,6 +713,71 @@ fn ide_uninstall_rule() -> Result<(), String> {
     relay_mcp::ide::uninstall_rule(ide).map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------------------------------
+// Remote SSH connections
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn remote_list_connections() -> Vec<relay_mcp::remote_connection::RemoteConnection> {
+    relay_mcp::remote_connection::list_connections()
+}
+
+#[tauri::command]
+fn remote_add_connection(
+    ssh_target: String,
+    ssh_port: u16,
+    ssh_key_path: Option<String>,
+    proxy_jump: Option<String>,
+    ide_kind: relay_mcp::ide::IdeKind,
+    remote_relay_path: Option<String>,
+) -> Result<relay_mcp::remote_connection::RemoteConnection, String> {
+    let conn = relay_mcp::remote_connection::RemoteConnection {
+        id: uuid::Uuid::new_v4().to_string(),
+        ssh_target,
+        ssh_port,
+        ssh_key_path,
+        proxy_jump,
+        ide_kind,
+        pair_token: uuid::Uuid::new_v4().to_string(),
+        remote_relay_path,
+        created_at: relay_mcp::storage::timestamp_string(),
+        last_connected_at: None,
+    };
+    relay_mcp::remote_connection::add_connection(conn.clone()).map_err(|e| e.to_string())?;
+    Ok(conn)
+}
+
+#[tauri::command]
+fn remote_remove_connection(id: String) -> Result<(), String> {
+    relay_mcp::remote_connection::remove_connection(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn remote_test_connection(
+    ssh_target: String,
+    ssh_port: u16,
+    ssh_key_path: Option<String>,
+    proxy_jump: Option<String>,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let conn = relay_mcp::remote_connection::RemoteConnection {
+            id: String::new(),
+            ssh_target,
+            ssh_port,
+            ssh_key_path,
+            proxy_jump,
+            ide_kind: relay_mcp::ide::IdeKind::Cursor,
+            pair_token: String::new(),
+            remote_relay_path: None,
+            created_at: String::new(),
+            last_connected_at: None,
+        };
+        relay_mcp::remote_ssh::test_ssh_connection(&conn).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     opener::open(&url).map_err(|e| e.to_string())
@@ -870,7 +935,11 @@ fn run_tauri(initial: LaunchState) {
             ide_mcp_json_path,
             ide_rule_installed,
             ide_install_rule,
-            ide_uninstall_rule
+            ide_uninstall_rule,
+            remote_list_connections,
+            remote_add_connection,
+            remote_remove_connection,
+            remote_test_connection
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| {

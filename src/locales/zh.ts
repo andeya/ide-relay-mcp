@@ -148,6 +148,7 @@ export default {
     "有待回复的标签时在此输入。Enter 发送 · ⌘/Ctrl+Enter 发送并关闭该标签。",
   mainHintPreviewMod:
     "有待回复的标签时在此输入。Enter 换行 · ⌘/Ctrl+Enter 发送 · ⌘/Ctrl+Shift+Enter 发送并关闭标签。",
+  tabHubLabel: "Hub",
   tabStripAria: "反馈标签",
   tabCloseAria: "关闭此标签",
   tabCloseTitle: "关闭标签（悬停本标签后显示）",
@@ -225,6 +226,7 @@ export default {
   appEnterSubmitPlain: "Enter 提交 · Shift+Enter 换行",
   appEnterSubmitModOnly: "⌘/Ctrl+Enter 提交 · Enter 换行",
   appEnterSubmitSaved: "已保存提交快捷键设置。",
+  appSaveErr: "保存失败，请重试",
 
   cacheTitle: "存储与缓存",
   cacheSubtitle:
@@ -304,6 +306,8 @@ export default {
   usageSettingsIdeLoginHint: "请先登录 Cursor IDE 以启用用量追踪。",
   usageSettingsTokenConfigured: "已连接 Cursor IDE",
   usageSettingsRefreshTitle: "刷新策略",
+  usageSettingsRefreshHint:
+    "设置 Relay 自动刷新用量数据的间隔。新标签到达时也会触发刷新。",
   usageSettingsRefreshInterval: "自动刷新间隔",
   usageSettingsRefreshIntervalUnit: "分钟",
   usageRefreshing: "正在刷新…",
@@ -326,4 +330,38 @@ export default {
   ideOtherDesc: "手动配置 MCP",
   ideSettingsChangeBtn: "切换 IDE",
   ideSelectPlaceholder: "选择 IDE",
+
+  // Remote SSH
+  segRemote: "远程 IDE",
+  remoteTitle: "远程 IDE 连接",
+  remoteLead:
+    "通过 SSH 反向隧道连接远程机器上的 IDE 实例。本机 GUI 将作为远程 MCP 进程的人机回环界面。",
+  remoteAddBtn: "+ 添加远程 IDE",
+  remoteEmptyHint:
+    "暂无远程连接配置。点击上方按钮添加。",
+  remoteConnectBtn: "连接",
+  remoteDisconnectBtn: "断开",
+  remoteRemoveBtn: "移除",
+  remoteTestBtn: "测试 SSH",
+  remoteTestingBtn: "测试中…",
+  remoteTestOk: "SSH 连接成功。",
+  remoteTestFail: "SSH 连接失败：",
+  remoteAddTitle: "添加远程 IDE 连接",
+  remoteSshTarget: "SSH 目标（user@host）",
+  remoteSshPort: "SSH 端口",
+  remoteSshKey: "SSH 密钥路径（可选）",
+  remoteProxyJump: "ProxyJump 跳板机（可选）",
+  remoteIdeKind: "IDE 类型",
+  remoteRelayPath: "远端 relay 数据路径（可选，自动检测）",
+  remoteCancelBtn: "取消",
+  remoteSaveBtn: "保存",
+  remoteStatusConnected: "已连接",
+  remoteStatusConnecting: "连接中…",
+  remoteStatusDisconnected: "已断开",
+  remoteStatusReconnecting: "重连中…",
+  remoteStatusError: "错误",
+  remoteRemoveConfirm: "确定要移除此远程连接吗？",
+  remoteRemoveConfirmBtn: "移除",
+  remoteSaveErr: "保存远程连接失败。",
+  remoteRemoveErr: "移除远程连接失败。",
 };

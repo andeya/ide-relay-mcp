@@ -69,7 +69,7 @@ export type PathEnvStatus = {
   reason?: string;
 };
 
-export type SettingsSegment = "setup" | "rulePrompts" | "app" | "usage";
+export type SettingsSegment = "setup" | "rulePrompts" | "app" | "usage" | "remote";
 
 export type CursorUsagePlanBlock = {
   enabled: boolean;
@@ -150,3 +150,36 @@ export type RelayCacheStats = {
 };
 
 export type DragDropUnlisten = (() => void) | undefined;
+
+// ---------------------------------------------------------------------------
+// Remote SSH connections
+// ---------------------------------------------------------------------------
+
+export type RemoteConnection = {
+  id: string;
+  ssh_target: string;
+  ssh_port: number;
+  ssh_key_path?: string;
+  proxy_jump?: string;
+  ide_kind: IdeKind;
+  pair_token: string;
+  remote_relay_path?: string;
+  created_at: string;
+  last_connected_at?: string;
+};
+
+export type RemoteState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "error";
+
+export type RemoteConnectionStatus = {
+  id: string;
+  state: RemoteState;
+  tunnel_local_port?: number;
+  connected_since?: string;
+  active_tabs: number;
+  error?: string;
+};

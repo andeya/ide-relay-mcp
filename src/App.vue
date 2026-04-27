@@ -25,6 +25,7 @@ import IdeSelectionPage from "./components/IdeSelectionPage.vue";
 import SettingsAppPanel from "./components/settings/SettingsAppPanel.vue";
 import SettingsRulePromptsPanel from "./components/settings/SettingsRulePromptsPanel.vue";
 import SettingsUsagePanel from "./components/settings/SettingsUsagePanel.vue";
+import SettingsRemotePanel from "./components/settings/SettingsRemotePanel.vue";
 import relayLogoUrl from "./assets/relay-logo.svg?url";
 import QaAssistantRetellMd from "./components/QaAssistantRetellMd.vue";
 import QaUserSubmittedBubble from "./components/QaUserSubmittedBubble.vue";
@@ -34,6 +35,7 @@ import {
   slashItemDetailPreview,
 } from "./composables/feedbackComposerUtils";
 import { qaRoundHasRenderableUserContent } from "./utils/parseRelayFeedbackReply";
+import { formatTokenUnit } from "./utils/formatBytes";
 
 /** Extract `HH:mm` from a `YYYY-MM-DD HH:MM:SS` timestamp; empty input → empty output. */
 function formatTime(ts: string | undefined): string {
@@ -468,6 +470,7 @@ function pushSettingsToast(p: SettingsToastPayload) {
 
 const appSegmentActive = computed(() => settingsSeg.value === "app");
 const usageSegmentActive = computed(() => settingsSeg.value === "usage");
+const remoteSegmentActive = computed(() => settingsSeg.value === "remote");
 
 const cursorUsage = useCursorUsage(usageSegmentActive, pushSettingsToast);
 const {
@@ -511,13 +514,10 @@ function totalTokens(u: CursorUsageEvent["tokenUsage"]): number {
 }
 
 function formatTokUnit(n: number): string {
-  const unit = strings.value.usageTokUnit;
-  if (n >= 10000) {
-    const wan = n / 10000;
-    return wan >= 100 ? `${Math.round(wan)}${unit}` : `${wan.toFixed(1)}${unit}`;
-  }
-  return `${n.toLocaleString()} tok`;
+  return formatTokenUnit(n, strings.value.usageTokUnit);
 }
+
+
 
 const hoveredEvent = ref<CursorUsageEvent | null>(null);
 const hoverTooltipStyle = ref<Record<string, string>>({});
@@ -1632,6 +1632,16 @@ onBeforeUnmount(() => {
         >
           {{ strings.segUsage }}
         </button>
+        <button
+          type="button"
+          role="tab"
+          class="segTab"
+          :class="{ active: settingsSeg === 'remote' }"
+          :aria-selected="settingsSeg === 'remote'"
+          @click="settingsSeg = 'remote'"
+        >
+          {{ strings.segRemote }}
+        </button>
       </nav>
 
       <div class="settingsPane">
@@ -1970,6 +1980,12 @@ onBeforeUnmount(() => {
           :usage-segment-active="usageSegmentActive"
           :strings="strings"
           :usage="cursorUsage"
+        />
+
+        <SettingsRemotePanel
+          :remote-segment-active="remoteSegmentActive"
+          :strings="strings"
+          :push-toast="pushSettingsToast"
         />
 
         <footer class="settingsAppFooter">

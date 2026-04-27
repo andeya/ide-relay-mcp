@@ -21,6 +21,8 @@ pub mod mcp_setup;
 mod mcp_wsl_paths;
 pub mod path_persistence;
 pub mod release_check;
+pub mod remote_connection;
+pub mod remote_ssh;
 pub mod server;
 pub mod storage;
 
