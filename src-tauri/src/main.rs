@@ -572,12 +572,12 @@ async fn fetch_cursor_usage_events(
 }
 
 /// Fetch usage via IDE's api2.cursor.sh (auto-reads token from IDE database).
-/// Wrapped with a 20-second timeout so the frontend never hangs indefinitely.
+/// Wrapped with a 60-second timeout so the frontend never hangs indefinitely.
 #[tauri::command]
 async fn fetch_cursor_usage_via_ide() -> Result<relay_mcp::cursor_usage::CursorUsageSummary, String>
 {
     match tokio::time::timeout(
-        std::time::Duration::from_secs(20),
+        std::time::Duration::from_secs(60),
         tokio::task::spawn_blocking(|| {
             let token =
                 relay_mcp::cursor_usage::auto_detect_cursor_token().map_err(|e| e.to_string())?;
@@ -587,7 +587,7 @@ async fn fetch_cursor_usage_via_ide() -> Result<relay_mcp::cursor_usage::CursorU
     .await
     {
         Ok(join_result) => join_result.map_err(|e| format!("task join error: {e}"))?,
-        Err(_) => Err("usage fetch timed out after 20s".to_string()),
+        Err(_) => Err("usage fetch timed out after 60s".to_string()),
     }
 }
 

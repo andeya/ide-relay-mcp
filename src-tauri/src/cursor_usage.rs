@@ -599,36 +599,65 @@ pub fn fetch_usage_events(
 }
 
 /// Fetch usage events with automatic token fallback.
-/// Tries the web session cookie first; if unavailable, falls back to the IDE
-/// Bearer token (auto-detected from Cursor's local SQLite DB). This ensures
-/// events work on Windows where the web cookie may not be obtainable.
+/// Tries the web session cookie first; if unavailable or the cookie yields an
+/// empty first page (expired cookie returning 200 + empty JSON), falls back to
+/// the IDE Bearer token (auto-detected from Cursor's local SQLite DB).
 pub fn fetch_usage_events_with_fallback(
     start_date: &str,
     end_date: &str,
     page: u32,
     page_size: u32,
 ) -> Result<CursorUsageEventsPage> {
+    let mut cookie_empty_result: Option<CursorUsageEventsPage> = None;
+
     if let Some(web_token) = get_web_session_token() {
         match fetch_usage_events(
             &web_token, None, None, start_date, end_date, page, page_size,
         ) {
-            Ok(result) => return Ok(result),
+            Ok(result) if result.total_usage_events_count > 0 || page > 1 => {
+                return Ok(result);
+            }
+            Ok(empty) => {
+                cookie_empty_result = Some(empty);
+                invalidate_ext_cookie_cache();
+                let _ = clear_cursor_session_token();
+                if let Ok(refreshed) = read_cursor_usage_ext_cookie() {
+                    match fetch_usage_events(
+                        &refreshed, None, None, start_date, end_date, page, page_size,
+                    ) {
+                        Ok(r) if r.total_usage_events_count > 0 || page > 1 => return Ok(r),
+                        _ => {}
+                    }
+                }
+            }
             Err(_cookie_err) => {
                 invalidate_ext_cookie_cache();
                 let _ = clear_cursor_session_token();
                 if let Ok(refreshed) = read_cursor_usage_ext_cookie() {
-                    if let Ok(result) = fetch_usage_events(
+                    match fetch_usage_events(
                         &refreshed, None, None, start_date, end_date, page, page_size,
                     ) {
-                        return Ok(result);
+                        Ok(r) if r.total_usage_events_count > 0 || page > 1 => return Ok(r),
+                        Ok(empty) => {
+                            cookie_empty_result = Some(empty);
+                        }
+                        _ => {}
                     }
                 }
             }
         }
     }
-    let ide_token = auto_detect_cursor_token()
-        .context("no web session token and IDE token auto-detection failed")?;
-    fetch_usage_events_bearer(&ide_token, start_date, end_date, page, page_size)
+
+    if let Ok(ide_token) = auto_detect_cursor_token() {
+        match fetch_usage_events_bearer(&ide_token, start_date, end_date, page, page_size) {
+            Ok(result) if result.total_usage_events_count > 0 || cookie_empty_result.is_none() => {
+                return Ok(result);
+            }
+            _ => {}
+        }
+    }
+
+    cookie_empty_result.ok_or_else(|| anyhow::anyhow!("no valid auth available for usage events"))
 }
 
 fn fetch_usage_events_bearer(
@@ -648,8 +677,9 @@ fn fetch_usage_events_bearer(
         "pageSize": page_size,
     });
     let resp = ureq::post(&url)
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(15))
         .set("Authorization", &format!("Bearer {bearer_token}"))
+        .set("Origin", "https://cursor.com")
         .set("Content-Type", "application/json")
         .send_json(body)
         .map_err(|e| match &e {
@@ -778,12 +808,11 @@ fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
     Ok(cookie)
 }
 
-/// Windows: Electron SafeStorage v10/v11 — DPAPI CryptUnprotectData.
+/// Windows: Electron SafeStorage v10/v11.
+/// Newer Electron versions use os_crypt key (AES-256-GCM) instead of plain DPAPI.
+/// We try plain DPAPI first for backward compat, then fall back to os_crypt.
 #[cfg(target_os = "windows")]
 fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
-    use std::ptr;
-    use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
-
     let encrypted = read_encrypted_cookie_blob()?;
     if encrypted.len() < 3 || (encrypted[..3] != *b"v10" && encrypted[..3] != *b"v11") {
         anyhow::bail!(
@@ -791,7 +820,18 @@ fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
             String::from_utf8_lossy(&encrypted[..3.min(encrypted.len())])
         );
     }
-    let ciphertext = &encrypted[3..];
+
+    if let Ok(cookie) = win_dpapi_decrypt(&encrypted[3..]) {
+        return Ok(cookie);
+    }
+    win_os_crypt_decrypt(&encrypted)
+}
+
+/// Plain DPAPI decryption (legacy Electron SafeStorage on Windows).
+#[cfg(target_os = "windows")]
+fn win_dpapi_decrypt(ciphertext: &[u8]) -> Result<String> {
+    use std::ptr;
+    use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
     unsafe {
         let input = CRYPT_INTEGER_BLOB {
@@ -818,6 +858,89 @@ fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
         windows_sys::Win32::Foundation::LocalFree(output.pbData as _);
         let cookie = String::from_utf8(decrypted).context("decrypted cookie is not UTF-8")?;
         Ok(cookie)
+    }
+}
+
+/// Newer Electron SafeStorage on Windows: os_crypt key from Local State + AES-256-GCM.
+/// The os_crypt key itself is DPAPI-protected.
+#[cfg(target_os = "windows")]
+fn win_os_crypt_decrypt(encrypted: &[u8]) -> Result<String> {
+    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
+
+    // v10/v11 (3) + nonce (12) + ciphertext + tag (16) → minimum ~31 bytes
+    if encrypted.len() < 3 + 12 + 16 {
+        anyhow::bail!("encrypted blob too short for AES-GCM");
+    }
+
+    let aes_key = win_read_os_crypt_key()?;
+    if aes_key.len() != 32 {
+        anyhow::bail!("os_crypt key is {} bytes, expected 32", aes_key.len());
+    }
+
+    let nonce_bytes = &encrypted[3..15];
+    let ct_with_tag = &encrypted[15..];
+
+    let cipher = Aes256Gcm::new_from_slice(&aes_key)
+        .map_err(|e| anyhow::anyhow!("AES-256-GCM key init: {e}"))?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+    let plaintext = cipher
+        .decrypt(nonce, ct_with_tag)
+        .map_err(|e| anyhow::anyhow!("AES-256-GCM decrypt failed: {e}"))?;
+
+    String::from_utf8(plaintext).context("decrypted cookie is not UTF-8")
+}
+
+/// Read and DPAPI-decrypt the os_crypt encryption key from Cursor's `Local State` file.
+#[cfg(target_os = "windows")]
+fn win_read_os_crypt_key() -> Result<Vec<u8>> {
+    use std::ptr;
+    use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
+
+    let appdata = std::env::var("APPDATA").context("APPDATA not set")?;
+    let local_state_path = PathBuf::from(&appdata).join("Cursor").join("Local State");
+    let text = fs::read_to_string(&local_state_path)
+        .with_context(|| format!("read {}", local_state_path.display()))?;
+    let state: serde_json::Value = serde_json::from_str(&text).context("parse Local State JSON")?;
+    let enc_key_b64 = state
+        .get("os_crypt")
+        .and_then(|v| v.get("encrypted_key"))
+        .and_then(|v| v.as_str())
+        .context("os_crypt.encrypted_key not found in Local State")?;
+
+    use base64::Engine;
+    let enc_key_raw = base64::engine::general_purpose::STANDARD
+        .decode(enc_key_b64)
+        .context("base64-decode os_crypt key")?;
+
+    if enc_key_raw.len() < 5 || &enc_key_raw[..5] != b"DPAPI" {
+        anyhow::bail!("os_crypt key missing DPAPI prefix");
+    }
+    let dpapi_blob = &enc_key_raw[5..];
+
+    unsafe {
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: dpapi_blob.len() as u32,
+            pbData: dpapi_blob.as_ptr() as *mut u8,
+        };
+        let mut output = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: ptr::null_mut(),
+        };
+        let ret = CryptUnprotectData(
+            &input,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            0,
+            &mut output,
+        );
+        if ret == 0 {
+            anyhow::bail!("DPAPI decrypt of os_crypt key failed");
+        }
+        let key = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
+        windows_sys::Win32::Foundation::LocalFree(output.pbData as _);
+        Ok(key)
     }
 }
 
