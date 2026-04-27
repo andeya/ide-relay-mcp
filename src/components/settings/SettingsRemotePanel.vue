@@ -325,7 +325,7 @@ async function disconnectMultiple(targets: ActiveMcpSession[], toastText: string
 
 async function disconnectByOrigin(origin: string) {
   await disconnectMultiple(
-    sessions.value.filter((s) => s.mcp_origin === origin),
+    sessions.value.filter((s) => s.mcp_origin === origin && s.waiting),
     S.value.sessionDisconnectAllOk,
   );
 }
@@ -333,7 +333,10 @@ async function disconnectByOrigin(origin: string) {
 async function disconnectConnection(connKey: string) {
   const group = connectionGroups.value.find((g) => g.key === connKey);
   if (!group) return;
-  await disconnectMultiple(group.sessions, S.value.sessionDisconnectConnOk);
+  await disconnectMultiple(
+    group.sessions.filter((s) => s.waiting),
+    S.value.sessionDisconnectConnOk,
+  );
 }
 
 const sessionPreemptBusy = ref(false);
@@ -359,8 +362,10 @@ async function preemptForOrigin(origin: string) {
   }
 }
 
-const hasLocal = computed(() => sessions.value.some((s) => s.mcp_origin === "local"));
 const hasRemote = computed(() => sessions.value.some((s) => s.mcp_origin === "remote"));
+const hasWaitingLocal = computed(() => sessions.value.some((s) => s.mcp_origin === "local" && s.waiting));
+const hasWaitingRemote = computed(() => sessions.value.some((s) => s.mcp_origin === "remote" && s.waiting));
+const hasAnyWaiting = computed(() => sessions.value.some((s) => s.waiting));
 
 const hasConfiguredRemoteButNoSessions = computed(() =>
   connections.value.length > 0 && !hasRemote.value
@@ -652,7 +657,7 @@ onBeforeUnmount(() => {
                   @click="preemptForOrigin(group.origin)"
                 >{{ group.origin === "local" ? S.sessionPreemptLocal : S.sessionPreemptRemote }}</button>
                 <button
-                  v-if="group.sessions.length > 1"
+                  v-if="group.sessions.filter(s => s.waiting).length > 1"
                   type="button"
                   class="sessionDisconnectConnBtn"
                   @click="disconnectConnection(group.key)"
@@ -660,17 +665,25 @@ onBeforeUnmount(() => {
               </div>
               <div
                 v-for="s in group.sessions"
-                :key="s.request_id"
+                :key="s.tab_id || s.request_id"
                 class="sessionCard"
+                :class="{ 'sessionCard--idle': !s.waiting }"
               >
                 <div class="sessionCardRow">
+                  <span
+                    class="sessionWaitDot"
+                    :class="s.waiting ? 'sessionWaitDot--active' : 'sessionWaitDot--idle'"
+                    :title="s.waiting ? S.sessionWaiting : S.sessionIdle"
+                  />
                   <span class="sessionCardTitle">{{ s.title }}</span>
                   <span v-if="s.connected_at" class="sessionCardTime">{{ s.connected_at }}</span>
                   <button
+                    v-if="s.waiting"
                     type="button"
                     class="sessionDisconnectBtn"
                     @click="disconnectSession(s.request_id)"
                   >{{ S.sessionDisconnect }}</button>
+                  <span v-else class="sessionIdleBadge">{{ S.sessionIdle }}</span>
                 </div>
               </div>
             </div>
@@ -701,21 +714,21 @@ onBeforeUnmount(() => {
               >{{ S.sessionRemotePreemptHere }}</button>
             </div>
 
-            <div class="sessionBulkActions">
+            <div v-if="hasAnyWaiting" class="sessionBulkActions">
               <button
-                v-if="hasLocal"
+                v-if="hasWaitingLocal"
                 type="button"
                 class="sessionBulkBtn"
                 @click="disconnectByOrigin('local')"
               >{{ S.sessionDisconnectLocalAll }}</button>
               <button
-                v-if="hasRemote"
+                v-if="hasWaitingRemote"
                 type="button"
                 class="sessionBulkBtn"
                 @click="disconnectByOrigin('remote')"
               >{{ S.sessionDisconnectRemoteAll }}</button>
               <button
-                v-if="sessions.length > 1"
+                v-if="sessions.filter(s => s.waiting).length > 1"
                 type="button"
                 class="sessionBulkBtn sessionBulkBtn--danger"
                 @click="disconnectAllSessions"
@@ -1560,6 +1573,32 @@ onBeforeUnmount(() => {
 }
 .sessionDisconnectBtn:hover {
   background: rgba(248, 113, 113, 0.16);
+}
+.sessionCard--idle {
+  opacity: 0.7;
+}
+.sessionWaitDot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.sessionWaitDot--active {
+  background: #34d399;
+  box-shadow: 0 0 4px rgba(52, 211, 153, 0.5);
+}
+.sessionWaitDot--idle {
+  background: #64748b;
+}
+.sessionIdleBadge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #64748b;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 6px;
 }
 .sessionBulkActions {
   display: flex;

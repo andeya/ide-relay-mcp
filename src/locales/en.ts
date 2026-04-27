@@ -431,4 +431,6 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   sessionRemotePreemptHere: "Preempt to this GUI",
   sessionRemotePreemptHereOk: "Remote routing preference set via SSH.",
   sessionRemotePreemptHereErr: "SSH remote preemption failed: {err}",
+  sessionWaiting: "Waiting for feedback",
+  sessionIdle: "Idle",
 };

@@ -420,4 +420,6 @@ export default {
   sessionRemotePreemptHere: "抢占到本地 GUI",
   sessionRemotePreemptHereOk: "已通过 SSH 设置远程路由偏好。",
   sessionRemotePreemptHereErr: "SSH 远程抢占失败：{err}",
+  sessionWaiting: "等待反馈中",
+  sessionIdle: "空闲",
 };

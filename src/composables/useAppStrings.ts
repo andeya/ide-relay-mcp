@@ -324,6 +324,8 @@ export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null
       sessionRemotePreemptHere: t("sessionRemotePreemptHere"),
       sessionRemotePreemptHereOk: t("sessionRemotePreemptHereOk"),
       sessionRemotePreemptHereErr: t("sessionRemotePreemptHereErr"),
+      sessionWaiting: t("sessionWaiting"),
+      sessionIdle: t("sessionIdle"),
     };
   });
   return { strings };

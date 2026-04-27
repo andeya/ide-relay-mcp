@@ -179,6 +179,8 @@ export type ActiveMcpSession = {
   mcp_origin: string;
   ide_mode: string | null;
   connected_at: string;
+  /** `true` when MCP is blocked on HTTP wait for human feedback. */
+  waiting: boolean;
 };
 
 export type RemoteState =

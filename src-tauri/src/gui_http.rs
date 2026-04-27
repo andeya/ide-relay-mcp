@@ -77,6 +77,20 @@ pub struct ActiveSession {
     pub mcp_origin: String,
     pub ide_mode: Option<String>,
     pub connected_at: String,
+    /// `true` when MCP is blocked on HTTP wait for human feedback.
+    pub waiting: bool,
+}
+
+/// Persistent per-session metadata saved across MCP rounds so
+/// `list_active_sessions` can show ongoing conversations even when
+/// there is no pending HTTP wait between agent turns.
+#[derive(Debug, Clone)]
+struct SessionMeta {
+    mcp_pid: Option<u32>,
+    mcp_hostname: Option<String>,
+    mcp_origin: String,
+    ide_mode: Option<String>,
+    connected_at: String,
 }
 
 #[derive(Clone)]
@@ -90,6 +104,8 @@ struct RelayGuiInner {
     wait_tx: Mutex<HashMap<String, oneshot::Sender<String>>>,
     wait_rx: Mutex<HashMap<String, oneshot::Receiver<String>>>,
     active_sessions: Mutex<HashMap<String, ActiveSession>>,
+    /// Persistent per-session metadata keyed by `relay_mcp_session_id`.
+    session_meta: Mutex<HashMap<String, SessionMeta>>,
     token: String,
     port: Mutex<Option<u16>>,
     app: tauri::AppHandle,
@@ -263,6 +279,15 @@ fn lock_active_sessions(
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+fn lock_session_meta(
+    inner: &RelayGuiInner,
+) -> std::sync::MutexGuard<'_, HashMap<String, SessionMeta>> {
+    inner
+        .session_meta
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Cancel pending wait by request id using a precomputed empty tool result.
 /// Use this when caller already holds `tabs` lock to avoid recursive lock.
 fn cancel_wait_with_result(inner: &RelayGuiInner, rid: &str, empty_result: String) {
@@ -303,6 +328,7 @@ impl RelayGuiRuntime {
             wait_tx: Mutex::new(HashMap::new()),
             wait_rx: Mutex::new(HashMap::new()),
             active_sessions: Mutex::new(HashMap::new()),
+            session_meta: Mutex::new(HashMap::new()),
             token: random_token(),
             port: Mutex::new(None),
             app,
@@ -467,6 +493,7 @@ impl RelayGuiRuntime {
         let Some(t) = t else {
             return Ok(());
         };
+        let sid = t.relay_mcp_session_id.clone();
         if !t.request_id.is_empty() {
             let empty_result = feedback_tool_result_string(&t, "", &[]);
             self.complete_request(&t.request_id, empty_result);
@@ -474,6 +501,8 @@ impl RelayGuiRuntime {
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
         apply_reply_for_tab(&mut g, tab_id, "", &[], true, false);
         finish_tab_remove_empty_close(&mut g, tab_id, app);
+        drop(g);
+        self.gc_session_meta(&sid);
         emit_tabs(app);
         Ok(())
     }
@@ -513,6 +542,7 @@ impl RelayGuiRuntime {
             emit_tabs(app);
             return Ok(());
         }
+        let sid = t.relay_mcp_session_id.clone();
         if !t.request_id.is_empty() {
             let empty_result = feedback_tool_result_string(&t, "", &[]);
             self.complete_request(&t.request_id, empty_result);
@@ -520,14 +550,83 @@ impl RelayGuiRuntime {
         let mut g = self.0.tabs.lock().map_err(|e| e.to_string())?;
         apply_reply_for_tab(&mut g, tab_id, "", &[], true, false);
         finish_tab_remove_empty_close(&mut g, tab_id, app);
+        drop(g);
+        self.gc_session_meta(&sid);
         emit_tabs(app);
         Ok(())
     }
 
     // ---- Active session management ----
 
+    /// Returns all non-preview tabs as sessions.  Tabs with a pending MCP HTTP
+    /// wait have `waiting = true`; idle tabs between agent turns have `waiting = false`.
+    ///
+    /// Lock strategy: snapshot tabs and wait_tx keys separately (released before
+    /// the next lock) to avoid an order conflict with `complete_request`
+    /// (wait_tx → active_sessions).
     pub fn list_active_sessions(&self) -> Vec<ActiveSession> {
-        lock_active_sessions(&self.0).values().cloned().collect()
+        let tab_snapshot: Vec<LaunchState> = {
+            let g = lock_tabs(&self.0);
+            g.tabs
+                .iter()
+                .filter(|t| !t.is_preview && !t.relay_mcp_session_id.trim().is_empty())
+                .cloned()
+                .collect()
+        };
+        let waiting_rids: HashSet<String> = {
+            let wtx = lock_wait_tx(&self.0);
+            tab_snapshot
+                .iter()
+                .filter(|t| !t.request_id.is_empty() && wtx.contains_key(&t.request_id))
+                .map(|t| t.request_id.clone())
+                .collect()
+        };
+
+        let pending = lock_active_sessions(&self.0);
+        let meta = lock_session_meta(&self.0);
+
+        let mut out = Vec::with_capacity(tab_snapshot.len());
+        for tab in &tab_snapshot {
+            let waiting = waiting_rids.contains(&tab.request_id);
+            let (pid, hostname, origin, ide, connected) =
+                if let Some(s) = pending.get(&tab.request_id) {
+                    (
+                        s.mcp_pid,
+                        s.mcp_hostname.clone(),
+                        s.mcp_origin.clone(),
+                        s.ide_mode.clone(),
+                        s.connected_at.clone(),
+                    )
+                } else if let Some(m) = meta.get(&tab.relay_mcp_session_id) {
+                    (
+                        m.mcp_pid,
+                        m.mcp_hostname.clone(),
+                        m.mcp_origin.clone(),
+                        m.ide_mode.clone(),
+                        m.connected_at.clone(),
+                    )
+                } else {
+                    (None, None, "local".to_string(), None, String::new())
+                };
+            out.push(ActiveSession {
+                request_id: tab.request_id.clone(),
+                relay_mcp_session_id: tab.relay_mcp_session_id.clone(),
+                tab_id: tab.tab_id.clone(),
+                title: tab.title.clone(),
+                mcp_pid: pid,
+                mcp_hostname: hostname,
+                mcp_origin: origin,
+                ide_mode: ide,
+                connected_at: connected,
+                waiting,
+            });
+        }
+        out
+    }
+
+    /// Remove `session_meta` entry when no remaining tab references that session.
+    fn gc_session_meta(&self, session_id: &str) {
+        gc_session_meta_inner(&self.0, session_id);
     }
 
     /// Disconnect a single session by request_id (sends empty reply to MCP).
@@ -784,20 +883,33 @@ fn post_feedback_apply_state(inner: &Arc<RelayGuiInner>, p: FeedbackPostParams) 
     }
 
     if let Some((tab_id, sid, title)) = session_snapshot {
+        let origin = mcp_origin.unwrap_or_else(|| "local".to_string());
+        let ts = crate::storage::timestamp_string();
         let session = ActiveSession {
             request_id: rid.clone(),
-            relay_mcp_session_id: sid,
+            relay_mcp_session_id: sid.clone(),
             tab_id,
             title,
             mcp_pid,
-            mcp_hostname,
-            mcp_origin: mcp_origin.unwrap_or_else(|| "local".to_string()),
-            ide_mode,
-            connected_at: crate::storage::timestamp_string(),
+            mcp_hostname: mcp_hostname.clone(),
+            mcp_origin: origin.clone(),
+            ide_mode: ide_mode.clone(),
+            connected_at: ts.clone(),
+            waiting: true,
         };
         if let Ok(mut m) = inner.active_sessions.lock() {
             m.insert(rid.clone(), session);
         }
+        lock_session_meta(inner).insert(
+            sid,
+            SessionMeta {
+                mcp_pid,
+                mcp_hostname,
+                mcp_origin: origin,
+                ide_mode,
+                connected_at: ts,
+            },
+        );
     }
 
     emit_tabs(&inner.app);
@@ -823,14 +935,36 @@ fn feedback_orphan_wait_cleanup(inner: Arc<RelayGuiInner>, rid: String) {
     if let Some(tx) = lock_wait_tx(&inner).remove(&rid) {
         let _ = tx.send(empty_result);
     }
-    if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid).cloned() {
+    let removed_sid = if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid).cloned() {
+        let sid = t.relay_mcp_session_id.clone();
         if !t.is_preview {
             apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true, true);
             finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner.app);
         }
-    }
+        sid
+    } else {
+        String::new()
+    };
+    drop(g);
+    gc_session_meta_inner(&inner, &removed_sid);
     emit_tabs(&inner.app);
     let _ = inner.app.emit("relay_idle_timeout", ());
+}
+
+/// Standalone helper for GC of `session_meta` (usable without `RelayGuiRuntime`).
+fn gc_session_meta_inner(inner: &RelayGuiInner, session_id: &str) {
+    if session_id.is_empty() {
+        return;
+    }
+    let tabs = lock_tabs(inner);
+    let still_used = tabs
+        .tabs
+        .iter()
+        .any(|t| !t.is_preview && t.relay_mcp_session_id == session_id);
+    drop(tabs);
+    if !still_used {
+        lock_session_meta(inner).remove(session_id);
+    }
 }
 
 fn spawn_feedback_orphan_wait_timer(inner: Arc<RelayGuiInner>, rid: String) {
@@ -971,15 +1105,25 @@ async fn wait_feedback(
             let inner_cleanup = st.inner.clone();
             let rid_cleanup = rid.clone();
             let _ = tokio::task::spawn_blocking(move || {
-                let mut g = lock_tabs(&inner_cleanup);
-                if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid_cleanup).cloned() {
-                    if !t.is_preview {
-                        apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true, false);
-                        finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner_cleanup.app);
+                let removed_sid = {
+                    let mut g = lock_tabs(&inner_cleanup);
+                    let sid = g
+                        .tabs
+                        .iter()
+                        .find(|t| t.request_id == rid_cleanup)
+                        .map(|t| t.relay_mcp_session_id.clone())
+                        .unwrap_or_default();
+                    if let Some(t) = g.tabs.iter().find(|t| t.request_id == rid_cleanup).cloned() {
+                        if !t.is_preview {
+                            apply_reply_for_tab(&mut g, &t.tab_id, "", &[], true, false);
+                            finish_tab_remove_empty_close(&mut g, &t.tab_id, &inner_cleanup.app);
+                        }
                     }
-                }
+                    sid
+                };
                 lock_wait_tx(&inner_cleanup).remove(&rid_cleanup);
                 lock_active_sessions(&inner_cleanup).remove(&rid_cleanup);
+                gc_session_meta_inner(&inner_cleanup, &removed_sid);
                 emit_tabs(&inner_cleanup.app);
             })
             .await;
