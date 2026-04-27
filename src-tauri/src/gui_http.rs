@@ -17,6 +17,7 @@ use axum::{
 };
 use rand::Rng;
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use std::net::TcpListener as StdTcpListener;
@@ -63,6 +64,21 @@ fn lock_wait_rx(
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Represents a single active MCP → GUI connection (a pending feedback wait).
+#[derive(Debug, Clone, Serialize)]
+pub struct ActiveSession {
+    pub request_id: String,
+    pub relay_mcp_session_id: String,
+    pub tab_id: String,
+    pub title: String,
+    pub mcp_pid: Option<u32>,
+    pub mcp_hostname: Option<String>,
+    /// `"local"` or `"remote"`.
+    pub mcp_origin: String,
+    pub ide_mode: Option<String>,
+    pub connected_at: String,
+}
+
 #[derive(Clone)]
 pub struct RelayGuiRuntime(Arc<RelayGuiInner>);
 
@@ -73,6 +89,7 @@ struct RelayGuiInner {
     hydration_running: AtomicBool,
     wait_tx: Mutex<HashMap<String, oneshot::Sender<String>>>,
     wait_rx: Mutex<HashMap<String, oneshot::Receiver<String>>>,
+    active_sessions: Mutex<HashMap<String, ActiveSession>>,
     token: String,
     port: Mutex<Option<u16>>,
     app: tauri::AppHandle,
@@ -237,6 +254,15 @@ fn feedback_log_signature(data_dir: &std::path::Path) -> Option<(u64, u128)> {
     Some((len, modified_nanos))
 }
 
+fn lock_active_sessions(
+    inner: &RelayGuiInner,
+) -> std::sync::MutexGuard<'_, HashMap<String, ActiveSession>> {
+    inner
+        .active_sessions
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Cancel pending wait by request id using a precomputed empty tool result.
 /// Use this when caller already holds `tabs` lock to avoid recursive lock.
 fn cancel_wait_with_result(inner: &RelayGuiInner, rid: &str, empty_result: String) {
@@ -246,6 +272,7 @@ fn cancel_wait_with_result(inner: &RelayGuiInner, rid: &str, empty_result: Strin
         let _ = tx.send(empty_result);
     }
     wrx.remove(rid);
+    lock_active_sessions(inner).remove(rid);
 }
 
 fn emit_tabs(app: &tauri::AppHandle) {
@@ -275,6 +302,7 @@ impl RelayGuiRuntime {
             hydration_running: AtomicBool::new(false),
             wait_tx: Mutex::new(HashMap::new()),
             wait_rx: Mutex::new(HashMap::new()),
+            active_sessions: Mutex::new(HashMap::new()),
             token: random_token(),
             port: Mutex::new(None),
             app,
@@ -371,6 +399,7 @@ impl RelayGuiRuntime {
     fn complete_request(&self, rid: &str, answer: String) {
         let tx = lock_wait_tx(&self.0).remove(rid);
         lock_wait_rx(&self.0).remove(rid);
+        lock_active_sessions(&self.0).remove(rid);
         if let Some(tx) = tx {
             let _ = tx.send(answer);
         }
@@ -494,6 +523,44 @@ impl RelayGuiRuntime {
         emit_tabs(app);
         Ok(())
     }
+
+    // ---- Active session management ----
+
+    pub fn list_active_sessions(&self) -> Vec<ActiveSession> {
+        lock_active_sessions(&self.0).values().cloned().collect()
+    }
+
+    /// Disconnect a single session by request_id (sends empty reply to MCP).
+    pub fn disconnect_session(&self, request_id: &str) -> Result<(), String> {
+        let empty_result = {
+            let g = lock_tabs(&self.0);
+            g.tabs
+                .iter()
+                .find(|t| t.request_id == request_id)
+                .map(|t| feedback_tool_result_string(t, "", &[]))
+                .unwrap_or_else(empty_tool_result_fallback)
+        };
+        cancel_wait_with_result(&self.0, request_id, empty_result);
+        emit_tabs(&self.0.app);
+        Ok(())
+    }
+
+    /// Disconnect all active sessions (sends empty reply to every pending MCP wait).
+    pub fn disconnect_all_sessions(&self) {
+        let rids: Vec<String> = lock_active_sessions(&self.0).keys().cloned().collect();
+        for rid in rids {
+            let empty_result = {
+                let g = lock_tabs(&self.0);
+                g.tabs
+                    .iter()
+                    .find(|t| t.request_id == rid)
+                    .map(|t| feedback_tool_result_string(t, "", &[]))
+                    .unwrap_or_else(empty_tool_result_fallback)
+            };
+            cancel_wait_with_result(&self.0, &rid, empty_result);
+        }
+        emit_tabs(&self.0.app);
+    }
 }
 
 fn hydrate_qa_from_log_background(inner: &Arc<RelayGuiInner>) {
@@ -610,6 +677,10 @@ fn post_feedback_apply_state(
     commands: Option<Vec<CommandItem>>,
     skills: Option<Vec<CommandItem>>,
     title: Option<String>,
+    mcp_pid: Option<u32>,
+    mcp_hostname: Option<String>,
+    mcp_origin: Option<String>,
+    ide_mode: Option<String>,
 ) -> String {
     let rid = uuid::Uuid::new_v4().to_string();
     let mut g = lock_tabs(inner);
@@ -681,6 +752,14 @@ fn post_feedback_apply_state(
     if !g.tabs.is_empty() && !g.tabs.iter().any(|t| t.tab_id == g.active_tab_id) {
         g.active_tab_id = g.tabs[g.tabs.len() - 1].tab_id.clone();
     }
+
+    let session_snapshot = g.tabs.iter().find(|t| t.request_id == rid).map(|t| {
+        (
+            t.tab_id.clone(),
+            t.relay_mcp_session_id.clone(),
+            t.title.clone(),
+        )
+    });
     drop(g);
 
     let (tx, rx) = oneshot::channel::<String>();
@@ -689,6 +768,23 @@ fn post_feedback_apply_state(
         let mut wrx = lock_wait_rx(inner);
         wtx.insert(rid.clone(), tx);
         wrx.insert(rid.clone(), rx);
+    }
+
+    if let Some((tab_id, sid, title)) = session_snapshot {
+        let session = ActiveSession {
+            request_id: rid.clone(),
+            relay_mcp_session_id: sid,
+            tab_id,
+            title,
+            mcp_pid,
+            mcp_hostname,
+            mcp_origin: mcp_origin.unwrap_or_else(|| "local".to_string()),
+            ide_mode,
+            connected_at: crate::storage::timestamp_string(),
+        };
+        if let Ok(mut m) = inner.active_sessions.lock() {
+            m.insert(rid.clone(), session);
+        }
     }
 
     emit_tabs(&inner.app);
@@ -703,6 +799,7 @@ fn feedback_orphan_wait_cleanup(inner: Arc<RelayGuiInner>, rid: String) {
     }
     wrx.remove(&rid);
     drop(wrx);
+    lock_active_sessions(&inner).remove(&rid);
     let mut g = lock_tabs(&inner);
     let empty_result = g
         .tabs
@@ -751,6 +848,15 @@ struct PostFeedbackBody {
     /// Agent-provided descriptive title for a new session tab.
     #[serde(default)]
     title: Option<String>,
+    /// MCP process PID.
+    #[serde(default)]
+    mcp_pid: Option<u32>,
+    /// Hostname where the MCP process runs.
+    #[serde(default)]
+    mcp_hostname: Option<String>,
+    /// `"local"` or `"remote"` — derived from the endpoint file used.
+    #[serde(default)]
+    mcp_origin: Option<String>,
 }
 
 async fn post_feedback(
@@ -790,6 +896,10 @@ async fn post_feedback(
     let commands = body.commands;
     let skills = body.skills;
     let title = body.title;
+    let mcp_pid = body.mcp_pid;
+    let mcp_hostname = body.mcp_hostname;
+    let mcp_origin = body.mcp_origin;
+    let ide_mode = body.ide_mode;
 
     let rid = match tokio::task::spawn_blocking(move || {
         post_feedback_apply_state(
@@ -799,6 +909,10 @@ async fn post_feedback(
             commands,
             skills,
             title,
+            mcp_pid,
+            mcp_hostname,
+            mcp_origin,
+            ide_mode,
         )
     })
     .await
@@ -832,7 +946,10 @@ async fn wait_feedback(
 
     // No timeout: wait until user submits or dismisses (oneshot completes). If sender is dropped without send, treat as empty.
     let result = match rx.await {
-        Ok(s) => s,
+        Ok(s) => {
+            lock_active_sessions(&st.inner).remove(&rid);
+            s
+        }
         Err(_) => {
             let inner = st.inner.clone();
             let rid2 = rid.clone();
@@ -860,6 +977,7 @@ async fn wait_feedback(
                     }
                 }
                 lock_wait_tx(&inner_cleanup).remove(&rid_cleanup);
+                lock_active_sessions(&inner_cleanup).remove(&rid_cleanup);
                 emit_tabs(&inner_cleanup.app);
             })
             .await;

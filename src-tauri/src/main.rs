@@ -19,8 +19,10 @@ use tauri::{Manager, State};
 mod system_ui;
 
 use relay_mcp::{
-    dock_edge_hide::EdgeHideState, gui_http::RelayGuiRuntime, refresh_gui_presence_marker,
-    run_feedback_cli, ControlStatus, FeedbackTabsState, LaunchState, QaRound,
+    dock_edge_hide::EdgeHideState,
+    gui_http::{ActiveSession, RelayGuiRuntime},
+    refresh_gui_presence_marker, run_feedback_cli, ControlStatus, FeedbackTabsState, LaunchState,
+    QaRound,
 };
 
 /// Release Windows builds use the GUI subsystem; attach to the parent console so CLI subcommands
@@ -733,14 +735,41 @@ fn set_routing_lock(
     prefer: String,
     set_by: String,
     pinned: Option<bool>,
+    state: State<'_, RelayGuiRuntime>,
 ) -> Result<(), String> {
     relay_mcp::mcp_http::write_routing_lock(ide_kind, &prefer, &set_by, pinned.unwrap_or(false))
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    state.disconnect_all_sessions();
+    Ok(())
 }
 
 #[tauri::command]
-fn clear_routing_lock(ide_kind: relay_mcp::ide::IdeKind) -> Result<(), String> {
-    relay_mcp::mcp_http::clear_routing_lock(ide_kind).map_err(|e| e.to_string())
+fn clear_routing_lock(
+    ide_kind: relay_mcp::ide::IdeKind,
+    state: State<'_, RelayGuiRuntime>,
+) -> Result<(), String> {
+    relay_mcp::mcp_http::clear_routing_lock(ide_kind).map_err(|e| e.to_string())?;
+    state.disconnect_all_sessions();
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Active MCP-GUI session management
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn list_active_sessions(state: State<'_, RelayGuiRuntime>) -> Vec<ActiveSession> {
+    state.list_active_sessions()
+}
+
+#[tauri::command]
+fn disconnect_session(request_id: String, state: State<'_, RelayGuiRuntime>) -> Result<(), String> {
+    state.disconnect_session(&request_id)
+}
+
+#[tauri::command]
+fn disconnect_all_sessions(state: State<'_, RelayGuiRuntime>) {
+    state.disconnect_all_sessions()
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,6 +1031,9 @@ fn run_tauri(initial: LaunchState) {
             get_routing_lock,
             set_routing_lock,
             clear_routing_lock,
+            list_active_sessions,
+            disconnect_session,
+            disconnect_all_sessions,
             remote_list_connections,
             remote_add_connection,
             remote_remove_connection,

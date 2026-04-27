@@ -46,6 +46,9 @@ pub struct GuiEndpoint {
     pub token: String,
     #[serde(default)]
     pub pid: Option<u32>,
+    /// `true` when this endpoint was loaded from the `_remote.json` file.
+    #[serde(default)]
+    pub remote: bool,
 }
 
 /// Routing lock: determines which GUI the MCP prefers.
@@ -126,38 +129,38 @@ pub fn clear_routing_lock(ide: crate::ide::IdeKind) -> Result<()> {
     Ok(())
 }
 
+/// Try to parse and health-check an endpoint file, tagging it as local or remote.
+fn try_read_healthy_endpoint(path: &PathBuf, is_remote: bool) -> Option<GuiEndpoint> {
+    let text = fs::read_to_string(path).ok()?;
+    let mut ep: GuiEndpoint = serde_json::from_str(&text).ok()?;
+    ep.remote = is_remote;
+    if health_ok(&ep) {
+        Some(ep)
+    } else {
+        None
+    }
+}
+
 pub fn read_gui_endpoint() -> Result<Option<GuiEndpoint>> {
     let dir = user_data_dir()?;
     let lock = read_routing_lock();
     let prefer_remote = lock.as_ref().map(|l| l.prefer == "remote").unwrap_or(false);
 
-    let read_ep = |path: &PathBuf| -> Option<GuiEndpoint> {
-        let text = fs::read_to_string(path).ok()?;
-        let ep: GuiEndpoint = serde_json::from_str(&text).ok()?;
-        if health_ok(&ep) {
-            Some(ep)
-        } else {
-            None
-        }
-    };
-
     let local_path = dir.join(gui_endpoint_file_name());
     let remote_path = dir.join(gui_remote_endpoint_file_name());
 
     if prefer_remote {
-        // Preempted by remote: remote first, then local fallback.
-        if let Some(ep) = read_ep(&remote_path) {
+        if let Some(ep) = try_read_healthy_endpoint(&remote_path, true) {
             return Ok(Some(ep));
         }
-        if let Some(ep) = read_ep(&local_path) {
+        if let Some(ep) = try_read_healthy_endpoint(&local_path, false) {
             return Ok(Some(ep));
         }
     } else {
-        // Default / preempted by local: local first, then remote fallback.
-        if let Some(ep) = read_ep(&local_path) {
+        if let Some(ep) = try_read_healthy_endpoint(&local_path, false) {
             return Ok(Some(ep));
         }
-        if let Some(ep) = read_ep(&remote_path) {
+        if let Some(ep) = try_read_healthy_endpoint(&remote_path, true) {
             return Ok(Some(ep));
         }
     }
@@ -204,17 +207,6 @@ fn find_any_healthy_gui_endpoint() -> Option<GuiEndpoint> {
         crate::ide::IdeKind::Other,
     ];
 
-    let try_ep = |path: &PathBuf| -> Option<GuiEndpoint> {
-        let text = fs::read_to_string(path).ok()?;
-        let ep: GuiEndpoint = serde_json::from_str(&text).ok()?;
-        if health_ok(&ep) {
-            Some(ep)
-        } else {
-            None
-        }
-    };
-
-    // Check if any IDE has a routing lock preferring remote
     let prefer_remote = |ide: &crate::ide::IdeKind| -> bool {
         let lock_path = dir.join(gui_routing_lock_file_name(ide));
         fs::read_to_string(lock_path)
@@ -229,29 +221,28 @@ fn find_any_healthy_gui_endpoint() -> Option<GuiEndpoint> {
         let remote = dir.join(format!("gui_endpoint_{}_remote.json", ide.cli_id()));
 
         if prefer_remote(ide) {
-            if let Some(ep) = try_ep(&remote) {
+            if let Some(ep) = try_read_healthy_endpoint(&remote, true) {
                 return Some(ep);
             }
-            if let Some(ep) = try_ep(&local) {
+            if let Some(ep) = try_read_healthy_endpoint(&local, false) {
                 return Some(ep);
             }
         } else {
-            if let Some(ep) = try_ep(&local) {
+            if let Some(ep) = try_read_healthy_endpoint(&local, false) {
                 return Some(ep);
             }
-            if let Some(ep) = try_ep(&remote) {
+            if let Some(ep) = try_read_healthy_endpoint(&remote, true) {
                 return Some(ep);
             }
         }
     }
 
-    // Generic fallback
     let generic = dir.join("gui_endpoint.json");
-    if let Some(ep) = try_ep(&generic) {
+    if let Some(ep) = try_read_healthy_endpoint(&generic, false) {
         return Some(ep);
     }
     let generic_remote = dir.join("gui_endpoint_remote.json");
-    try_ep(&generic_remote)
+    try_read_healthy_endpoint(&generic_remote, true)
 }
 
 fn spawn_gui() -> Result<()> {
@@ -314,6 +305,21 @@ pub fn ensure_gui_endpoint(max_wait: Duration) -> Result<GuiEndpoint> {
     }
 }
 
+/// Cross-platform hostname (no extra crate).
+fn mcp_hostname() -> String {
+    #[cfg(unix)]
+    {
+        let mut buf = [0u8; 256];
+        if unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) } == 0 {
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+            return String::from_utf8_lossy(&buf[..end]).into_owned();
+        }
+    }
+    std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_default()
+}
+
 /// POST feedback + block on wait until user answers (or JSON with human "" on dismiss/timeout).
 pub fn feedback_round(
     retell: &str,
@@ -328,6 +334,9 @@ pub fn feedback_round(
     let mut body = serde_json::json!({
         "retell": retell,
         "relay_mcp_session_id": relay_mcp_session_id,
+        "mcp_pid": std::process::id(),
+        "mcp_hostname": mcp_hostname(),
+        "mcp_origin": if ep.remote { "remote" } else { "local" },
     });
     if let Some(ide) = crate::ide::get_process_ide() {
         body["ide_mode"] = serde_json::json!(ide.cli_id());
