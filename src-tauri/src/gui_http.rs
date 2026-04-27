@@ -916,10 +916,8 @@ async fn post_feedback(
         ide_mode: body.ide_mode,
     };
 
-    let rid = match tokio::task::spawn_blocking(move || {
-        post_feedback_apply_state(&inner, params)
-    })
-    .await
+    let rid = match tokio::task::spawn_blocking(move || post_feedback_apply_state(&inner, params))
+        .await
     {
         Ok(r) => r,
         Err(e) => {
