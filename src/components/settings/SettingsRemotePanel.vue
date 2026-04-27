@@ -579,9 +579,23 @@ onBeforeUnmount(() => {
           <template v-else-if="!sessions.length">
             <p class="sessionEmptyHint">{{ S.sessionEmpty }}</p>
             <div v-if="hasConfiguredRemoteButNoSessions" class="sessionRemoteHintBox">
-              <p class="sessionRemoteHintText">
-                {{ S.sessionRemoteHint.replace("{n}", String(connections.length)) }}
-              </p>
+              <div class="sessionRemoteHintBody">
+                <p class="sessionRemoteHintText">
+                  {{ S.sessionRemoteHint.replace("{n}", String(connections.length)) }}
+                </p>
+                <div class="sessionRemoteConnList">
+                  <div
+                    v-for="conn in connections"
+                    :key="conn.id"
+                    class="sessionRemoteConnItem"
+                  >
+                    <span class="sessionOriginDot sessionOriginDot--remote" />
+                    <span class="sessionRemoteConnTarget">{{ conn.ssh_target }}</span>
+                    <span class="sessionRemoteConnBadge">{{ ideLabel(conn.ide_kind) }}</span>
+                    <span v-if="conn.ssh_port !== 22" class="sessionRemoteConnPort">:{{ conn.ssh_port }}</span>
+                  </div>
+                </div>
+              </div>
               <button
                 type="button"
                 class="sessionPreemptGroupBtn sessionPreemptHereBtn"
@@ -641,9 +655,23 @@ onBeforeUnmount(() => {
             </div>
 
             <div v-if="hasConfiguredRemoteButNoSessions" class="sessionRemoteHintBox sessionRemoteHintBox--inline">
-              <p class="sessionRemoteHintText">
-                {{ S.sessionRemoteHint.replace("{n}", String(connections.length)) }}
-              </p>
+              <div class="sessionRemoteHintBody">
+                <p class="sessionRemoteHintText">
+                  {{ S.sessionRemoteHint.replace("{n}", String(connections.length)) }}
+                </p>
+                <div class="sessionRemoteConnList">
+                  <div
+                    v-for="conn in connections"
+                    :key="conn.id"
+                    class="sessionRemoteConnItem"
+                  >
+                    <span class="sessionOriginDot sessionOriginDot--remote" />
+                    <span class="sessionRemoteConnTarget">{{ conn.ssh_target }}</span>
+                    <span class="sessionRemoteConnBadge">{{ ideLabel(conn.ide_kind) }}</span>
+                    <span v-if="conn.ssh_port !== 22" class="sessionRemoteConnPort">:{{ conn.ssh_port }}</span>
+                  </div>
+                </div>
+              </div>
               <button
                 type="button"
                 class="sessionPreemptGroupBtn sessionPreemptHereBtn"
@@ -1516,28 +1544,56 @@ onBeforeUnmount(() => {
 
 /* Remote hint box */
 .sessionRemoteHintBox {
-  padding: 10px 14px;
+  padding: 12px 14px;
   border-radius: 10px;
   background: rgba(56, 189, 248, 0.06);
   border: 1px solid rgba(56, 189, 248, 0.15);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  flex-wrap: wrap;
 }
 .sessionRemoteHintBox--inline {
   margin-top: 10px;
 }
-.sessionRemoteHintText {
+.sessionRemoteHintBody {
   flex: 1;
-  margin: 0;
+  min-width: 0;
+}
+.sessionRemoteHintText {
+  margin: 0 0 8px;
   font-size: 0.75rem;
   color: #94a3b8;
   line-height: 1.4;
-  min-width: 160px;
+}
+.sessionRemoteConnList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sessionRemoteConnItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.6875rem;
+}
+.sessionRemoteConnTarget {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+.sessionRemoteConnBadge {
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+.sessionRemoteConnPort {
+  color: #64748b;
 }
 .sessionPreemptHereBtn {
   flex-shrink: 0;
+  align-self: center;
   padding: 4px 12px !important;
   font-size: 0.6875rem !important;
 }
