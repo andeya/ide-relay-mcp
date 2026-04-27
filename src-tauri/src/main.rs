@@ -714,6 +714,36 @@ fn ide_uninstall_rule() -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// GUI routing lock (preemption)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn get_routing_lock(
+    ide_kind: relay_mcp::ide::IdeKind,
+) -> Option<relay_mcp::mcp_http::GuiRoutingLock> {
+    let dir = relay_mcp::user_data_dir().ok()?;
+    let path = dir.join(format!("gui_routing_lock_{}.json", ide_kind.cli_id()));
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+#[tauri::command]
+fn set_routing_lock(
+    ide_kind: relay_mcp::ide::IdeKind,
+    prefer: String,
+    set_by: String,
+    pinned: Option<bool>,
+) -> Result<(), String> {
+    relay_mcp::mcp_http::write_routing_lock(ide_kind, &prefer, &set_by, pinned.unwrap_or(false))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_routing_lock(ide_kind: relay_mcp::ide::IdeKind) -> Result<(), String> {
+    relay_mcp::mcp_http::clear_routing_lock(ide_kind).map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
 // Remote SSH connections
 // ---------------------------------------------------------------------------
 
@@ -779,7 +809,40 @@ async fn remote_test_connection(
 }
 
 #[tauri::command]
+async fn remote_preempt_routing(id: String) -> Result<(), String> {
+    let conns = relay_mcp::remote_connection::list_connections();
+    let conn = conns
+        .iter()
+        .find(|c| c.id == id)
+        .ok_or("connection not found")?;
+    let conn = conn.clone();
+    tokio::task::spawn_blocking(move || {
+        relay_mcp::remote_ssh::write_remote_routing_lock(&conn, "remote").map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn remote_release_routing(id: String) -> Result<(), String> {
+    let conns = relay_mcp::remote_connection::list_connections();
+    let conn = conns
+        .iter()
+        .find(|c| c.id == id)
+        .ok_or("connection not found")?;
+    let conn = conn.clone();
+    tokio::task::spawn_blocking(move || {
+        relay_mcp::remote_ssh::clear_remote_routing_lock(&conn).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:")) {
+        return Err(format!("unsupported URL scheme: {url}"));
+    }
     opener::open(&url).map_err(|e| e.to_string())
 }
 
@@ -936,10 +999,15 @@ fn run_tauri(initial: LaunchState) {
             ide_rule_installed,
             ide_install_rule,
             ide_uninstall_rule,
+            get_routing_lock,
+            set_routing_lock,
+            clear_routing_lock,
             remote_list_connections,
             remote_add_connection,
             remote_remove_connection,
-            remote_test_connection
+            remote_test_connection,
+            remote_preempt_routing,
+            remote_release_routing
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| {

@@ -19,13 +19,17 @@ use crate::prepare_user_data_dir;
 static PROCESS_IDE: RwLock<Option<IdeKind>> = RwLock::new(None);
 
 pub fn set_process_ide(ide: IdeKind) {
-    if let Ok(mut w) = PROCESS_IDE.write() {
-        *w = Some(ide);
+    match PROCESS_IDE.write() {
+        Ok(mut w) => *w = Some(ide),
+        Err(poisoned) => *poisoned.into_inner() = Some(ide),
     }
 }
 
 pub fn get_process_ide() -> Option<IdeKind> {
-    PROCESS_IDE.read().ok().and_then(|r| *r)
+    match PROCESS_IDE.read() {
+        Ok(r) => *r,
+        Err(poisoned) => *poisoned.into_inner(),
+    }
 }
 
 /// Window title based on current process IDE: `Relay-Cursor`, `Relay-Claude Code`, etc.

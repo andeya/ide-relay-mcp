@@ -455,6 +455,10 @@ pub fn fetch_usage_via_ide_api(token: &str) -> Result<CursorUsageSummary> {
         team_usage: None,
     };
 
+    // Supplementary: merge on-demand / team / billing dates from web API.
+    // This is best-effort and must never block or fail the primary IDE API result.
+    // get_web_session_token() already attempts cache → file → keychain (on Mac);
+    // if it returns None we do NOT retry (avoids duplicate Keychain prompts/blocks).
     let web_token = get_web_session_token();
 
     let try_web_summary =
@@ -469,9 +473,9 @@ pub fn fetch_usage_via_ide_api(token: &str) -> Result<CursorUsageSummary> {
                 .and_then(|c| try_web_summary(&c))
         })
     } else {
-        read_cursor_usage_ext_cookie()
-            .ok()
-            .and_then(|c| try_web_summary(&c))
+        // get_web_session_token() already tried all paths including keychain.
+        // No point in retrying read_cursor_usage_ext_cookie() here.
+        None
     };
 
     if let Some(web_summary) = web_result {
@@ -741,12 +745,15 @@ fn read_encrypted_cookie_blob() -> Result<Vec<u8>> {
     Ok(encrypted)
 }
 
-/// macOS: Electron SafeStorage v10 — Keychain password + PBKDF2 + AES-128-CBC.
+/// macOS: Electron SafeStorage v10/v11 — Keychain password + PBKDF2 + AES-128-CBC.
 #[cfg(target_os = "macos")]
 fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
     let encrypted = read_encrypted_cookie_blob()?;
-    if encrypted.len() < 3 || &encrypted[..3] != b"v10" {
-        anyhow::bail!("unexpected encryption version (expected v10)");
+    if encrypted.len() < 3 || (encrypted[..3] != *b"v10" && encrypted[..3] != *b"v11") {
+        anyhow::bail!(
+            "unexpected encryption version (expected v10 or v11, got {:?})",
+            String::from_utf8_lossy(&encrypted[..3.min(encrypted.len())])
+        );
     }
     let ciphertext = &encrypted[3..];
 

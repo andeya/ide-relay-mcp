@@ -26,11 +26,19 @@ fn spawn_new_window() {
         eprintln!("relay: cannot resolve current executable path; New Window aborted");
         return;
     };
-    let _ = std::process::Command::new(exe)
+    match std::process::Command::new(exe)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .spawn();
+        .spawn()
+    {
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => eprintln!("relay: spawn new window failed: {e}"),
+    }
 }
 
 // ---------------------------------------------------------------------------
