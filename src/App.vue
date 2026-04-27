@@ -1598,6 +1598,16 @@ onBeforeUnmount(() => {
           {{ strings.segSetup }}
         </button>
         <button
+          type="button"
+          role="tab"
+          class="segTab"
+          :class="{ active: settingsSeg === 'app' }"
+          :aria-selected="settingsSeg === 'app'"
+          @click="settingsSeg = 'app'"
+        >
+          {{ strings.segCache }}
+        </button>
+        <button
           v-if="ideSupportsRulePrompt"
           type="button"
           role="tab"
@@ -1615,11 +1625,11 @@ onBeforeUnmount(() => {
           type="button"
           role="tab"
           class="segTab"
-          :class="{ active: settingsSeg === 'app' }"
-          :aria-selected="settingsSeg === 'app'"
-          @click="settingsSeg = 'app'"
+          :class="{ active: settingsSeg === 'remote' }"
+          :aria-selected="settingsSeg === 'remote'"
+          @click="settingsSeg = 'remote'"
         >
-          {{ strings.segCache }}
+          {{ strings.segRemote }}
         </button>
         <button
           v-if="ideSupportsUsage"
@@ -1631,16 +1641,6 @@ onBeforeUnmount(() => {
           @click="settingsSeg = 'usage'"
         >
           {{ strings.segUsage }}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="segTab"
-          :class="{ active: settingsSeg === 'remote' }"
-          :aria-selected="settingsSeg === 'remote'"
-          @click="settingsSeg = 'remote'"
-        >
-          {{ strings.segRemote }}
         </button>
       </nav>
 
@@ -1958,6 +1958,12 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <SettingsAppPanel
+          :app-segment-active="appSegmentActive"
+          :strings="strings"
+          :push-toast="pushSettingsToast"
+        />
+
         <SettingsRulePromptsPanel
           v-if="ideSupportsRulePrompt"
           v-show="settingsSeg === 'rulePrompts'"
@@ -1969,8 +1975,8 @@ onBeforeUnmount(() => {
           :push-toast="pushSettingsToast"
         />
 
-        <SettingsAppPanel
-          :app-segment-active="appSegmentActive"
+        <SettingsRemotePanel
+          :remote-segment-active="remoteSegmentActive"
           :strings="strings"
           :push-toast="pushSettingsToast"
         />
@@ -1980,12 +1986,6 @@ onBeforeUnmount(() => {
           :usage-segment-active="usageSegmentActive"
           :strings="strings"
           :usage="cursorUsage"
-        />
-
-        <SettingsRemotePanel
-          :remote-segment-active="remoteSegmentActive"
-          :strings="strings"
-          :push-toast="pushSettingsToast"
         />
 
         <footer class="settingsAppFooter">
