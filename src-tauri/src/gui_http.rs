@@ -122,7 +122,13 @@ fn gui_http_write_endpoint_file(port: u16, token: &str) -> Result<(), String> {
         "token": token,
         "pid": std::process::id(),
     });
-    std::fs::write(&path, payload.to_string()).map_err(|e| format!("write endpoint: {e}"))
+    std::fs::write(&path, payload.to_string()).map_err(|e| format!("write endpoint: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
 }
 
 fn run_gui_axum_server(std_listener: StdTcpListener, inner: Arc<RelayGuiInner>) {

@@ -26,6 +26,20 @@ pub fn gui_endpoint_file_name() -> String {
     }
 }
 
+/// Remote SSH tunnel endpoint file: `gui_endpoint_<ide>_remote.json`.
+pub fn gui_remote_endpoint_file_name() -> String {
+    if let Some(ide) = crate::ide::get_process_ide() {
+        format!("gui_endpoint_{}_remote.json", ide.cli_id())
+    } else {
+        "gui_endpoint_remote.json".to_string()
+    }
+}
+
+/// IDE-specific routing lock file name.
+fn gui_routing_lock_file_name(ide: &crate::ide::IdeKind) -> String {
+    format!("gui_routing_lock_{}.json", ide.cli_id())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuiEndpoint {
     pub port: u16,
@@ -34,16 +48,120 @@ pub struct GuiEndpoint {
     pub pid: Option<u32>,
 }
 
+/// Routing lock: determines which GUI the MCP prefers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuiRoutingLock {
+    /// `"remote"` or `"local"`.
+    pub prefer: String,
+    #[serde(default)]
+    pub set_by: Option<String>,
+    #[serde(default)]
+    pub timestamp: Option<String>,
+    /// When true, only the same `set_by` origin can overwrite this lock.
+    /// Local user sets pinned=true to prevent remote preemption.
+    #[serde(default)]
+    pub pinned: bool,
+}
+
 pub fn gui_endpoint_path() -> Result<PathBuf> {
     Ok(user_data_dir()?.join(gui_endpoint_file_name()))
 }
 
-pub fn read_gui_endpoint() -> Result<Option<GuiEndpoint>> {
-    let p = gui_endpoint_path()?;
-    let Ok(text) = fs::read_to_string(&p) else {
-        return Ok(None);
+/// Read the routing lock preference for the current IDE.
+pub fn read_routing_lock() -> Option<GuiRoutingLock> {
+    let ide = crate::ide::get_process_ide()?;
+    let dir = user_data_dir().ok()?;
+    let path = dir.join(gui_routing_lock_file_name(&ide));
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Write a routing lock for a specific IDE. Callable from GUI settings.
+/// If an existing lock is `pinned` and was set by a different origin,
+/// this write is rejected.
+pub fn write_routing_lock(
+    ide: crate::ide::IdeKind,
+    prefer: &str,
+    set_by: &str,
+    pinned: bool,
+) -> Result<()> {
+    let dir = user_data_dir()?;
+    let path = dir.join(gui_routing_lock_file_name(&ide));
+    if let Ok(text) = fs::read_to_string(&path) {
+        if let Ok(existing) = serde_json::from_str::<GuiRoutingLock>(&text) {
+            if existing.pinned {
+                let same_origin = existing.set_by.as_deref() == Some(set_by);
+                if !same_origin {
+                    anyhow::bail!(
+                        "routing is pinned by {}",
+                        existing.set_by.as_deref().unwrap_or("unknown")
+                    );
+                }
+            }
+        }
+    }
+    let lock = GuiRoutingLock {
+        prefer: prefer.to_string(),
+        set_by: Some(set_by.to_string()),
+        timestamp: Some(crate::storage::timestamp_string()),
+        pinned,
     };
-    Ok(serde_json::from_str(&text).ok())
+    let json = serde_json::to_string_pretty(&lock)?;
+    fs::write(&path, &json)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+/// Remove the routing lock for a specific IDE.
+pub fn clear_routing_lock(ide: crate::ide::IdeKind) -> Result<()> {
+    let dir = user_data_dir()?;
+    let path = dir.join(gui_routing_lock_file_name(&ide));
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    Ok(())
+}
+
+pub fn read_gui_endpoint() -> Result<Option<GuiEndpoint>> {
+    let dir = user_data_dir()?;
+    let lock = read_routing_lock();
+    let prefer_remote = lock.as_ref().map(|l| l.prefer == "remote").unwrap_or(false);
+
+    let read_ep = |path: &PathBuf| -> Option<GuiEndpoint> {
+        let text = fs::read_to_string(path).ok()?;
+        let ep: GuiEndpoint = serde_json::from_str(&text).ok()?;
+        if health_ok(&ep) {
+            Some(ep)
+        } else {
+            None
+        }
+    };
+
+    let local_path = dir.join(gui_endpoint_file_name());
+    let remote_path = dir.join(gui_remote_endpoint_file_name());
+
+    if prefer_remote {
+        // Preempted by remote: remote first, then local fallback.
+        if let Some(ep) = read_ep(&remote_path) {
+            return Ok(Some(ep));
+        }
+        if let Some(ep) = read_ep(&local_path) {
+            return Ok(Some(ep));
+        }
+    } else {
+        // Default / preempted by local: local first, then remote fallback.
+        if let Some(ep) = read_ep(&local_path) {
+            return Ok(Some(ep));
+        }
+        if let Some(ep) = read_ep(&remote_path) {
+            return Ok(Some(ep));
+        }
+    }
+    Ok(None)
 }
 
 /// Check whether a GUI process for a specific IDE is alive.
@@ -79,30 +197,61 @@ fn health_ok(ep: &GuiEndpoint) -> bool {
 /// which runs without a specific IDE mode).
 fn find_any_healthy_gui_endpoint() -> Option<GuiEndpoint> {
     let dir = user_data_dir().ok()?;
-    for ide in &[
+    let ides = [
         crate::ide::IdeKind::Cursor,
         crate::ide::IdeKind::ClaudeCode,
         crate::ide::IdeKind::Windsurf,
         crate::ide::IdeKind::Other,
-    ] {
-        let ep_path = dir.join(format!("gui_endpoint_{}.json", ide.cli_id()));
-        if let Ok(text) = fs::read_to_string(&ep_path) {
-            if let Ok(ep) = serde_json::from_str::<GuiEndpoint>(&text) {
-                if health_ok(&ep) {
-                    return Some(ep);
-                }
-            }
+    ];
+
+    let try_ep = |path: &PathBuf| -> Option<GuiEndpoint> {
+        let text = fs::read_to_string(path).ok()?;
+        let ep: GuiEndpoint = serde_json::from_str(&text).ok()?;
+        if health_ok(&ep) {
+            Some(ep)
+        } else {
+            None
         }
-    }
-    let generic = dir.join("gui_endpoint.json");
-    if let Ok(text) = fs::read_to_string(&generic) {
-        if let Ok(ep) = serde_json::from_str::<GuiEndpoint>(&text) {
-            if health_ok(&ep) {
+    };
+
+    // Check if any IDE has a routing lock preferring remote
+    let prefer_remote = |ide: &crate::ide::IdeKind| -> bool {
+        let lock_path = dir.join(gui_routing_lock_file_name(ide));
+        fs::read_to_string(lock_path)
+            .ok()
+            .and_then(|t| serde_json::from_str::<GuiRoutingLock>(&t).ok())
+            .map(|l| l.prefer == "remote")
+            .unwrap_or(false)
+    };
+
+    for ide in &ides {
+        let local = dir.join(format!("gui_endpoint_{}.json", ide.cli_id()));
+        let remote = dir.join(format!("gui_endpoint_{}_remote.json", ide.cli_id()));
+
+        if prefer_remote(ide) {
+            if let Some(ep) = try_ep(&remote) {
+                return Some(ep);
+            }
+            if let Some(ep) = try_ep(&local) {
+                return Some(ep);
+            }
+        } else {
+            if let Some(ep) = try_ep(&local) {
+                return Some(ep);
+            }
+            if let Some(ep) = try_ep(&remote) {
                 return Some(ep);
             }
         }
     }
-    None
+
+    // Generic fallback
+    let generic = dir.join("gui_endpoint.json");
+    if let Some(ep) = try_ep(&generic) {
+        return Some(ep);
+    }
+    let generic_remote = dir.join("gui_endpoint_remote.json");
+    try_ep(&generic_remote)
 }
 
 fn spawn_gui() -> Result<()> {
@@ -121,12 +270,20 @@ fn spawn_gui() -> Result<()> {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    cmd.spawn().context("spawn relay gui-<ide>")?;
+    let mut child = cmd.spawn().context("spawn relay gui-<ide>")?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     Ok(())
 }
 
 /// Wait until GUI exposes a healthy HTTP endpoint (spawn GUI if needed).
 /// When no IDE is set (e.g. `relay feedback`), scans all IDE endpoint files.
+///
+/// Routing priority: healthy local > healthy remote > spawn local.
+/// This ensures: (a) user at A keeps using local GUI, (b) headless server A
+/// with an SSH tunnel from B uses B's remote GUI without spawning a pointless
+/// local process, (c) fresh install spawns local when nothing else is available.
 pub fn ensure_gui_endpoint(max_wait: Duration) -> Result<GuiEndpoint> {
     let deadline = Instant::now() + max_wait;
     let has_ide = crate::ide::get_process_ide().is_some();
@@ -137,16 +294,17 @@ pub fn ensure_gui_endpoint(max_wait: Duration) -> Result<GuiEndpoint> {
             anyhow::bail!("Relay GUI did not become ready within {:?}", max_wait);
         }
 
+        // read_gui_endpoint / find_any_healthy_gui_endpoint already verify
+        // health internally (local first, then remote).
         if has_ide {
-            if let Some(ref ep) = read_gui_endpoint()? {
-                if health_ok(ep) {
-                    return Ok(ep.clone());
-                }
+            if let Some(ep) = read_gui_endpoint()? {
+                return Ok(ep);
             }
         } else if let Some(ep) = find_any_healthy_gui_endpoint() {
             return Ok(ep);
         }
 
+        // No healthy endpoint (local or remote) found — spawn local GUI.
         if !spawned && has_ide {
             let _ = spawn_gui();
             spawned = true;
