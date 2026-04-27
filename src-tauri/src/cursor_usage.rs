@@ -594,6 +594,70 @@ pub fn fetch_usage_events(
     Ok(page_result)
 }
 
+/// Fetch usage events with automatic token fallback.
+/// Tries the web session cookie first; if unavailable, falls back to the IDE
+/// Bearer token (auto-detected from Cursor's local SQLite DB). This ensures
+/// events work on Windows where the web cookie may not be obtainable.
+pub fn fetch_usage_events_with_fallback(
+    start_date: &str,
+    end_date: &str,
+    page: u32,
+    page_size: u32,
+) -> Result<CursorUsageEventsPage> {
+    if let Some(web_token) = get_web_session_token() {
+        match fetch_usage_events(
+            &web_token, None, None, start_date, end_date, page, page_size,
+        ) {
+            Ok(result) => return Ok(result),
+            Err(_cookie_err) => {
+                invalidate_ext_cookie_cache();
+                let _ = clear_cursor_session_token();
+                if let Ok(refreshed) = read_cursor_usage_ext_cookie() {
+                    if let Ok(result) = fetch_usage_events(
+                        &refreshed, None, None, start_date, end_date, page, page_size,
+                    ) {
+                        return Ok(result);
+                    }
+                }
+            }
+        }
+    }
+    let ide_token = auto_detect_cursor_token()
+        .context("no web session token and IDE token auto-detection failed")?;
+    fetch_usage_events_bearer(&ide_token, start_date, end_date, page, page_size)
+}
+
+fn fetch_usage_events_bearer(
+    bearer_token: &str,
+    start_date: &str,
+    end_date: &str,
+    page: u32,
+    page_size: u32,
+) -> Result<CursorUsageEventsPage> {
+    let url = format!("{CURSOR_API_BASE}/dashboard/get-filtered-usage-events");
+    let start_ms = iso_to_epoch_ms(start_date);
+    let end_ms = iso_to_epoch_ms(end_date);
+    let body = serde_json::json!({
+        "startDate": start_ms,
+        "endDate": end_ms,
+        "page": page,
+        "pageSize": page_size,
+    });
+    let resp = ureq::post(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .set("Authorization", &format!("Bearer {bearer_token}"))
+        .set("Content-Type", "application/json")
+        .send_json(body)
+        .map_err(|e| match &e {
+            ureq::Error::Status(code, _) => {
+                anyhow::anyhow!("usage-events (bearer) HTTP {code}")
+            }
+            _ => anyhow::anyhow!("usage-events (bearer) request: {e}"),
+        })?;
+    let page_result: CursorUsageEventsPage = resp.into_json().context("parse usage-events JSON")?;
+    Ok(page_result)
+}
+
 // ---------------------------------------------------------------------------
 // Decrypt cursor-usage extension's stored WorkosCursorSessionToken
 // ---------------------------------------------------------------------------
@@ -605,10 +669,9 @@ static CACHED_EXT_COOKIE: std::sync::Mutex<Option<String>> = std::sync::Mutex::n
 
 /// Get web session token with priority: memory cache → local file → keychain/DPAPI decrypt.
 pub fn get_web_session_token() -> Option<String> {
-    // Drop the MutexGuard before calling read_cursor_usage_ext_cookie (which also locks CACHED_EXT_COOKIE).
     let cached = CACHED_EXT_COOKIE
         .lock()
-        .unwrap()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone()
         .filter(|c| !c.is_empty());
     if cached.is_some() {
@@ -708,15 +771,18 @@ fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
     Ok(cookie)
 }
 
-/// Windows: Electron SafeStorage v10 — DPAPI CryptUnprotectData.
+/// Windows: Electron SafeStorage v10/v11 — DPAPI CryptUnprotectData.
 #[cfg(target_os = "windows")]
 fn read_cursor_usage_ext_cookie_inner() -> Result<String> {
     use std::ptr;
     use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
     let encrypted = read_encrypted_cookie_blob()?;
-    if encrypted.len() < 3 || &encrypted[..3] != b"v10" {
-        anyhow::bail!("unexpected encryption version (expected v10)");
+    if encrypted.len() < 3 || (encrypted[..3] != *b"v10" && encrypted[..3] != *b"v11") {
+        anyhow::bail!(
+            "unexpected encryption version (expected v10 or v11, got {:?})",
+            String::from_utf8_lossy(&encrypted[..3.min(encrypted.len())])
+        );
     }
     let ciphertext = &encrypted[3..];
 

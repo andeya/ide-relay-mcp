@@ -163,6 +163,7 @@ export function useCursorUsage(
 
   let retryCount = 0;
   const MAX_AUTO_RETRIES = 2;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function refreshUsage(isRetry = false) {
     if (loading.value) return;
@@ -181,7 +182,7 @@ export function useCursorUsage(
       if (retryCount < MAX_AUTO_RETRIES && !usageSummary.value) {
         retryCount++;
         willRetry = true;
-        setTimeout(() => void refreshUsage(true), 3000 * retryCount);
+        retryTimer = setTimeout(() => void refreshUsage(true), 3000 * retryCount);
       }
     } finally {
       loading.value = false;
@@ -278,6 +279,7 @@ export function useCursorUsage(
 
   onBeforeUnmount(() => {
     if (refreshTimer) clearInterval(refreshTimer);
+    if (retryTimer) clearTimeout(retryTimer);
     if (tabsUnlisten) tabsUnlisten();
   });
 

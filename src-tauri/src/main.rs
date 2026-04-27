@@ -557,12 +557,7 @@ async fn fetch_cursor_usage_events(
     page_size: u32,
 ) -> Result<relay_mcp::cursor_usage::CursorUsageEventsPage, String> {
     tokio::task::spawn_blocking(move || {
-        let token = relay_mcp::cursor_usage::get_web_session_token()
-            .ok_or_else(|| "no cursor session token available".to_string())?;
-        relay_mcp::cursor_usage::fetch_usage_events(
-            &token,
-            None,
-            None,
+        relay_mcp::cursor_usage::fetch_usage_events_with_fallback(
             &start_date,
             &end_date,
             page,
