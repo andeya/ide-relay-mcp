@@ -416,4 +416,8 @@ export default {
   sessionPreemptRemote: "抢占 → 远程",
   sessionPreemptOk: "已设置路由偏好。MCP 将重新连接到首选 GUI。",
   sessionPreemptErr: "设置路由偏好失败。",
+  sessionRemoteHint: "已配置 {n} 个远程连接，但无远程会话。远程 MCP 可能正在使用自己的本地 GUI。",
+  sessionRemotePreemptHere: "抢占到本地 GUI",
+  sessionRemotePreemptHereOk: "已通过 SSH 设置远程路由偏好。",
+  sessionRemotePreemptHereErr: "SSH 远程抢占失败：{err}",
 };

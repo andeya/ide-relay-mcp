@@ -362,6 +362,35 @@ async function preemptForOrigin(origin: string) {
 const hasLocal = computed(() => sessions.value.some((s) => s.mcp_origin === "local"));
 const hasRemote = computed(() => sessions.value.some((s) => s.mcp_origin === "remote"));
 
+const hasConfiguredRemoteButNoSessions = computed(() =>
+  connections.value.length > 0 && !hasRemote.value
+);
+
+const sshPreemptBusy = ref(false);
+
+async function preemptAllRemotesToHere() {
+  if (sshPreemptBusy.value) return;
+  sshPreemptBusy.value = true;
+  let lastErr = "";
+  try {
+    for (const conn of connections.value) {
+      try {
+        await invoke("remote_preempt_routing", { id: conn.id });
+      } catch (e) {
+        lastErr = String(e);
+      }
+    }
+    if (lastErr) {
+      props.pushToast({ type: "err", text: S.value.sessionRemotePreemptHereErr.replace("{err}", lastErr) });
+    } else {
+      props.pushToast({ type: "ok", text: S.value.sessionRemotePreemptHereOk });
+    }
+    await loadSessions();
+  } finally {
+    sshPreemptBusy.value = false;
+  }
+}
+
 interface ConnectionGroup {
   key: string;
   origin: string;
@@ -547,7 +576,20 @@ onBeforeUnmount(() => {
             <span class="remoteSpinner" />
           </div>
 
-          <p v-else-if="!sessions.length" class="sessionEmptyHint">{{ S.sessionEmpty }}</p>
+          <template v-else-if="!sessions.length">
+            <p class="sessionEmptyHint">{{ S.sessionEmpty }}</p>
+            <div v-if="hasConfiguredRemoteButNoSessions" class="sessionRemoteHintBox">
+              <p class="sessionRemoteHintText">
+                {{ S.sessionRemoteHint.replace("{n}", String(connections.length)) }}
+              </p>
+              <button
+                type="button"
+                class="sessionPreemptGroupBtn sessionPreemptHereBtn"
+                :disabled="sshPreemptBusy"
+                @click="preemptAllRemotesToHere"
+              >{{ S.sessionRemotePreemptHere }}</button>
+            </div>
+          </template>
 
           <template v-else>
             <div
@@ -596,6 +638,18 @@ onBeforeUnmount(() => {
                   >{{ S.sessionDisconnect }}</button>
                 </div>
               </div>
+            </div>
+
+            <div v-if="hasConfiguredRemoteButNoSessions" class="sessionRemoteHintBox sessionRemoteHintBox--inline">
+              <p class="sessionRemoteHintText">
+                {{ S.sessionRemoteHint.replace("{n}", String(connections.length)) }}
+              </p>
+              <button
+                type="button"
+                class="sessionPreemptGroupBtn sessionPreemptHereBtn"
+                :disabled="sshPreemptBusy"
+                @click="preemptAllRemotesToHere"
+              >{{ S.sessionRemotePreemptHere }}</button>
             </div>
 
             <div class="sessionBulkActions">
@@ -1458,5 +1512,33 @@ onBeforeUnmount(() => {
 }
 .sessionBulkBtn--danger:hover {
   background: rgba(248, 113, 113, 0.14);
+}
+
+/* Remote hint box */
+.sessionRemoteHintBox {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sessionRemoteHintBox--inline {
+  margin-top: 10px;
+}
+.sessionRemoteHintText {
+  flex: 1;
+  margin: 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  line-height: 1.4;
+  min-width: 160px;
+}
+.sessionPreemptHereBtn {
+  flex-shrink: 0;
+  padding: 4px 12px !important;
+  font-size: 0.6875rem !important;
 }
 </style>

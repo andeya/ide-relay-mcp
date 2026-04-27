@@ -427,4 +427,8 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   sessionPreemptRemote: "Preempt → remote",
   sessionPreemptOk: "Routing preempted. MCP will reconnect to the preferred GUI.",
   sessionPreemptErr: "Failed to set routing preference.",
+  sessionRemoteHint: "{n} remote connection(s) configured but no remote sessions. Remote MCPs may be using their local GUI.",
+  sessionRemotePreemptHere: "Preempt to this GUI",
+  sessionRemotePreemptHereOk: "Remote routing preference set via SSH.",
+  sessionRemotePreemptHereErr: "SSH remote preemption failed: {err}",
 };
