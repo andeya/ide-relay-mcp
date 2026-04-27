@@ -4529,3 +4529,69 @@ textarea[readonly] {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
+/* ─── Session info bar (above QA area) ─── */
+.sessionInfoBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+.sessionInfoBar:hover {
+  background: rgba(15, 23, 42, 0.8);
+}
+.sessionInfoDot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.sessionInfoDot--local { background: #4ade80; }
+.sessionInfoDot--remote { background: #38bdf8; }
+.sessionInfoLabel {
+  flex: 1;
+  font-size: 0.6875rem;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sessionInfoChev {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid rgba(148, 163, 184, 0.5);
+  border-bottom: 1.5px solid rgba(148, 163, 184, 0.5);
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+.sessionInfoChev--open {
+  transform: rotate(225deg);
+}
+.sessionInfoPanel {
+  padding: 6px 12px 8px;
+  background: rgba(15, 23, 42, 0.55);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+}
+.sessionInfoRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+.sessionInfoKey {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #64748b;
+  min-width: 58px;
+  text-align: right;
+}
+.sessionInfoVal {
+  font-size: 0.6875rem;
+  color: #cbd5e1;
+}
+

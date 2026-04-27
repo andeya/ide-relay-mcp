@@ -4,7 +4,7 @@
  */
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { RemoteConnection, IdeKind } from "../../types/relay-app";
+import type { RemoteConnection, IdeKind, ActiveMcpSession } from "../../types/relay-app";
 import type { SettingsToastPayload } from "../../composables/useRelayCacheSettings";
 
 type PushToastFn = (_payload: SettingsToastPayload) => void;
@@ -277,6 +277,145 @@ watch(isActive, (active) => {
 function ideLabel(kind: IdeKind): string {
   return ideKindDisplayLabel(kind);
 }
+
+// ─── Active MCP session management ───
+const sessions = ref<ActiveMcpSession[]>([]);
+const sessionsLoading = ref(false);
+
+async function loadSessions() {
+  sessionsLoading.value = true;
+  try {
+    sessions.value = await invoke<ActiveMcpSession[]>("list_active_sessions");
+  } catch {
+    sessions.value = [];
+  } finally {
+    sessionsLoading.value = false;
+  }
+}
+
+async function disconnectSession(requestId: string) {
+  try {
+    await invoke("disconnect_session", { requestId });
+    props.pushToast({ type: "ok", text: S.value.sessionDisconnectOk });
+    await loadSessions();
+  } catch {
+    props.pushToast({ type: "err", text: S.value.sessionDisconnectErr });
+  }
+}
+
+async function disconnectAllSessions() {
+  try {
+    await invoke("disconnect_all_sessions");
+    props.pushToast({ type: "ok", text: S.value.sessionDisconnectAllOk });
+    await loadSessions();
+  } catch {
+    props.pushToast({ type: "err", text: S.value.sessionDisconnectErr });
+  }
+}
+
+async function disconnectMultiple(targets: ActiveMcpSession[], toastText: string) {
+  for (const s of targets) {
+    try {
+      await invoke("disconnect_session", { requestId: s.request_id });
+    } catch { /* best-effort: continue */ }
+  }
+  props.pushToast({ type: "ok", text: toastText });
+  await loadSessions();
+}
+
+async function disconnectByOrigin(origin: string) {
+  await disconnectMultiple(
+    sessions.value.filter((s) => s.mcp_origin === origin),
+    S.value.sessionDisconnectAllOk,
+  );
+}
+
+async function disconnectConnection(connKey: string) {
+  const group = connectionGroups.value.find((g) => g.key === connKey);
+  if (!group) return;
+  await disconnectMultiple(group.sessions, S.value.sessionDisconnectConnOk);
+}
+
+const sessionPreemptBusy = ref(false);
+
+async function preemptForOrigin(origin: string) {
+  if (sessionPreemptBusy.value) return;
+  sessionPreemptBusy.value = true;
+  try {
+    const ide = await invoke<string | null>("get_ide_binding");
+    if (!ide) return;
+    await invoke("set_routing_lock", {
+      ideKind: ide,
+      prefer: origin,
+      setBy: origin,
+      pinned: false,
+    });
+    props.pushToast({ type: "ok", text: S.value.sessionPreemptOk });
+    await loadRoutingState();
+  } catch {
+    props.pushToast({ type: "err", text: S.value.sessionPreemptErr });
+  } finally {
+    sessionPreemptBusy.value = false;
+  }
+}
+
+const hasLocal = computed(() => sessions.value.some((s) => s.mcp_origin === "local"));
+const hasRemote = computed(() => sessions.value.some((s) => s.mcp_origin === "remote"));
+
+interface ConnectionGroup {
+  key: string;
+  origin: string;
+  hostname: string | null;
+  pid: number | null;
+  ide_mode: string | null;
+  sessions: ActiveMcpSession[];
+}
+
+const connectionGroups = computed<ConnectionGroup[]>(() => {
+  const map = new Map<string, ConnectionGroup>();
+  for (const s of sessions.value) {
+    const key = `${s.mcp_origin}:${s.mcp_pid ?? "?"}:${s.mcp_hostname ?? "?"}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        origin: s.mcp_origin,
+        hostname: s.mcp_hostname,
+        pid: s.mcp_pid,
+        ide_mode: s.ide_mode,
+        sessions: [],
+      });
+    }
+    map.get(key)!.sessions.push(s);
+  }
+  return Array.from(map.values());
+});
+
+// Listen for tab changes to auto-refresh sessions
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+let unlistenTabs: UnlistenFn | null = null;
+
+watch(isActive, async (active) => {
+  if (active) {
+    await loadSessions();
+    if (!unlistenTabs) {
+      unlistenTabs = await listen("relay_tabs_changed", () => {
+        void loadSessions();
+        void loadRoutingState();
+      });
+    }
+  } else if (unlistenTabs) {
+    unlistenTabs();
+    unlistenTabs = null;
+  }
+}, { immediate: true });
+
+onBeforeUnmount(() => {
+  if (unlistenTabs) {
+    unlistenTabs();
+    unlistenTabs = null;
+  }
+});
 </script>
 
 <template>
@@ -391,6 +530,96 @@ function ideLabel(kind: IdeKind): string {
             >{{ S.remoteRoutingRemote }}</span>
           </div>
         </div>
+
+        <!-- ─── Active MCP Sessions ─── -->
+        <section class="sessionSection">
+          <div class="sessionHeader">
+            <h4 class="sessionSectionTitle">{{ S.sessionTitle }}</h4>
+            <button
+              type="button"
+              class="sessionRefreshBtn"
+              :disabled="sessionsLoading"
+              @click="loadSessions"
+            >{{ S.sessionRefresh }}</button>
+          </div>
+
+          <div v-if="sessionsLoading && !sessions.length" class="remoteLoadingRow">
+            <span class="remoteSpinner" />
+          </div>
+
+          <p v-else-if="!sessions.length" class="sessionEmptyHint">{{ S.sessionEmpty }}</p>
+
+          <template v-else>
+            <div
+              v-for="group in connectionGroups"
+              :key="group.key"
+              class="sessionConnGroup"
+            >
+              <div class="sessionConnHeader">
+                <span
+                  class="sessionOriginDot"
+                  :class="group.origin === 'remote' ? 'sessionOriginDot--remote' : 'sessionOriginDot--local'"
+                />
+                <span class="sessionConnInfo">
+                  {{ group.origin === "remote" ? S.sessionOriginRemote : S.sessionOriginLocal }}
+                  <template v-if="group.hostname"> · {{ group.hostname }}</template>
+                  <template v-if="group.pid"> · PID {{ group.pid }}</template>
+                  <template v-if="group.ide_mode"> · {{ group.ide_mode }}</template>
+                </span>
+                <span class="sessionConnCount">{{ group.sessions.length }}</span>
+                <button
+                  v-if="(currentRouting ? currentRouting.prefer : 'local') !== group.origin"
+                  type="button"
+                  class="sessionPreemptGroupBtn"
+                  :disabled="sessionPreemptBusy"
+                  @click="preemptForOrigin(group.origin)"
+                >{{ group.origin === "local" ? S.sessionPreemptLocal : S.sessionPreemptRemote }}</button>
+                <button
+                  v-if="group.sessions.length > 1"
+                  type="button"
+                  class="sessionDisconnectConnBtn"
+                  @click="disconnectConnection(group.key)"
+                >{{ S.sessionDisconnectConn }}</button>
+              </div>
+              <div
+                v-for="s in group.sessions"
+                :key="s.request_id"
+                class="sessionCard"
+              >
+                <div class="sessionCardRow">
+                  <span class="sessionCardTitle">{{ s.title }}</span>
+                  <span v-if="s.connected_at" class="sessionCardTime">{{ s.connected_at }}</span>
+                  <button
+                    type="button"
+                    class="sessionDisconnectBtn"
+                    @click="disconnectSession(s.request_id)"
+                  >{{ S.sessionDisconnect }}</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="sessionBulkActions">
+              <button
+                v-if="hasLocal"
+                type="button"
+                class="sessionBulkBtn"
+                @click="disconnectByOrigin('local')"
+              >{{ S.sessionDisconnectLocalAll }}</button>
+              <button
+                v-if="hasRemote"
+                type="button"
+                class="sessionBulkBtn"
+                @click="disconnectByOrigin('remote')"
+              >{{ S.sessionDisconnectRemoteAll }}</button>
+              <button
+                v-if="sessions.length > 1"
+                type="button"
+                class="sessionBulkBtn sessionBulkBtn--danger"
+                @click="disconnectAllSessions"
+              >{{ S.sessionDisconnectAll }}</button>
+            </div>
+          </template>
+        </section>
       </div>
     </div>
 
@@ -1042,5 +1271,192 @@ function ideLabel(kind: IdeKind): string {
 .remoteErrorText {
   color: #f87171;
   font-size: 0.85rem;
+}
+
+/* ─── Session manager ─── */
+.sessionSection {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+.sessionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.sessionSectionTitle {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0;
+}
+.sessionRefreshBtn {
+  padding: 3px 10px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sessionRefreshBtn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.18);
+}
+.sessionRefreshBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sessionEmptyHint {
+  text-align: center;
+  color: #64748b;
+  font-size: 0.8125rem;
+  padding: 18px 0;
+}
+.sessionConnGroup {
+  margin-bottom: 12px;
+}
+.sessionConnHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  margin-bottom: 4px;
+}
+.sessionOriginDot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.sessionOriginDot--local {
+  background: #4ade80;
+}
+.sessionOriginDot--remote {
+  background: #38bdf8;
+}
+.sessionConnInfo {
+  flex: 1;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sessionConnCount {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: #64748b;
+  background: rgba(148, 163, 184, 0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.sessionPreemptGroupBtn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sessionPreemptGroupBtn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.16);
+}
+.sessionPreemptGroupBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sessionDisconnectConnBtn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.08);
+  border: 1px solid rgba(251, 146, 60, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sessionDisconnectConnBtn:hover {
+  background: rgba(251, 146, 60, 0.16);
+}
+.sessionCard {
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.06);
+  margin-bottom: 4px;
+  margin-left: 16px;
+}
+.sessionCardRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sessionCardTitle {
+  flex: 1;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sessionCardTime {
+  font-size: 0.625rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+.sessionDisconnectBtn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sessionDisconnectBtn:hover {
+  background: rgba(248, 113, 113, 0.16);
+}
+.sessionBulkActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: flex-end;
+}
+.sessionBulkBtn {
+  padding: 3px 10px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sessionBulkBtn:hover {
+  background: rgba(148, 163, 184, 0.16);
+}
+.sessionBulkBtn--danger {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.2);
+  background: rgba(248, 113, 113, 0.06);
+}
+.sessionBulkBtn--danger:hover {
+  background: rgba(248, 113, 113, 0.14);
 }
 </style>

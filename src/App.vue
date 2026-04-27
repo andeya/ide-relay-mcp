@@ -17,7 +17,7 @@ import { useAppStrings } from "./composables/useAppStrings";
 import { useFeedbackWindow } from "./composables/useFeedbackWindow";
 import { useReleaseBadge } from "./composables/useReleaseBadge";
 import { useMcpAndPathSettings } from "./composables/useMcpAndPathSettings";
-import type { CommandItem, CursorUsageEvent, IdeKind, SettingsSegment } from "./types/relay-app";
+import type { ActiveMcpSession, CommandItem, CursorUsageEvent, IdeKind, SettingsSegment } from "./types/relay-app";
 import type { SettingsToastPayload } from "./composables/useRelayCacheSettings";
 import { useCursorUsage } from "./composables/useCursorUsage";
 import { useIdeBinding } from "./composables/useIdeBinding";
@@ -233,6 +233,34 @@ function onTabMouseLeave() {
   if (tabTooltipTimer) { clearTimeout(tabTooltipTimer); tabTooltipTimer = null; }
   tabTooltip.value = null;
 }
+
+// ─── Active session info for current tab ───
+const activeSessions = ref<ActiveMcpSession[]>([]);
+const showSessionInfo = ref(false);
+
+async function refreshActiveSessions() {
+  try {
+    activeSessions.value = await invoke<ActiveMcpSession[]>("list_active_sessions");
+  } catch {
+    activeSessions.value = [];
+  }
+}
+
+const activeTabSession = computed<ActiveMcpSession | null>(() => {
+  if (!activeTabId.value) return null;
+  return activeSessions.value.find((s) => s.tab_id === activeTabId.value) ?? null;
+});
+
+const sessionInfoLabel = computed(() => {
+  const s = activeTabSession.value;
+  if (!s) return "";
+  const origin = s.mcp_origin === "remote" ? t("sessionOriginRemote") : t("sessionOriginLocal");
+  const parts = [origin];
+  if (s.mcp_hostname) parts.push(s.mcp_hostname);
+  if (s.mcp_pid) parts.push(`PID ${s.mcp_pid}`);
+  if (s.ide_mode) parts.push(s.ide_mode);
+  return parts.join(" · ");
+});
 
 /** One `slashCommandSecondaryLine` eval per row (description, or non-redundant name). */
 const slashPaletteRows = computed(() =>
@@ -458,6 +486,7 @@ const settingsRefreshToast = ref<{
 } | null>(null);
 let settingsRefreshToastTimer: ReturnType<typeof setTimeout> | undefined;
 let unlistenIdleTimeout: (() => void) | undefined;
+let unlistenSessionRefresh: (() => void) | undefined;
 
 function pushSettingsToast(p: SettingsToastPayload) {
   if (settingsRefreshToastTimer) clearTimeout(settingsRefreshToastTimer);
@@ -785,12 +814,16 @@ onMounted(async () => {
     if (timingResult) shellLeaveDebounceMs.value = timingResult.shellLeaveDebounceMs;
 
     void refreshMcpPaused();
+    void refreshActiveSessions();
     window.addEventListener("keydown", onGlobalKeydown);
     unlistenIdleTimeout = await listen("relay_idle_timeout", () => {
       pushSettingsToast({
         type: "warn",
         text: t("idleTimeoutToast"),
       });
+    });
+    unlistenSessionRefresh = await listen("relay_tabs_changed", () => {
+      void refreshActiveSessions();
     });
     await nextTick();
     updateSummaryScrollHints();
@@ -803,6 +836,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   unlistenIdleTimeout?.();
   unlistenIdleTimeout = undefined;
+  unlistenSessionRefresh?.();
+  unlistenSessionRefresh = undefined;
   window.removeEventListener("keydown", onGlobalKeydown);
   if (settingsRefreshToastTimer) clearTimeout(settingsRefreshToastTimer);
   if (shellLeaveTimer !== null) clearTimeout(shellLeaveTimer);
@@ -1078,6 +1113,42 @@ onBeforeUnmount(() => {
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
+        </div>
+      </div>
+
+      <!-- Session info bar for active tab -->
+      <div
+        v-if="activeTabSession"
+        class="sessionInfoBar"
+        @click="showSessionInfo = !showSessionInfo"
+      >
+        <span
+          class="sessionInfoDot"
+          :class="activeTabSession.mcp_origin === 'remote' ? 'sessionInfoDot--remote' : 'sessionInfoDot--local'"
+        />
+        <span class="sessionInfoLabel">{{ sessionInfoLabel }}</span>
+        <span class="sessionInfoChev" :class="{ 'sessionInfoChev--open': showSessionInfo }" />
+      </div>
+      <div v-if="activeTabSession && showSessionInfo" class="sessionInfoPanel">
+        <div class="sessionInfoRow">
+          <span class="sessionInfoKey">{{ t("sessionTabTitle") }}</span>
+          <span class="sessionInfoVal">{{ activeTabSession.title }}</span>
+        </div>
+        <div v-if="activeTabSession.mcp_pid" class="sessionInfoRow">
+          <span class="sessionInfoKey">{{ t("sessionPid") }}</span>
+          <span class="sessionInfoVal">{{ activeTabSession.mcp_pid }}</span>
+        </div>
+        <div v-if="activeTabSession.mcp_hostname" class="sessionInfoRow">
+          <span class="sessionInfoKey">{{ t("sessionHost") }}</span>
+          <span class="sessionInfoVal">{{ activeTabSession.mcp_hostname }}</span>
+        </div>
+        <div v-if="activeTabSession.ide_mode" class="sessionInfoRow">
+          <span class="sessionInfoKey">{{ t("sessionIde") }}</span>
+          <span class="sessionInfoVal">{{ activeTabSession.ide_mode }}</span>
+        </div>
+        <div v-if="activeTabSession.connected_at" class="sessionInfoRow">
+          <span class="sessionInfoKey">{{ t("sessionConnectedAt") }}</span>
+          <span class="sessionInfoVal">{{ activeTabSession.connected_at }}</span>
         </div>
       </div>
 
