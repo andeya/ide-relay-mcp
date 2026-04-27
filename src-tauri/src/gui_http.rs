@@ -670,8 +670,8 @@ async fn health(State(st): State<AxumState>, headers: HeaderMap) -> impl IntoRes
     StatusCode::OK.into_response()
 }
 
-fn post_feedback_apply_state(
-    inner: &Arc<RelayGuiInner>,
+/// Bundled metadata from the MCP POST body (reduces argument count).
+struct FeedbackPostParams {
     retell: String,
     relay_mcp_session_id: String,
     commands: Option<Vec<CommandItem>>,
@@ -681,7 +681,20 @@ fn post_feedback_apply_state(
     mcp_hostname: Option<String>,
     mcp_origin: Option<String>,
     ide_mode: Option<String>,
-) -> String {
+}
+
+fn post_feedback_apply_state(inner: &Arc<RelayGuiInner>, p: FeedbackPostParams) -> String {
+    let FeedbackPostParams {
+        retell,
+        relay_mcp_session_id,
+        commands,
+        skills,
+        title,
+        mcp_pid,
+        mcp_hostname,
+        mcp_origin,
+        ide_mode,
+    } = p;
     let rid = uuid::Uuid::new_v4().to_string();
     let mut g = lock_tabs(inner);
     g.tabs.retain(|t| !t.is_preview);
@@ -891,29 +904,20 @@ async fn post_feedback(
         }
     }
     let inner = st.inner.clone();
-    let retell = body.retell;
-    let relay_mcp_session_id = session_id_from_tool_arg(Some(&body.relay_mcp_session_id));
-    let commands = body.commands;
-    let skills = body.skills;
-    let title = body.title;
-    let mcp_pid = body.mcp_pid;
-    let mcp_hostname = body.mcp_hostname;
-    let mcp_origin = body.mcp_origin;
-    let ide_mode = body.ide_mode;
+    let params = FeedbackPostParams {
+        retell: body.retell,
+        relay_mcp_session_id: session_id_from_tool_arg(Some(&body.relay_mcp_session_id)),
+        commands: body.commands,
+        skills: body.skills,
+        title: body.title,
+        mcp_pid: body.mcp_pid,
+        mcp_hostname: body.mcp_hostname,
+        mcp_origin: body.mcp_origin,
+        ide_mode: body.ide_mode,
+    };
 
     let rid = match tokio::task::spawn_blocking(move || {
-        post_feedback_apply_state(
-            &inner,
-            retell,
-            relay_mcp_session_id,
-            commands,
-            skills,
-            title,
-            mcp_pid,
-            mcp_hostname,
-            mcp_origin,
-            ide_mode,
-        )
+        post_feedback_apply_state(&inner, params)
     })
     .await
     {
