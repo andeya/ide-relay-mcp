@@ -271,6 +271,32 @@ export function useAppStrings(ideLabel: Ref<string>, ideKind: Ref<IdeKind | null
       remoteDetailKey: t("remoteDetailKey"),
       remoteDetailJump: t("remoteDetailJump"),
       remoteDetailLast: t("remoteDetailLast"),
+
+      // Session manager
+      sessionTitle: t("sessionTitle"),
+      sessionEmpty: t("sessionEmpty"),
+      sessionRefresh: t("sessionRefresh"),
+      sessionDisconnect: t("sessionDisconnect"),
+      sessionDisconnectAll: t("sessionDisconnectAll"),
+      sessionDisconnectLocalAll: t("sessionDisconnectLocalAll"),
+      sessionDisconnectRemoteAll: t("sessionDisconnectRemoteAll"),
+      sessionOriginLocal: t("sessionOriginLocal"),
+      sessionOriginRemote: t("sessionOriginRemote"),
+      sessionPid: t("sessionPid"),
+      sessionHost: t("sessionHost"),
+      sessionConnectedAt: t("sessionConnectedAt"),
+      sessionTabTitle: t("sessionTabTitle"),
+      sessionIde: t("sessionIde"),
+      sessionDisconnectOk: t("sessionDisconnectOk"),
+      sessionDisconnectAllOk: t("sessionDisconnectAllOk"),
+      sessionDisconnectErr: t("sessionDisconnectErr"),
+      sessionDisconnectConn: t("sessionDisconnectConn"),
+      sessionDisconnectConnOk: t("sessionDisconnectConnOk"),
+      sessionConnLabel: t("sessionConnLabel"),
+      sessionPreemptLocal: t("sessionPreemptLocal"),
+      sessionPreemptRemote: t("sessionPreemptRemote"),
+      sessionPreemptOk: t("sessionPreemptOk"),
+      sessionPreemptErr: t("sessionPreemptErr"),
     };
   });
   return { strings };

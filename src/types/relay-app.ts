@@ -168,6 +168,19 @@ export type RemoteConnection = {
   last_connected_at?: string;
 };
 
+/** Mirrors the Rust `ActiveSession` struct returned by `list_active_sessions`. */
+export type ActiveMcpSession = {
+  request_id: string;
+  relay_mcp_session_id: string;
+  tab_id: string;
+  title: string;
+  mcp_pid: number | null;
+  mcp_hostname: string | null;
+  mcp_origin: string;
+  ide_mode: string | null;
+  connected_at: string;
+};
+
 export type RemoteState =
   | "disconnected"
   | "connecting"

@@ -348,7 +348,7 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   ideSelectPlaceholder: "Select IDE",
 
   // Remote SSH
-  segRemote: "Remote IDE",
+  segRemote: "Sessions",
   remoteTitle: "Remote IDE Connections",
   remoteLead:
     "Connect to IDE instances on remote machines via SSH reverse tunnels. Your GUI on this machine will serve as the human-in-the-loop interface for remote MCP processes.",
@@ -400,4 +400,31 @@ Any MCP + rules-capable client: paste the rule block and register \`relay_intera
   remoteDetailKey: "Key:",
   remoteDetailJump: "Jump:",
   remoteDetailLast: "Last:",
+
+  // Session manager
+  sessionTitle: "Active MCP Sessions",
+  sessionEmpty: "No active sessions.",
+  sessionRefresh: "Refresh",
+  sessionDisconnect: "Disconnect",
+  sessionDisconnectAll: "Disconnect all",
+  sessionDisconnectLocalAll: "Disconnect all local",
+  sessionDisconnectRemoteAll: "Disconnect all remote",
+  sessionOriginLocal: "local",
+  sessionOriginRemote: "remote",
+  sessionPid: "PID",
+  sessionHost: "Host",
+  sessionConnectedAt: "Connected",
+  sessionTabTitle: "Tab",
+  sessionIde: "IDE",
+  sessionDisconnectOk: "Session disconnected.",
+  sessionDisconnectAllOk: "All sessions disconnected.",
+  sessionDisconnectErr: "Failed to disconnect session.",
+  sessionDisconnectConn: "Disconnect connection",
+  sessionDisconnectConnOk: "All sessions from this connection disconnected.",
+  sessionConnLabel: "Connection",
+  sessionTabCount: "{n} sessions",
+  sessionPreemptLocal: "Preempt → local",
+  sessionPreemptRemote: "Preempt → remote",
+  sessionPreemptOk: "Routing preempted. MCP will reconnect to the preferred GUI.",
+  sessionPreemptErr: "Failed to set routing preference.",
 };

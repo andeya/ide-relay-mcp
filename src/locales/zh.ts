@@ -337,7 +337,7 @@ export default {
   ideSelectPlaceholder: "选择 IDE",
 
   // Remote SSH
-  segRemote: "远程 IDE",
+  segRemote: "会话管理",
   remoteTitle: "远程 IDE 连接",
   remoteLead:
     "通过 SSH 反向隧道连接远程机器上的 IDE 实例。本机 GUI 将作为远程 MCP 进程的人机回环界面。",
@@ -389,4 +389,31 @@ export default {
   remoteDetailKey: "密钥：",
   remoteDetailJump: "跳板：",
   remoteDetailLast: "上次：",
+
+  // Session manager
+  sessionTitle: "活跃 MCP 会话",
+  sessionEmpty: "暂无活跃会话。",
+  sessionRefresh: "刷新",
+  sessionDisconnect: "断开",
+  sessionDisconnectAll: "全部断开",
+  sessionDisconnectLocalAll: "断开全部本地",
+  sessionDisconnectRemoteAll: "断开全部远程",
+  sessionOriginLocal: "本地",
+  sessionOriginRemote: "远程",
+  sessionPid: "PID",
+  sessionHost: "主机",
+  sessionConnectedAt: "连接时间",
+  sessionTabTitle: "标签",
+  sessionIde: "IDE",
+  sessionDisconnectOk: "会话已断开。",
+  sessionDisconnectAllOk: "全部会话已断开。",
+  sessionDisconnectErr: "断开会话失败。",
+  sessionDisconnectConn: "断开该连接",
+  sessionDisconnectConnOk: "该连接的所有会话已断开。",
+  sessionConnLabel: "连接",
+  sessionTabCount: "{n} 个会话",
+  sessionPreemptLocal: "抢占 → 本地",
+  sessionPreemptRemote: "抢占 → 远程",
+  sessionPreemptOk: "已设置路由偏好。MCP 将重新连接到首选 GUI。",
+  sessionPreemptErr: "设置路由偏好失败。",
 };
