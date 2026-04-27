@@ -272,32 +272,54 @@ fn build_ssh_tunnel_command(conn: &RemoteConnection, gui_port: u16) -> Command {
     cmd.arg(&conn.ssh_target);
 
     cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 
     cmd
+}
+
+/// Shell-unsafe characters that must not appear in paths embedded in remote
+/// SSH commands. Prevents command injection via user-controlled
+/// `remote_relay_path`.
+fn is_safe_remote_path(s: &str) -> bool {
+    !s.is_empty()
+        && !s.contains('\0')
+        && !s.contains('`')
+        && !s.contains("$(")
+        && !s.contains("${")
+        && !s.contains('"')
+        && !s.contains('\'')
+        && !s.contains(';')
+        && !s.contains('|')
+        && !s.contains('&')
+        && !s.contains('\n')
+        && !s.contains('\r')
+        && !s.contains('>')
+        && !s.contains('<')
 }
 
 /// Determine the relay data directory path on the remote host.
 /// macOS: `$HOME/Library/Application Support/com.relay.relay-mcp/`
 /// Linux: `$HOME/.config/relay-mcp/`
-fn remote_relay_data_dir(conn: &RemoteConnection) -> String {
+fn remote_relay_data_dir(conn: &RemoteConnection) -> Result<String> {
     if let Some(ref p) = conn.remote_relay_path {
         if !p.is_empty() {
-            return p.clone();
+            if !is_safe_remote_path(p) {
+                anyhow::bail!("remote_relay_path contains unsafe characters: {:?}", p);
+            }
+            return Ok(p.clone());
         }
     }
-    // Default: probe `uname` output would be ideal, but for now use a shell
-    // conditional that works on both macOS and Linux.
-    concat!(
+    Ok(concat!(
         "$(if [ \"$(uname)\" = \"Darwin\" ]; then ",
         "echo \"$HOME/Library/Application Support/com.relay.relay-mcp\"; ",
         "else echo \"$HOME/.config/relay-mcp\"; fi)"
     )
-    .to_string()
+    .to_string())
 }
 
-/// Write the endpoint file on remote host A via SSH exec.
+/// Write the remote endpoint file on remote host A via SSH exec.
+/// Uses `_remote` suffix so A's local GUI endpoint is not overwritten.
 pub fn write_remote_endpoint(
     conn: &RemoteConnection,
     tunnel_port: u16,
@@ -312,8 +334,8 @@ pub fn write_remote_endpoint(
     };
     let json = serde_json::to_string(&endpoint)?;
     let ide_id = conn.ide_kind.cli_id();
-    let filename = format!("gui_endpoint_{ide_id}.json");
-    let data_dir = remote_relay_data_dir(conn);
+    let filename = format!("gui_endpoint_{ide_id}_remote.json");
+    let data_dir = remote_relay_data_dir(conn)?;
 
     let script = format!(
         "RDIR=\"{data_dir}\" && mkdir -p \"$RDIR\" && printf '%s' '{}' > \"$RDIR/{filename}\"",
@@ -333,11 +355,11 @@ pub fn write_remote_endpoint(
     Ok(())
 }
 
-/// Remove the endpoint file on remote host A via SSH exec.
+/// Remove the remote endpoint file on remote host A via SSH exec.
 pub fn remove_remote_endpoint(conn: &RemoteConnection) -> Result<()> {
     let ide_id = conn.ide_kind.cli_id();
-    let filename = format!("gui_endpoint_{ide_id}.json");
-    let data_dir = remote_relay_data_dir(conn);
+    let filename = format!("gui_endpoint_{ide_id}_remote.json");
+    let data_dir = remote_relay_data_dir(conn)?;
 
     let script = format!("RDIR=\"{data_dir}\" && rm -f \"$RDIR/{filename}\"");
 
@@ -350,6 +372,73 @@ pub fn remove_remote_endpoint(conn: &RemoteConnection) -> Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("remote endpoint remove failed: {stderr}");
+    }
+    Ok(())
+}
+
+/// Set routing lock on the remote host via SSH.
+/// Respects local pinning: if the remote file has `"pinned":true`,
+/// the command fails without overwriting.
+pub fn write_remote_routing_lock(conn: &RemoteConnection, prefer: &str) -> Result<()> {
+    let data_dir = remote_relay_data_dir(conn)?;
+    let ide_id = conn.ide_kind.cli_id();
+    let filename = format!("gui_routing_lock_{ide_id}.json");
+    let lock_json = serde_json::json!({
+        "prefer": prefer,
+        "set_by": "remote",
+        "pinned": false,
+    });
+
+    let script = format!(
+        concat!(
+            "RDIR=\"{data_dir}\" && LOCK=\"$RDIR/{filename}\" && ",
+            "if [ -f \"$LOCK\" ] && grep -q '\"pinned\"[[:space:]]*:[[:space:]]*true' \"$LOCK\"; then ",
+            "echo 'LOCKED_BY_LOCAL' && exit 1; fi && ",
+            "mkdir -p \"$RDIR\" && printf '%s' '{json}' > \"$LOCK\""
+        ),
+        data_dir = data_dir,
+        filename = filename,
+        json = lock_json.to_string().replace('\'', "'\\''"),
+    );
+
+    let mut cmd = Command::new("ssh");
+    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
+    apply_ssh_conn_args(&mut cmd, conn);
+    cmd.arg(&conn.ssh_target).arg(&script);
+
+    let output = cmd.output().context("ssh exec for routing lock")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.contains("LOCKED_BY_LOCAL") {
+            anyhow::bail!("routing is pinned by local user");
+        }
+        anyhow::bail!("remote routing lock write failed: {stderr}");
+    }
+    Ok(())
+}
+
+/// Remove routing lock on the remote host via SSH.
+pub fn clear_remote_routing_lock(conn: &RemoteConnection) -> Result<()> {
+    let data_dir = remote_relay_data_dir(conn)?;
+    let ide_id = conn.ide_kind.cli_id();
+    let filename = format!("gui_routing_lock_{ide_id}.json");
+
+    let script = format!(
+        "RDIR=\"{data_dir}\" && rm -f \"$RDIR/{filename}\"",
+        data_dir = data_dir,
+        filename = filename,
+    );
+
+    let mut cmd = Command::new("ssh");
+    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
+    apply_ssh_conn_args(&mut cmd, conn);
+    cmd.arg(&conn.ssh_target).arg(&script);
+
+    let output = cmd.output().context("ssh exec for routing lock clear")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("remote routing lock clear failed: {stderr}");
     }
     Ok(())
 }
@@ -633,7 +722,7 @@ mod tests {
     #[test]
     fn remote_data_dir_default_is_cross_platform() {
         let conn = test_conn("t1", "user@host");
-        let dir = remote_relay_data_dir(&conn);
+        let dir = remote_relay_data_dir(&conn).unwrap();
         assert!(
             dir.contains("uname"),
             "should contain cross-platform detection"
@@ -652,7 +741,7 @@ mod tests {
             remote_relay_path: Some("/opt/relay-data".into()),
             ..test_conn("t1", "user@host")
         };
-        assert_eq!(remote_relay_data_dir(&conn), "/opt/relay-data");
+        assert_eq!(remote_relay_data_dir(&conn).unwrap(), "/opt/relay-data");
     }
 
     #[test]
@@ -661,7 +750,7 @@ mod tests {
             remote_relay_path: Some("".into()),
             ..test_conn("t1", "user@host")
         };
-        let dir = remote_relay_data_dir(&conn);
+        let dir = remote_relay_data_dir(&conn).unwrap();
         assert!(
             dir.contains("uname"),
             "empty path should fall back to default"
@@ -674,8 +763,31 @@ mod tests {
             remote_relay_path: None,
             ..test_conn("t1", "user@host")
         };
-        let dir = remote_relay_data_dir(&conn);
+        let dir = remote_relay_data_dir(&conn).unwrap();
         assert!(dir.contains("uname"), "None should fall back to default");
+    }
+
+    #[test]
+    fn remote_data_dir_rejects_unsafe_path() {
+        let cases = vec![
+            "$(rm -rf /)",
+            "/path/with`backtick",
+            "/path/with\"quote",
+            "/path;rm -rf /",
+            "/path|evil",
+            "/path&bg",
+            "/path\ninjection",
+        ];
+        for bad in cases {
+            let conn = RemoteConnection {
+                remote_relay_path: Some(bad.into()),
+                ..test_conn("t1", "user@host")
+            };
+            assert!(
+                remote_relay_data_dir(&conn).is_err(),
+                "should reject unsafe path: {bad:?}"
+            );
+        }
     }
 
     // -----------------------------------------------------------------------
