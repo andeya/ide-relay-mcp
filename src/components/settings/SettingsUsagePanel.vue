@@ -6,6 +6,7 @@
 import { computed, ref, watch } from "vue";
 import type { CursorUsageState } from "../../composables/useCursorUsage";
 import type { CursorUsageEvent } from "../../types/relay-app";
+import { formatTokenUnit } from "../../utils/formatBytes";
 
 const props = defineProps<{
   strings: Record<string, string>;
@@ -85,12 +86,7 @@ function totalTokens(u: CursorUsageEvent["tokenUsage"]): number {
 }
 
 function formatTokUnit(n: number): string {
-  const unit = S.value.usageTokUnit;
-  if (n >= 10000) {
-    const wan = n / 10000;
-    return wan >= 100 ? `${Math.round(wan)}${unit}` : `${wan.toFixed(1)}${unit}`;
-  }
-  return `${n.toLocaleString()} tok`;
+  return formatTokenUnit(n, S.value.usageTokUnit);
 }
 
 watch(isActive, (active) => {

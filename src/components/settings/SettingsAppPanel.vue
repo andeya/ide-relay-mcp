@@ -71,7 +71,7 @@ async function onCloseToTrayChange(ev: Event) {
     await invoke("set_close_to_tray", { enabled: checked });
   } catch {
     closeToTray.value = !checked;
-    props.pushToast({ type: "err", text: "保存失败，请重试" });
+    props.pushToast({ type: "err", text: S.value.appSaveErr });
   } finally {
     closeToTrayBusy.value = false;
   }

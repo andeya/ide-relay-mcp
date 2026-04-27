@@ -3,6 +3,7 @@
  * Split from useFeedbackWindow for reuse and lighter composable surface.
  */
 import type { CommandItem, LaunchState } from "../types/relay-app";
+import { t } from "../i18n";
 
 /**
  * Characters allowed in `/foo` tail (IDE command / skill id segment).
@@ -18,7 +19,7 @@ export function slashLineTokenRegex(): RegExp {
 /** Tab strip label: `title` is MM-DD HH:mm:ss from backend; else retell preview. Append turn status when provided. */
 export function feedbackTabLabel(tab: LaunchState, turnStatusLabel?: string): string {
   if (tab.is_preview) {
-    return "Hub";
+    return t("tabHubLabel");
   }
   const suffix = turnStatusLabel ? ` · ${turnStatusLabel}` : "";
   const maxBase = 22 - suffix.length;
