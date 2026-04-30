@@ -25,11 +25,32 @@ use relay_mcp::{
     QaRound,
 };
 
+/// Set Windows console code page to UTF-8 (65001) for stdin/stdout.
+///
+/// On Chinese Windows systems, the default console code page is 936 (GBK/GB2312).
+/// Rust's `BufReader::lines()` reads stdin as UTF-8, and `writeln!` writes UTF-8 bytes.
+/// Without setting code page 65001, Chinese characters become mojibake.
+#[cfg(target_os = "windows")]
+fn set_console_utf8_code_page() {
+    use windows_sys::Win32::System::Console::{SetConsoleCP, SetConsoleOutputCP};
+    /// Windows code page identifier for UTF-8 (same as CP_UTF8 from Win32::Globalization).
+    const CP_UTF8: u32 = 65001;
+    unsafe {
+        let _ = SetConsoleCP(CP_UTF8);
+        let _ = SetConsoleOutputCP(CP_UTF8);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_console_utf8_code_page() {}
+
 /// Release Windows builds use the GUI subsystem; attach to the parent console so CLI subcommands
 /// can print MCP JSON-RPC / `relay feedback` output when launched from cmd or PowerShell.
 ///
 /// Skips attaching when stdout is already a pipe so IDE-hosted `relay mcp-<ide>` (stdio JSON-RPC) is
 /// never redirected to a stray console.
+///
+/// Also sets the console code page to UTF-8 (65001) for all Windows builds.
 #[cfg(all(target_os = "windows", not(debug_assertions)))]
 fn try_attach_parent_console_for_cli() {
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
@@ -37,18 +58,23 @@ fn try_attach_parent_console_for_cli() {
     use windows_sys::Win32::System::Console::{
         AttachConsole, GetStdHandle, ATTACH_PARENT_PROCESS, STD_OUTPUT_HANDLE,
     };
+    set_console_utf8_code_page();
     unsafe {
         let h = GetStdHandle(STD_OUTPUT_HANDLE);
         if h != INVALID_HANDLE_VALUE && !h.is_null() && GetFileType(h) == FILE_TYPE_PIPE {
+            // stdout is a pipe (IDE-hosted MCP); no console to attach, but code page is already set.
             return;
         }
         let _ = AttachConsole(ATTACH_PARENT_PROCESS);
-        // Ignore failure: no parent console, already attached, etc.
+        // Ignore AttachConsole failure: no parent console, already attached, etc.
     }
 }
 
 #[cfg(not(all(target_os = "windows", not(debug_assertions))))]
-fn try_attach_parent_console_for_cli() {}
+fn try_attach_parent_console_for_cli() {
+    // For debug builds on Windows, or non-Windows platforms, still set UTF-8 code page.
+    set_console_utf8_code_page();
+}
 
 #[derive(Parser)]
 #[command(
